@@ -1,23 +1,4 @@
 
-st.markdown(""" ... """, unsafe_allow_html=True)
-<style>
-body {
-    background-color: #002E49;
-    color: white;
-    font-family: 'Maven Pro', Arial, sans-serif;
-}
-.segment-box {
-    background-color: #DFEDF5;
-    border: 2px solid #BB9357;
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 15px;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    color: #002E49;
-}
-</style>
-""", unsafe_allow_html=True)
-
 import streamlit as st
 from opencage.geocoder import OpenCageGeocode
 from geopy.distance import great_circle
