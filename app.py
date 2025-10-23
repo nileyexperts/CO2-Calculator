@@ -2,6 +2,11 @@
 import streamlit as st
 from opencage.geocoder import OpenCageGeocode
 from geopy.distance import great_circle
+# Bouton de réinitialisation
+if st.button("🔄 Réinitialiser le formulaire"):
+    for key in st.session_state.keys():
+        del st.session_state[key]
+    st.experimental_rerun()
 
 # Ajout de l'image de fond depuis GitHub
 st.markdown("""
