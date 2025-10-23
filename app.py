@@ -2,13 +2,16 @@
 import streamlit as st
 from opencage.geocoder import OpenCageGeocode
 from geopy.distance import great_circle
-# Bouton de réinitialisation
-if st.button("🔄 Réinitialiser le formulaire"):
-    for key in st.session_state.keys():
-        del st.session_state[key]
-    st.experimental_rerun()
 
-# Ajout de l'image de fond depuis GitHub
+# Facteurs d'émission en kg CO2e par tonne.km
+EMISSION_FACTORS = {
+    "Routier 🚚": 0.100,
+    "Aérien ✈️": 0.500,
+    "Maritime 🚢": 0.015,
+    "Ferroviaire 🚆": 0.030
+}
+
+# Image de fond depuis GitHub
 st.markdown("""
     <style>
     .stApp {
@@ -20,13 +23,11 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Facteurs d'émission en kg CO2e par tonne.km
-EMISSION_FACTORS = {
-    "Routier 🚚": 0.100,
-    "Aérien ✈️": 0.500,
-    "Maritime 🚢": 0.015,
-    "Ferroviaire 🚆": 0.030
-}
+# Bouton de réinitialisation
+if st.button("🔄 Réinitialiser le formulaire"):
+    for key in st.session_state.keys():
+        del st.session_state[key]
+    st.experimental_rerun()
 
 # Configuration de l'API OpenCage
 API_KEY = st.secrets["OPENCAGE_KEY"]
