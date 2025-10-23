@@ -22,6 +22,39 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown("""
+
+<style>
+.segment-box {
+    background-color: #DFEDF5;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    border: 2px solid #BB9357;
+}
+.stButton > button {
+    background-color: #BB9357;
+    color: white;
+    font-weight: bold;
+    border-radius: 8px;
+    padding: 10px 20px;
+    border: none;
+}
+.stTextInput > div > input {
+    background-color: #DFEDF5;
+    border: 2px solid #BB9357;
+    border-radius: 5px;
+}
+.stNumberInput > div > input {
+    background-color: #DFEDF5;
+    border: 2px solid #BB9357;
+    border-radius: 5px;
+}
+.stSelectbox > div > div {
+    background-color: #DFEDF5;
+    border: 2px solid #BB9357;
+    border-radius: 5px;
+}
+</style>
 <style>
     .segment-box {
         background-color: #DFEDF5;
