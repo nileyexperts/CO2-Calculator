@@ -1,6 +1,17 @@
 # co2_calculator_app.py
+# ------------------------------------------------------------
+# Calculateur CO2 multimodal - NILEY EXPERTS
+# - Géocodage OpenCage
+# - Distance routière réaliste via OSRM (+ polyline sur la carte)
+# - Fond visuel adouci
+# - Facteurs d'émission éditables, poids global ou par segment
+# - Carte PyDeck (PathLayer pour les routes OSRM, LineLayer en fallback)
+# ------------------------------------------------------------
+# Dépendances: streamlit, opencage, geopy, requests, pandas, pydeck
+# Secrets requis: OPENCAGE_KEY (Streamlit secrets ou variable d'env)
+# ------------------------------------------------------------
+
 import os
-import io
 import time
 import requests
 import pandas as pd
@@ -78,7 +89,7 @@ def geocode_cached(query: str, limit: int = 5):
     if not query:
         return []
     try:
-        time.sleep(0.1)
+        time.sleep(0.1)  # évite de spammer en dev
         return geocoder.geocode(query, no_annotations=1, limit=limit) or []
     except Exception:
         return []
@@ -89,7 +100,7 @@ def coords_from_formatted(formatted: str):
         res = geocoder.geocode(formatted, no_annotations=1, limit=1)
         if res:
             g = res[0]["geometry"]
-            return (g["lat"], g["lng"])
+            return (g["lat"], g["lng"])  # (lat, lon)
     except Exception:
         pass
     return None
@@ -101,23 +112,36 @@ def compute_emissions(distance_km: float, weight_tonnes: float, factor_kg_per_tk
     return distance_km * weight_tonnes * factor_kg_per_tkm
 
 @st.cache_data(show_spinner=False, ttl=6*60*60)
-def osrm_distance_km(coord1, coord2, base_url: str):
+def osrm_route(coord1, coord2, base_url: str, overview: str = "full"):
     """
-    Distance routière (km) via OSRM /route/v1/driving.
-    Doc OSRM: profile 'driving', coords (lon,lat;lon,lat), distance en mètres.  [1](https://project-osrm.org/docs/v5.5.1/api/)
+    Distance routière (km) + géométrie (polyline GeoJSON) via OSRM /route/v1/driving.
+    - coord1/coord2: (lat, lon)
+    - base_url: ex. https://router.project-osrm.org
+    Utilise: overview=full, geometries=geojson, alternatives=false, annotations=false
+    (cf. documentation officielle OSRM Route Service).
     """
+    # OSRM attend lon,lat
     lon1, lat1 = coord1[1], coord1[0]
     lon2, lat2 = coord2[1], coord2[0]
     url = f"{base_url.rstrip('/')}/route/v1/driving/{lon1},{lat1};{lon2},{lat2}"
-    params = {"overview": "false", "alternatives": "false", "annotations": "false"}
-    r = requests.get(url, params=params, timeout=10)
+    params = {
+        "overview": overview,           # 'simplified' ou 'full'
+        "alternatives": "false",
+        "annotations": "false",
+        "geometries": "geojson"
+    }
+    r = requests.get(url, params=params, timeout=12)
     r.raise_for_status()
     data = r.json()
     routes = data.get("routes", [])
     if not routes:
         raise ValueError("Aucune route retournée par OSRM")
-    meters = routes[0].get("distance", 0.0)
-    return meters / 1000.0
+    route = routes[0]
+    meters = float(route.get("distance", 0.0))
+    distance_km = meters / 1000.0
+    geom = route.get("geometry", {})  # GeoJSON LineString
+    coords = geom.get("coordinates", [])  # [[lon, lat], ...]
+    return {"distance_km": distance_km, "coords": coords}
 
 # =========================
 # 🔐 API OpenCage
@@ -136,7 +160,8 @@ st.markdown("""
 <h1 style='color:white;text-align:center;margin:0'>Calculateur d'empreinte carbone multimodal - NILEY EXPERTS</h1>
 </div>
 """, unsafe_allow_html=True)
-st.write("Ajoutez plusieurs segments (origine → destination), choisissez le mode et le poids. Le mode **Routier** utilise désormais **OSRM** (distance réelle).")
+st.write("Ajoutez plusieurs segments (origine → destination), choisissez le mode et le poids. "
+         "Le mode **Routier** utilise désormais **OSRM** (distance réelle + tracé sur la carte).")
 
 # =========================
 # 🔄 Reset
@@ -156,10 +181,14 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
     weight_mode = st.radio("Mode de gestion du poids :", [default_mode, "Poids par segment"], horizontal=False)
     factors = {}
     for mode, val in DEFAULT_EMISSION_FACTORS.items():
-        factors[mode] = st.number_input(f"Facteur {mode} (kg CO₂e / tonne.km)", min_value=0.0, value=float(val), step=0.001, format="%.3f", key=f"factor_{mode}")
+        factors[mode] = st.number_input(
+            f"Facteur {mode} (kg CO₂e / tonne.km)",
+            min_value=0.0, value=float(val), step=0.001, format="%.3f", key=f"factor_{mode}"
+        )
     unit = st.radio("Unité de saisie du poids", ["kg", "tonnes"], index=0, horizontal=True)
 
-    st.markdown("**OSRM** – pour test : `https://router.project-osrm.org` (démo publique, pas de garanties). En production, utilisez un serveur **auto‑hébergé** ou un provider.  \nDes limites et réponses 429 peuvent survenir sur le démo. [2](https://github.com/Project-OSRM/osrm-backend/issues/1027)[3](https://stackoverflow.com/questions/48474423/leaflet-routing-machine-usage-limits)")
+    st.markdown("**OSRM** – pour test : `https://router.project-osrm.org` (serveur démo public, non garanti). "
+                "En production, utilisez un serveur **auto‑hébergé** ou un provider (risque de réponses **429** sur le démo).")
     osrm_base_url = st.text_input(
         "Endpoint OSRM",
         value=st.session_state.get("osrm_base_url", "https://router.project-osrm.org"),
@@ -173,13 +202,21 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
 if "segments" not in st.session_state:
     st.session_state.segments = []
 
-num_legs = st.number_input("Nombre de segments de transport", min_value=1, max_value=10, value=max(1, len(st.session_state.segments) or 1), step=1)
+num_legs = st.number_input(
+    "Nombre de segments de transport", min_value=1, max_value=10,
+    value=max(1, len(st.session_state.segments) or 1), step=1
+)
 
+# Ajuster la liste au nombre demandé
 while len(st.session_state.segments) < num_legs:
-    st.session_state.segments.append({"origin_raw": "", "origin_sel": "", "dest_raw": "", "dest_sel": "", "mode": "Routier 🚚", "weight": 1000.0})
+    st.session_state.segments.append({
+        "origin_raw": "", "origin_sel": "", "dest_raw": "", "dest_sel": "",
+        "mode": "Routier 🚚", "weight": 1000.0
+    })
 while len(st.session_state.segments) > num_legs:
     st.session_state.segments.pop()
 
+# Chaînage auto origine[i] = destination[i-1]
 for i in range(1, num_legs):
     prev = st.session_state.segments[i-1]
     cur = st.session_state.segments[i]
@@ -193,38 +230,56 @@ for i in range(num_legs):
 
     c1, c2 = st.columns(2)
     with c1:
-        origin_raw = st.text_input(f"Origine du segment {i+1}", value=st.session_state.segments[i]["origin_raw"], key=f"origin_input_{i}")
+        origin_raw = st.text_input(
+            f"Origine du segment {i+1}",
+            value=st.session_state.segments[i]["origin_raw"], key=f"origin_input_{i}"
+        )
         origin_suggestions = geocode_cached(origin_raw, limit=5) if origin_raw else []
         origin_options = [r['formatted'] for r in origin_suggestions] if origin_suggestions else []
         origin_sel = st.selectbox("Suggestions pour l'origine", origin_options or ["—"], index=0, key=f"origin_select_{i}")
         if origin_sel == "—":
             origin_sel = ""
+
     with c2:
-        dest_raw = st.text_input(f"Destination du segment {i+1}", value=st.session_state.segments[i]["dest_raw"], key=f"dest_input_{i}")
+        dest_raw = st.text_input(
+            f"Destination du segment {i+1}",
+            value=st.session_state.segments[i]["dest_raw"], key=f"dest_input_{i}"
+        )
         dest_suggestions = geocode_cached(dest_raw, limit=5) if dest_raw else []
         dest_options = [r['formatted'] for r in dest_suggestions] if dest_suggestions else []
         dest_sel = st.selectbox("Suggestions pour la destination", dest_options or ["—"], index=0, key=f"dest_select_{i}")
         if dest_sel == "—":
             dest_sel = ""
 
-    mode = st.selectbox(f"Mode de transport du segment {i+1}", list(factors.keys()),
-                        index=list(factors.keys()).index(st.session_state.segments[i]["mode"]) if st.session_state.segments[i]["mode"] in factors else 0,
-                        key=f"mode_{i}")
+    mode = st.selectbox(
+        f"Mode de transport du segment {i+1}",
+        list(factors.keys()),
+        index=list(factors.keys()).index(st.session_state.segments[i]["mode"])
+              if st.session_state.segments[i]["mode"] in factors else 0,
+        key=f"mode_{i}"
+    )
 
     if weight_mode == "Poids par segment":
         default_weight = st.session_state.segments[i]["weight"]
-        weight_val = st.number_input(f"Poids transporté pour le segment {i+1}", min_value=0.001, value=float(default_weight),
-                                     step=100.0 if unit=="kg" else 0.1, key=f"weight_{i}")
+        weight_val = st.number_input(
+            f"Poids transporté pour le segment {i+1}",
+            min_value=0.001, value=float(default_weight),
+            step=100.0 if unit == "kg" else 0.1, key=f"weight_{i}"
+        )
     else:
         default_weight = st.session_state.segments[0]["weight"]
         if i == 0:
-            weight_val = st.number_input(f"Poids transporté (appliqué à tous les segments)", min_value=0.001, value=float(default_weight),
-                                         step=100.0 if unit=="kg" else 0.1, key=f"weight_{i}")
+            weight_val = st.number_input(
+                f"Poids transporté (appliqué à tous les segments)",
+                min_value=0.001, value=float(default_weight),
+                step=100.0 if unit == "kg" else 0.1, key=f"weight_{i}"
+            )
         else:
             weight_val = st.session_state.get("weight_0", default_weight)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
+    # Maj state
     st.session_state.segments[i] = {
         "origin_raw": origin_raw, "origin_sel": origin_sel,
         "dest_raw": dest_raw, "dest_sel": dest_sel,
@@ -239,13 +294,12 @@ for i in range(num_legs):
     })
 
 # =========================
-# 🧮 Calcul
+# 🧮 Calcul + Carte
 # =========================
 if st.button("Calculer l'empreinte carbone totale"):
     rows = []
     total_emissions = 0.0
     total_distance = 0.0
-
     with st.spinner("Calcul en cours…"):
         for idx, seg in enumerate(segments_out, start=1):
             if not seg["origin"] or not seg["destination"]:
@@ -259,10 +313,13 @@ if st.button("Calculer l'empreinte carbone totale"):
                 st.error(f"Segment {idx} : lieu introuvable ou ambigu.")
                 continue
 
-            # --- Distance: OSRM pour Routier, sinon grand-cercle
+            # --- Distance: OSRM + géométrie pour Routier, sinon grand-cercle
+            route_coords = None  # liste de [lon, lat]
             if seg["mode"].startswith("Routier"):
                 try:
-                    distance_km = osrm_distance_km(coord1, coord2, osrm_base_url)
+                    r = osrm_route(coord1, coord2, osrm_base_url, overview="full")
+                    distance_km = r["distance_km"]
+                    route_coords = r["coords"]
                 except Exception as e:
                     st.warning(f"Segment {idx}: OSRM indisponible ({e}). Distance à vol d’oiseau utilisée.")
                     distance_km = compute_distance_km(coord1, coord2)
@@ -287,31 +344,92 @@ if st.button("Calculer l'empreinte carbone totale"):
                 "Émissions (kg CO₂e)": round(emissions, 2),
                 "lat_o": coord1[0], "lon_o": coord1[1],
                 "lat_d": coord2[0], "lon_d": coord2[1],
+                "route_coords": route_coords,   # polyline OSRM si disponible
             })
 
+    # ---- Résultats
     if rows:
         df = pd.DataFrame(rows)
-        st.success(f"✅ {len(rows)} segment(s) calculé(s) • Distance totale : **{total_distance:.1f} km** • Émissions totales : **{total_emissions:.2f} kg CO₂e**")
+        st.success(
+            f"✅ {len(rows)} segment(s) calculé(s) • Distance totale : **{total_distance:.1f} km** • "
+            f"Émissions totales : **{total_emissions:.2f} kg CO₂e**"
+        )
 
-        st.dataframe(df[["Segment", "Origine", "Destination", "Mode", "Distance (km)", f"Poids ({unit})", "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"]], use_container_width=True)
+        # Tableau
+        st.dataframe(
+            df[["Segment", "Origine", "Destination", "Mode", "Distance (km)",
+                f"Poids ({unit})", "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"]],
+            use_container_width=True
+        )
 
+        # Carte avec polylines OSRM (PathLayer) + fallback (LineLayer)
         st.subheader("🗺️ Carte des segments")
-        layers = []
+
+        # Données pour PathLayer (routier avec géométrie OSRM)
+        route_paths = []
         for r in rows:
+            if r["Mode"].startswith("Routier") and r.get("route_coords"):
+                route_paths.append({
+                    "path": r["route_coords"],   # [[lon, lat], ...]
+                    "name": f"Segment {r['Segment']} - {r['Mode']}",
+                })
+
+        layers = []
+
+        # 1) Polyline routière exacte (OSRM)
+        if route_paths:
             layers.append(pdk.Layer(
-                "LineLayer",
-                data=[{"from": [r["lon_o"], r["lat_o"]], "to": [r["lon_d"], r["lat_d"]]}],
-                get_source_position="from",
-                get_target_position="to",
-                get_width=4,
-                get_color=[187, 147, 87, 160],
+                "PathLayer",
+                data=route_paths,
+                get_path="path",
+                get_color=[187, 147, 87, 220],   # #BB9357 avec alpha
+                width_scale=1,
+                width_min_pixels=4,
                 pickable=True,
             ))
-        midpoint = [sum([r["lat_o"] for r in rows]) / len(rows), sum([r["lon_o"] for r in rows]) / len(rows)]
-        r_view = pdk.ViewState(latitude=midpoint[0], longitude=midpoint[1], zoom=2)
-        st.pydeck_chart(pdk.Deck(map_style="mapbox://styles/mapbox/light-v9", initial_view_state=r_view, layers=layers))
 
-        csv = df.drop(columns=["lat_o","lon_o","lat_d","lon_d"]).to_csv(index=False).encode("utf-8")
+        # 2) Lignes droites pour les segments restants
+        straight_lines = []
+        for r in rows:
+            if not (r["Mode"].startswith("Routier") and r.get("route_coords")):
+                straight_lines.append({
+                    "from": [r["lon_o"], r["lat_o"]],
+                    "to":   [r["lon_d"], r["lat_d"]],
+                    "name": f"Segment {r['Segment']} - {r['Mode']}",
+                })
+        if straight_lines:
+            layers.append(pdk.Layer(
+                "LineLayer",
+                data=straight_lines,
+                get_source_position="from",
+                get_target_position="to",
+                get_width=3,
+                get_color=[120, 120, 120, 160],
+                pickable=True,
+            ))
+
+        # Vue centrée (moyenne simple des points)
+        if route_paths and any(d["path"] for d in route_paths):
+            all_lats = [pt[1] for d in route_paths for pt in d["path"]]
+            all_lons = [pt[0] for d in route_paths for pt in d["path"]]
+        else:
+            all_lats = [r["lat_o"] for r in rows] + [r["lat_d"] for r in rows]
+            all_lons = [r["lon_o"] for r in rows] + [r["lon_d"] for r in rows]
+
+        mid_lat = sum(all_lats) / len(all_lats)
+        mid_lon = sum(all_lons) / len(all_lons)
+
+        view = pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=3)
+
+        st.pydeck_chart(pdk.Deck(
+            map_style="mapbox://styles/mapbox/light-v9",  # nécessite une clé Mapbox si vous en utilisez une
+            initial_view_state=view,
+            layers=layers,
+            tooltip={"text": "{name}"}
+        ))
+
+        # Export CSV (sans colonnes techniques)
+        csv = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).to_csv(index=False).encode("utf-8")
         st.download_button("⬇️ Télécharger le détail (CSV)", data=csv, file_name="resultats_co2_multimodal.csv", mime="text/csv")
 
     else:
