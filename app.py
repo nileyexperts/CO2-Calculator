@@ -17,7 +17,7 @@ geocoder = OpenCageGeocode(API_KEY)
 
 st.markdown("""
     <div style='background-color:#002E49;padding:20px;border-radius:10px'>
-        <h1 style='color:white;text-align:center;'> Calculateur d'empreinte carbone multimodal NILEY EXPERTS</h1>
+        <h1 style='color:white;text-align:center;'> Calculateur d'empreinte carbone multimodal - NILEY EXPERTS</h1>
     </div>
 """, unsafe_allow_html=True)
 
