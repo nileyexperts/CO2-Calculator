@@ -3,6 +3,18 @@ import streamlit as st
 from opencage.geocoder import OpenCageGeocode
 from geopy.distance import great_circle
 
+# Ajout de l'image de fond depuis GitHub
+st.markdown("""
+    <style>
+    .stApp {
+        background-image: url("https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/background.png");
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # Facteurs d'émission en kg CO2e par tonne.km
 EMISSION_FACTORS = {
     "Routier 🚚": 0.100,
@@ -22,7 +34,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown("""
-
 <style>
 .segment-box {
     background-color: #DFEDF5;
@@ -54,14 +65,6 @@ st.markdown("""
     border: 2px solid #BB9357;
     border-radius: 5px;
 }
-</style>
-<style>
-    .segment-box {
-        background-color: #DFEDF5;
-        padding: 15px;
-        border-radius: 10px;
-        margin-bottom: 10px;
-    }
 </style>
 """, unsafe_allow_html=True)
 
