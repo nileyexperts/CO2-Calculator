@@ -45,7 +45,10 @@ for i in range(num_legs):
     origin = st.text_input(f"Origine du segment {i+1}", key=f"origin_{i}")
     destination = st.text_input(f"Destination du segment {i+1}", key=f"dest_{i}")
     mode = st.selectbox(f"Mode de transport du segment {i+1}", list(EMISSION_FACTORS.keys()), key=f"mode_{i}")
-    weight_kg = st.number_input(f"Poids transporté (kg) pour le segment {i+1}", min_value=1.0, value=1000.0, key=f"weight_{i}")
+    if i == 0:
+        weight_kg = st.number_input(f"Poids transporté (kg) pour le segment {i+1}", min_value=1.0, value=1000.0, key=f"weight_{i}")
+    else:
+        weight_kg = st.session_state.get('weight_0', 1000.0)
     st.markdown("</div>", unsafe_allow_html=True)
 
     segments.append({
