@@ -75,14 +75,14 @@ num_legs = st.number_input("Nombre de segments de transport", min_value=1, max_v
 
 for i in range(num_legs):
     st.markdown(f"<div class='segment-box'><h4>Segment {i+1}</h4>", unsafe_allow_html=True)
-origin_input = st.text_input(f"Origine du segment {i+1}", key=f"origin_input_{i}")
-origin_suggestions = geocoder.geocode(origin_input, no_annotations=1, limit=5) if origin_input else []
-origin_options = [result['formatted'] for result in origin_suggestions] if origin_suggestions else []
-origin = st.selectbox(f"Suggestions pour l'origine", origin_options, key=f"origin_select_{i}") if origin_options else origin_input
-dest_input = st.text_input(f"Destination du segment {i+1}", key=f"dest_input_{i}")
-dest_suggestions = geocoder.geocode(dest_input, no_annotations=1, limit=5) if dest_input else []
-dest_options = [result['formatted'] for result in dest_suggestions] if dest_suggestions else []
-destination = st.selectbox(f"Suggestions pour la destination", dest_options, key=f"dest_select_{i}") if dest_options else dest_input
+    origin_input = st.text_input(f"Origine du segment {i+1}", key=f"origin_input_{i}")
+    origin_suggestions = geocoder.geocode(origin_input, no_annotations=1, limit=5) if origin_input else []
+    origin_options = [result['formatted'] for result in origin_suggestions] if origin_suggestions else []
+    origin = st.selectbox(f"Suggestions pour l'origine", origin_options, key=f"origin_select_{i}") if origin_options else origin_input
+    dest_input = st.text_input(f"Destination du segment {i+1}", key=f"dest_input_{i}")
+    dest_suggestions = geocoder.geocode(dest_input, no_annotations=1, limit=5) if dest_input else []
+    dest_options = [result['formatted'] for result in dest_suggestions] if dest_suggestions else []
+    destination = st.selectbox(f"Suggestions pour la destination", dest_options, key=f"dest_select_{i}") if dest_options else dest_input
     mode = st.selectbox(f"Mode de transport du segment {i+1}", list(EMISSION_FACTORS.keys()), key=f"mode_{i}")
     if i == 0:
         weight_kg = st.number_input(f"Poids transporté (kg) pour le segment {i+1}", min_value=1.0, value=1000.0, key=f"weight_{i}")
