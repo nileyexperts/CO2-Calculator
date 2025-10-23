@@ -1,4 +1,23 @@
 
+st.markdown("""
+<style>
+body {
+    background-color: #002E49;
+    color: white;
+    font-family: 'Maven Pro', Arial, sans-serif;
+}
+.segment-box {
+    background-color: #DFEDF5;
+    border: 2px solid #BB9357;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 15px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    color: #002E49;
+}
+</style>
+""", unsafe_allow_html=True)
+
 import streamlit as st
 from opencage.geocoder import OpenCageGeocode
 from geopy.distance import great_circle
@@ -45,10 +64,7 @@ for i in range(num_legs):
     origin = st.text_input(f"Origine du segment {i+1}", key=f"origin_{i}")
     destination = st.text_input(f"Destination du segment {i+1}", key=f"dest_{i}")
     mode = st.selectbox(f"Mode de transport du segment {i+1}", list(EMISSION_FACTORS.keys()), key=f"mode_{i}")
-    if i == 0:
-        weight_kg = st.number_input(f"Poids transporté (kg) pour le segment {i+1}", min_value=1.0, value=1000.0, key=f"weight_{i}")
-    else:
-        weight_kg = st.session_state.get('weight_0', 1000.0)
+    weight_kg = st.number_input(f"Poids transporté (kg) pour le segment {i+1}", min_value=1.0, value=1000.0, key=f"weight_{i}")
     st.markdown("</div>", unsafe_allow_html=True)
 
     segments.append({
