@@ -78,4 +78,3 @@ if st.button("Calculer l'empreinte carbone totale"):
             st.error(f"Erreur dans le segment {idx+1} : {e}")
 
     st.markdown(f"#### 🌍 Émissions totales estimées : {total_emissions:.2f} kg CO₂e", unsafe_allow_html=True)
-``
