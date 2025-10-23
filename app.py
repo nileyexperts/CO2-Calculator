@@ -3,9 +3,10 @@
 # Calculateur CO2 multimodal - NILEY EXPERTS
 # - Géocodage OpenCage
 # - Distance routière via OSRM + polyline sur la carte
-# - Fond recentré, couleur d'origine
+# - Fond recentré, couleur d'origine + texte explicatif clair
 # - Facteurs d'émission éditables, poids global ou par segment
 # - Carte PyDeck (PathLayer pour routes OSRM, LineLayer en fallback)
+# - Correctif: utilisation de st.rerun() (plus de st.experimental_rerun())
 # ------------------------------------------------------------
 
 import os
@@ -173,14 +174,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================
-# 🔄 Reset
+# 🔄 Reset (correctif: st.rerun)
 # =========================
 col_r, col_dummy = st.columns([1,4])
 with col_r:
     if st.button("🔄 Réinitialiser le formulaire"):
         st.cache_data.clear()
         st.session_state.clear()
-        st.experimental_rerun()
+        # ✅ Correctif: utiliser st.rerun (plus de st.experimental_rerun)
+        st.rerun()
 
 # =========================
 # ⚙️ Paramètres
@@ -197,7 +199,7 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
     unit = st.radio("Unité de saisie du poids", ["kg", "tonnes"], index=0, horizontal=True)
 
     st.markdown("**OSRM** – pour test : `https://router.project-osrm.org` (serveur démo public, non garanti). "
-                "En production, utilisez un serveur **auto‑hébergé** ou un provider (risque de réponses **429**).")
+                "En production, utilisez un serveur **auto‑hébergé** ou un provider (des réponses **429** sont possibles).")
     osrm_base_url = st.text_input(
         "Endpoint OSRM",
         value=st.session_state.get("osrm_base_url", "https://router.project-osrm.org"),
