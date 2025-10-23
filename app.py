@@ -2,13 +2,10 @@
 # ------------------------------------------------------------
 # Calculateur CO2 multimodal - NILEY EXPERTS
 # - Géocodage OpenCage
-# - Distance routière réaliste via OSRM (+ polyline sur la carte)
-# - Fond visuel adouci
+# - Distance routière via OSRM + polyline sur la carte
+# - Fond recentré, couleur d'origine
 # - Facteurs d'émission éditables, poids global ou par segment
-# - Carte PyDeck (PathLayer pour les routes OSRM, LineLayer en fallback)
-# ------------------------------------------------------------
-# Dépendances: streamlit, opencage, geopy, requests, pandas, pydeck
-# Secrets requis: OPENCAGE_KEY (Streamlit secrets ou variable d'env)
+# - Carte PyDeck (PathLayer pour routes OSRM, LineLayer en fallback)
 # ------------------------------------------------------------
 
 import os
@@ -32,22 +29,33 @@ DEFAULT_EMISSION_FACTORS = {
 
 BACKGROUND_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/background.png"
 
-st.set_page_config(page_title="Calculateur CO₂ multimodal - NILEY EXPERTS", page_icon="🌍", layout="centered")
+st.set_page_config(page_title="Calculateur CO₂ multimodal - NILEY EXPERTS",
+                   page_icon="🌍", layout="centered")
 
 # =========================
-# 🎨 Styles (fond moins étendu)
+# 🎨 Styles (fond recentré, couleur d'origine)
 # =========================
 st.markdown(f"""
 <style>
+/* 🖼️ Image de fond : centrée, couleur d'origine (pas de voile) */
 .stApp {{
-  background-image:
-    linear-gradient(rgba(255,255,255,0.82), rgba(255,255,255,0.82)),
-    url("{BACKGROUND_URL}");
-  background-size: 1200px auto;    /* réduit l'extension visuelle */
+  background-image: url("{BACKGROUND_URL}");
+  background-size: 1200px auto;     /* largeur fixe confortable sur desktop */
   background-repeat: no-repeat;
-  background-position: top right;
-  background-attachment: scroll;
+  background-position: top center;   /* recentré */
+  background-attachment: scroll;     /* moins envahissant au scroll */
 }}
+
+/* 🎯 Conteneur de contenu : fond blanc léger pour lisibilité */
+.main .block-container {{
+  background: rgba(255,255,255,0.95);
+  border-radius: 10px;
+  padding: 1.2rem 1.2rem 1.6rem;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+  max-width: 960px;
+}}
+
+/* 🧩 Cartouches segments + contrôles (couleurs d'origine NILEY) */
 .segment-box {{
   background-color: #DFEDF5;
   padding: 15px; border-radius: 10px; margin-bottom: 10px;
@@ -63,13 +71,8 @@ st.markdown(f"""
 .stSelectbox > div > div {{
   background-color: #DFEDF5 !important; border: 2px solid #BB9357; border-radius: 5px;
 }}
-.main .block-container {{
-  background: rgba(255,255,255,0.92);
-  border-radius: 10px;
-  padding: 1.2rem 1.2rem 1.6rem;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
-  max-width: 960px;
-}}
+
+/* 📱 Responsive : fond plus petit sur mobile */
 @media (max-width: 768px) {{
   .stApp {{ background-size: 900px auto; }}
 }}
@@ -77,7 +80,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # =========================
-# 🧰 Utils
+# 🧰 Utilitaires
 # =========================
 def read_secret(key: str, default: str = "") -> str:
     if "secrets" in dir(st) and key in st.secrets:
@@ -118,7 +121,6 @@ def osrm_route(coord1, coord2, base_url: str, overview: str = "full"):
     - coord1/coord2: (lat, lon)
     - base_url: ex. https://router.project-osrm.org
     Utilise: overview=full, geometries=geojson, alternatives=false, annotations=false
-    (cf. documentation officielle OSRM Route Service).
     """
     # OSRM attend lon,lat
     lon1, lat1 = coord1[1], coord1[0]
@@ -153,15 +155,22 @@ if not API_KEY:
 geocoder = OpenCageGeocode(API_KEY)
 
 # =========================
-# 🏷️ Header
+# 🏷️ En-tête & Texte explicatif (clair)
 # =========================
 st.markdown("""
 <div style='background-color:#002E49;padding:20px;border-radius:10px'>
-<h1 style='color:white;text-align:center;margin:0'>Calculateur d'empreinte carbone multimodal - NILEY EXPERTS</h1>
+  <h1 style='color:white;text-align:center;margin:0'>
+    Calculateur d'empreinte carbone multimodal - NILEY EXPERTS
+  </h1>
 </div>
 """, unsafe_allow_html=True)
-st.write("Ajoutez plusieurs segments (origine → destination), choisissez le mode et le poids. "
-         "Le mode **Routier** utilise désormais **OSRM** (distance réelle + tracé sur la carte).")
+
+st.markdown("""
+<div style="text-align:center; color:#f2f7fb; font-weight:500; margin-top:6px;">
+  Ajoutez plusieurs segments (origine → destination), choisissez le mode et le poids.
+  Le mode <strong>Routier</strong> utilise <strong>OSRM</strong> (distance réelle + tracé).
+</div>
+""", unsafe_allow_html=True)
 
 # =========================
 # 🔄 Reset
@@ -188,7 +197,7 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
     unit = st.radio("Unité de saisie du poids", ["kg", "tonnes"], index=0, horizontal=True)
 
     st.markdown("**OSRM** – pour test : `https://router.project-osrm.org` (serveur démo public, non garanti). "
-                "En production, utilisez un serveur **auto‑hébergé** ou un provider (risque de réponses **429** sur le démo).")
+                "En production, utilisez un serveur **auto‑hébergé** ou un provider (risque de réponses **429**).")
     osrm_base_url = st.text_input(
         "Endpoint OSRM",
         value=st.session_state.get("osrm_base_url", "https://router.project-osrm.org"),
@@ -300,14 +309,15 @@ if st.button("Calculer l'empreinte carbone totale"):
     rows = []
     total_emissions = 0.0
     total_distance = 0.0
+
     with st.spinner("Calcul en cours…"):
         for idx, seg in enumerate(segments_out, start=1):
             if not seg["origin"] or not seg["destination"]:
                 st.warning(f"Segment {idx} : origine/destination manquante(s).")
                 continue
 
-            coord1 = coords_from_formatted(seg["origin"]) or coords_from_formatted(seg["origin"])
-            coord2 = coords_from_formatted(seg["destination"]) or coords_from_formatted(seg["destination"])
+            coord1 = coords_from_formatted(seg["origin"])
+            coord2 = coords_from_formatted(seg["destination"])
 
             if not coord1 or not coord2:
                 st.error(f"Segment {idx} : lieu introuvable ou ambigu.")
@@ -344,7 +354,7 @@ if st.button("Calculer l'empreinte carbone totale"):
                 "Émissions (kg CO₂e)": round(emissions, 2),
                 "lat_o": coord1[0], "lon_o": coord1[1],
                 "lat_d": coord2[0], "lon_d": coord2[1],
-                "route_coords": route_coords,   # polyline OSRM si disponible
+                "route_coords": route_coords,   # polyline OSRM si dispo
             })
 
     # ---- Résultats
@@ -362,7 +372,7 @@ if st.button("Calculer l'empreinte carbone totale"):
             use_container_width=True
         )
 
-        # Carte avec polylines OSRM (PathLayer) + fallback (LineLayer)
+        # Carte : PathLayer (OSRM) + LineLayer (fallback)
         st.subheader("🗺️ Carte des segments")
 
         # Données pour PathLayer (routier avec géométrie OSRM)
@@ -422,7 +432,7 @@ if st.button("Calculer l'empreinte carbone totale"):
         view = pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=3)
 
         st.pydeck_chart(pdk.Deck(
-            map_style="mapbox://styles/mapbox/light-v9",  # nécessite une clé Mapbox si vous en utilisez une
+            map_style="mapbox://styles/mapbox/light-v9",  # peut nécessiter une clé Mapbox pour le fond de carte
             initial_view_state=view,
             layers=layers,
             tooltip={"text": "{name}"}
@@ -430,7 +440,8 @@ if st.button("Calculer l'empreinte carbone totale"):
 
         # Export CSV (sans colonnes techniques)
         csv = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Télécharger le détail (CSV)", data=csv, file_name="resultats_co2_multimodal.csv", mime="text/csv")
+        st.download_button("⬇️ Télécharger le détail (CSV)", data=csv,
+                           file_name="resultats_co2_multimodal.csv", mime="text/csv")
 
     else:
         st.info("Aucun segment valide n’a été calculé. Vérifie les entrées ou les sélections.")
