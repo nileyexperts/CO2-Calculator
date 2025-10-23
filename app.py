@@ -7,6 +7,7 @@
 # - Facteurs d'émission éditables, poids global ou par segment
 # - Carte PyDeck (PathLayer pour routes OSRM, LineLayer en fallback)
 # - Correctif: utilisation de st.rerun() (plus de st.experimental_rerun())
+# - Nouveauté: reset_form() pour vider explicitement tous les champs
 # ------------------------------------------------------------
 
 import os
@@ -29,6 +30,7 @@ DEFAULT_EMISSION_FACTORS = {
 }
 
 BACKGROUND_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/background.png"
+MAX_SEGMENTS = 10  # utilisé pour nettoyer toutes les clés potentielles
 
 st.set_page_config(page_title="Calculateur CO₂ multimodal - NILEY EXPERTS",
                    page_icon="🌍", layout="centered")
@@ -146,6 +148,37 @@ def osrm_route(coord1, coord2, base_url: str, overview: str = "full"):
     coords = geom.get("coordinates", [])  # [[lon, lat], ...]
     return {"distance_km": distance_km, "coords": coords}
 
+def reset_form(max_segments: int = MAX_SEGMENTS):
+    """
+    Vide explicitement tous les champs et l'état :
+    - supprime les clés de widgets (origin/dest input & select, mode, weight)
+    - réinitialise la structure 'segments'
+    - purge le cache de données
+    - relance l'app
+    """
+    # Supprimer les clés de widgets potentielles
+    widget_keys = []
+    for i in range(max_segments):
+        widget_keys.extend([
+            f"origin_input_{i}", f"origin_select_{i}",
+            f"dest_input_{i}",   f"dest_select_{i}",
+            f"mode_{i}",         f"weight_{i}",
+        ])
+    for k in widget_keys:
+        if k in st.session_state:
+            del st.session_state[k]
+
+    # Réinitialiser les données d'app
+    for k in ["segments", "osrm_base_url", "weight_0"]:
+        if k in st.session_state:
+            del st.session_state[k]
+
+    # Purger le cache (géocodage, routes, etc.)
+    st.cache_data.clear()
+
+    # Relancer l'app
+    st.rerun()
+
 # =========================
 # 🔐 API OpenCage
 # =========================
@@ -174,15 +207,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================
-# 🔄 Reset (correctif: st.rerun)
+# 🔄 Reset (utilise reset_form)
 # =========================
 col_r, col_dummy = st.columns([1,4])
 with col_r:
     if st.button("🔄 Réinitialiser le formulaire"):
-        st.cache_data.clear()
-        st.session_state.clear()
-        # ✅ Correctif: utiliser st.rerun (plus de st.experimental_rerun)
-        st.rerun()
+        reset_form()
 
 # =========================
 # ⚙️ Paramètres
@@ -198,13 +228,13 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
         )
     unit = st.radio("Unité de saisie du poids", ["kg", "tonnes"], index=0, horizontal=True)
 
-    st.markdown("**OSRM** – pour test : `https://router.project-osrm.org` (serveur démo public, non garanti). "
-                "En production, utilisez un serveur **auto‑hébergé** ou un provider (des réponses **429** sont possibles).")
-    osrm_base_url = st.text_input(
-        "Endpoint OSRM",
-        value=st.session_state.get("osrm_base_url", "https://router.project-osrm.org"),
-        help="Ex: https://router.project-osrm.org ou votre propre serveur OSRM"
-    )
+    osrm_help = ("**OSRM** – pour test : `https://router.project-osrm.org` (serveur démo, non garanti). "
+                 "En production, utilisez un serveur auto‑hébergé ou un provider.")
+    st.markdown(osrm_help)
+
+    osrm_default = st.session_state.get("osrm_base_url", "https://router.project-osrm.org")
+    osrm_base_url = st.text_input("Endpoint OSRM", value=osrm_default,
+                                  help="Ex: https://router.project-osrm.org ou votre propre serveur OSRM")
     st.session_state["osrm_base_url"] = osrm_base_url
 
 # =========================
@@ -214,7 +244,7 @@ if "segments" not in st.session_state:
     st.session_state.segments = []
 
 num_legs = st.number_input(
-    "Nombre de segments de transport", min_value=1, max_value=10,
+    "Nombre de segments de transport", min_value=1, max_value=MAX_SEGMENTS,
     value=max(1, len(st.session_state.segments) or 1), step=1
 )
 
@@ -228,7 +258,7 @@ while len(st.session_state.segments) > num_legs:
     st.session_state.segments.pop()
 
 # Chaînage auto origine[i] = destination[i-1]
-for i in range(1, num_legs):
+for i in range(1, int(num_legs)):
     prev = st.session_state.segments[i-1]
     cur = st.session_state.segments[i]
     if prev.get("dest_sel") and not cur.get("origin_raw") and not cur.get("origin_sel"):
@@ -236,7 +266,7 @@ for i in range(1, num_legs):
         cur["origin_sel"] = prev["dest_sel"]
 
 segments_out = []
-for i in range(num_legs):
+for i in range(int(num_legs)):
     st.markdown(f"<div class='segment-box'><h4>Segment {i+1}</h4>", unsafe_allow_html=True)
 
     c1, c2 = st.columns(2)
@@ -286,6 +316,7 @@ for i in range(num_legs):
                 step=100.0 if unit == "kg" else 0.1, key=f"weight_{i}"
             )
         else:
+            # Pas d'input pour les suivants : on réutilise la valeur du segment 0 si présente
             weight_val = st.session_state.get("weight_0", default_weight)
 
     st.markdown("</div>", unsafe_allow_html=True)
@@ -329,7 +360,7 @@ if st.button("Calculer l'empreinte carbone totale"):
             route_coords = None  # liste de [lon, lat]
             if seg["mode"].startswith("Routier"):
                 try:
-                    r = osrm_route(coord1, coord2, osrm_base_url, overview="full")
+                    r = osrm_route(coord1, coord2, st.session_state["osrm_base_url"], overview="full")
                     distance_km = r["distance_km"]
                     route_coords = r["coords"]
                 except Exception as e:
