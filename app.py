@@ -39,7 +39,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="title">🧭 Calculateur d'empreinte carbone multimodal</div>', unsafe_allow_html=True)
+st.markdown("<div class='title'>🧭 Calculateur d'empreinte carbone multimodal</div>", unsafe_allow_html=True)
 st.markdown("""
 Ce calculateur vous permet d'estimer les émissions de CO₂e pour un trajet composé de plusieurs segments de transport.
 """)
