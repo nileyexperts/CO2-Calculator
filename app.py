@@ -1,4 +1,3 @@
-
 import streamlit as st
 from opencage.geocoder import OpenCageGeocode
 from geopy.distance import great_circle
@@ -15,21 +14,29 @@ EMISSION_FACTORS = {
 API_KEY = st.secrets["OPENCAGE_KEY"]
 geocoder = OpenCageGeocode(API_KEY)
 
-st.markdown("""
-    <div style='background-color:#002E49;padding:20px;border-radius:10px'>
-        <h1 style='color:white;text-align:center;'>🧭 Calculateur d'empreinte carbone multimodal</h1>
-    </div>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-
+# CSS personnalisé
+custom_css = """
 <style>
+body {
+    background-color: #002E49;
+    color: white;
+}
+.header-container {
+    background-color: #002E49;
+    padding: 15px;
+    border-radius: 10px;
+    border: 2px solid #BB9357;
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+}
 .segment-box {
     background-color: #DFEDF5;
     padding: 15px;
     border-radius: 10px;
     margin-bottom: 10px;
     border: 2px solid #BB9357;
+    color: black;
 }
 .stButton > button {
     background-color: #BB9357;
@@ -39,11 +46,7 @@ st.markdown("""
     padding: 10px 20px;
     border: none;
 }
-.stTextInput > div > input {
-    background-color: #DFEDF5;
-    border: 2px solid #BB9357;
-    border-radius: 5px;
-}
+.stTextInput > div > input,
 .stNumberInput > div > input {
     background-color: #DFEDF5;
     border: 2px solid #BB9357;
@@ -55,16 +58,19 @@ st.markdown("""
     border-radius: 5px;
 }
 </style>
-<style>
-    .segment-box {
-        background-color: #DFEDF5;
-        padding: 15px;
-        border-radius: 10px;
-        margin-bottom: 10px;
-    }
-</style>
-""", unsafe_allow_html=True)
+"""
+st.markdown(custom_css, unsafe_allow_html=True)
 
+# En-tête avec logo depuis URL
+st.markdown('<div class="header-container">', unsafe_allow_html=True)
+col1, col2 = st.columns([1, 5])
+with col1:
+    st.image("https://share.google/images/T0RsDyGSJ46C1Nket", width=80)
+with col2:
+    st.markdown("## Calculateur d'empreinte carbone multimodal", unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
+
+# Description
 st.markdown("""
 Ce calculateur vous permet d'estimer les émissions de CO₂e pour un trajet multimodal.
 Ajoutez plusieurs segments de transport avec leur origine, destination, mode et poids.
@@ -74,7 +80,7 @@ segments = []
 num_legs = st.number_input("Nombre de segments de transport", min_value=1, max_value=10, value=1, step=1)
 
 for i in range(num_legs):
-    st.markdown(f"<div class='segment-box'><h4>Segment {i+1}</h4>", unsafe_allow_html=True)
+    st.markdown(f'<div class="segment-box"><h5>Segment {i+1}</h5>', unsafe_allow_html=True)
     origin = st.text_input(f"Origine du segment {i+1}", key=f"origin_{i}")
     destination = st.text_input(f"Destination du segment {i+1}", key=f"dest_{i}")
     mode = st.selectbox(f"Mode de transport du segment {i+1}", list(EMISSION_FACTORS.keys()), key=f"mode_{i}")
@@ -82,14 +88,8 @@ for i in range(num_legs):
         weight_kg = st.number_input(f"Poids transporté (kg) pour le segment {i+1}", min_value=1.0, value=1000.0, key=f"weight_{i}")
     else:
         weight_kg = st.session_state.get('weight_0', 1000.0)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    segments.append({
-        "origin": origin,
-        "destination": destination,
-        "mode": mode,
-        "weight_kg": weight_kg
-    })
+    st.markdown('</div>', unsafe_allow_html=True)
+    segments.append({"origin": origin, "destination": destination, "mode": mode, "weight_kg": weight_kg})
 
 if st.button("Calculer l'empreinte carbone totale"):
     total_emissions = 0
@@ -109,9 +109,4 @@ if st.button("Calculer l'empreinte carbone totale"):
             st.success(f"Segment {idx+1} : {distance_km:.1f} km, {emissions:.2f} kg CO₂e")
         except Exception as e:
             st.error(f"Erreur dans le segment {idx+1} : {e}")
-
-    st.markdown(f"""
-    <div style='background-color:#B89357;padding:15px;border-radius:10px;margin-top:20px'>
-        <h3 style='color:white;text-align:center;'>🌍 Émissions totales estimées : {total_emissions:.2f} kg CO₂e</h3>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"#### 🌍 Émissions totales estimées : {total_emissions:.2f} kg CO₂e")
