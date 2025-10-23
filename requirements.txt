@@ -1,3 +1,6 @@
-streamlit
-geopy
-opencage
+streamlit>=1.32.0
+opencage>=2.4.0
+geopy>=2.4.1
+requests>=2.31.0
+pandas>=2.2.0
+pydeck>=0.8.1b0
