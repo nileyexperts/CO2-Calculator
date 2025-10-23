@@ -15,18 +15,6 @@ EMISSION_FACTORS = {
 API_KEY = st.secrets["OPENCAGE_KEY"]
 geocoder = OpenCageGeocode(API_KEY)
 
-st.markdown('''
-<style>
-input[type="text"], input[type="number"], select {
-    background-color: #ffffff !important;
-    color: #000000 !important;
-    border: 2px solid #004080 !important;
-    border-radius: 5px !important;
-    padding: 5px !important;
-}
-</style>
-''', unsafe_allow_html=True)
-
 st.markdown("""
     <div style='background-color:#002E49;padding:20px;border-radius:10px'>
         <h1 style='color:white;text-align:center;'>🧭 Calculateur d'empreinte carbone multimodal</h1>
@@ -57,7 +45,10 @@ for i in range(num_legs):
     origin = st.text_input(f"Origine du segment {i+1}", key=f"origin_{i}")
     destination = st.text_input(f"Destination du segment {i+1}", key=f"dest_{i}")
     mode = st.selectbox(f"Mode de transport du segment {i+1}", list(EMISSION_FACTORS.keys()), key=f"mode_{i}")
-    weight_kg = st.number_input(f"Poids transporté (kg) pour le segment {i+1}", min_value=1.0, value=1000.0, key=f"weight_{i}")
+    if i == 0:
+        weight_kg = st.number_input(f"Poids transporté (kg) pour le segment {i+1}", min_value=1.0, value=1000.0, key="weight_0")
+    else:
+        weight_kg = st.session_state['weight_0']
     st.markdown("</div>", unsafe_allow_html=True)
 
     segments.append({
