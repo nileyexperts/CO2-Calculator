@@ -2,11 +2,13 @@
 import os
 import io
 import time
+import requests
 import pandas as pd
 import streamlit as st
 import pydeck as pdk
 from opencage.geocoder import OpenCageGeocode
 from geopy.distance import great_circle
+
 # =========================
 # 🎯 Paramètres par défaut
 # =========================
@@ -22,15 +24,18 @@ BACKGROUND_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/
 st.set_page_config(page_title="Calculateur CO₂ multimodal - NILEY EXPERTS", page_icon="🌍", layout="centered")
 
 # =========================
-# 🎨 Styles
+# 🎨 Styles (fond moins étendu)
 # =========================
 st.markdown(f"""
 <style>
 .stApp {{
-  background-image: url("{BACKGROUND_URL}");
-  background-size: cover;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.82), rgba(255,255,255,0.82)),
+    url("{BACKGROUND_URL}");
+  background-size: 1200px auto;    /* réduit l'extension visuelle */
   background-repeat: no-repeat;
-  background-attachment: fixed;
+  background-position: top right;
+  background-attachment: scroll;
 }}
 .segment-box {{
   background-color: #DFEDF5;
@@ -44,8 +49,18 @@ st.markdown(f"""
 .stTextInput > div > input, .stNumberInput > div > input {{
   background-color: #DFEDF5; border: 2px solid #BB9357; border-radius: 5px;
 }}
-.css-1dp5vir, .stSelectbox > div > div {{
+.stSelectbox > div > div {{
   background-color: #DFEDF5 !important; border: 2px solid #BB9357; border-radius: 5px;
+}}
+.main .block-container {{
+  background: rgba(255,255,255,0.92);
+  border-radius: 10px;
+  padding: 1.2rem 1.2rem 1.6rem;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+  max-width: 960px;
+}}
+@media (max-width: 768px) {{
+  .stApp {{ background-size: 900px auto; }}
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -54,7 +69,6 @@ st.markdown(f"""
 # 🧰 Utils
 # =========================
 def read_secret(key: str, default: str = "") -> str:
-    # Compatible local et cloud
     if "secrets" in dir(st) and key in st.secrets:
         return st.secrets[key]
     return os.getenv(key, default)
@@ -64,7 +78,6 @@ def geocode_cached(query: str, limit: int = 5):
     if not query:
         return []
     try:
-        # petite temporisation pour éviter de spammer en dev
         time.sleep(0.1)
         return geocoder.geocode(query, no_annotations=1, limit=limit) or []
     except Exception:
@@ -72,7 +85,6 @@ def geocode_cached(query: str, limit: int = 5):
 
 @st.cache_data(show_spinner=False, ttl=24*60*60)
 def coords_from_formatted(formatted: str):
-    # Re-géocode le libellé "formatted" sélectionné
     try:
         res = geocoder.geocode(formatted, no_annotations=1, limit=1)
         if res:
@@ -87,6 +99,25 @@ def compute_distance_km(coord1, coord2) -> float:
 
 def compute_emissions(distance_km: float, weight_tonnes: float, factor_kg_per_tkm: float) -> float:
     return distance_km * weight_tonnes * factor_kg_per_tkm
+
+@st.cache_data(show_spinner=False, ttl=6*60*60)
+def osrm_distance_km(coord1, coord2, base_url: str):
+    """
+    Distance routière (km) via OSRM /route/v1/driving.
+    Doc OSRM: profile 'driving', coords (lon,lat;lon,lat), distance en mètres.  [1](https://project-osrm.org/docs/v5.5.1/api/)
+    """
+    lon1, lat1 = coord1[1], coord1[0]
+    lon2, lat2 = coord2[1], coord2[0]
+    url = f"{base_url.rstrip('/')}/route/v1/driving/{lon1},{lat1};{lon2},{lat2}"
+    params = {"overview": "false", "alternatives": "false", "annotations": "false"}
+    r = requests.get(url, params=params, timeout=10)
+    r.raise_for_status()
+    data = r.json()
+    routes = data.get("routes", [])
+    if not routes:
+        raise ValueError("Aucune route retournée par OSRM")
+    meters = routes[0].get("distance", 0.0)
+    return meters / 1000.0
 
 # =========================
 # 🔐 API OpenCage
@@ -105,7 +136,7 @@ st.markdown("""
 <h1 style='color:white;text-align:center;margin:0'>Calculateur d'empreinte carbone multimodal - NILEY EXPERTS</h1>
 </div>
 """, unsafe_allow_html=True)
-st.write("Ajoutez plusieurs segments (origine → destination), choisissez le mode et le poids transporté. Les facteurs sont éditables.")
+st.write("Ajoutez plusieurs segments (origine → destination), choisissez le mode et le poids. Le mode **Routier** utilise désormais **OSRM** (distance réelle).")
 
 # =========================
 # 🔄 Reset
@@ -120,13 +151,21 @@ with col_r:
 # =========================
 # ⚙️ Paramètres
 # =========================
-with st.expander("⚙️ Paramètres et facteurs d'émission"):
+with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
     default_mode = "Envoi unique (même poids sur tous les segments)"
     weight_mode = st.radio("Mode de gestion du poids :", [default_mode, "Poids par segment"], horizontal=False)
     factors = {}
     for mode, val in DEFAULT_EMISSION_FACTORS.items():
         factors[mode] = st.number_input(f"Facteur {mode} (kg CO₂e / tonne.km)", min_value=0.0, value=float(val), step=0.001, format="%.3f", key=f"factor_{mode}")
     unit = st.radio("Unité de saisie du poids", ["kg", "tonnes"], index=0, horizontal=True)
+
+    st.markdown("**OSRM** – pour test : `https://router.project-osrm.org` (démo publique, pas de garanties). En production, utilisez un serveur **auto‑hébergé** ou un provider.  \nDes limites et réponses 429 peuvent survenir sur le démo. [2](https://github.com/Project-OSRM/osrm-backend/issues/1027)[3](https://stackoverflow.com/questions/48474423/leaflet-routing-machine-usage-limits)")
+    osrm_base_url = st.text_input(
+        "Endpoint OSRM",
+        value=st.session_state.get("osrm_base_url", "https://router.project-osrm.org"),
+        help="Ex: https://router.project-osrm.org ou votre propre serveur OSRM"
+    )
+    st.session_state["osrm_base_url"] = osrm_base_url
 
 # =========================
 # 🧩 Saisie des segments
@@ -136,13 +175,11 @@ if "segments" not in st.session_state:
 
 num_legs = st.number_input("Nombre de segments de transport", min_value=1, max_value=10, value=max(1, len(st.session_state.segments) or 1), step=1)
 
-# Ajuste la taille de la liste des segments dans le state
 while len(st.session_state.segments) < num_legs:
     st.session_state.segments.append({"origin_raw": "", "origin_sel": "", "dest_raw": "", "dest_sel": "", "mode": "Routier 🚚", "weight": 1000.0})
 while len(st.session_state.segments) > num_legs:
     st.session_state.segments.pop()
 
-# Chaînage auto: si un segment (i-1) a une destination sélectionnée, préremplir l'origine i
 for i in range(1, num_legs):
     prev = st.session_state.segments[i-1]
     cur = st.session_state.segments[i]
@@ -170,22 +207,24 @@ for i in range(num_legs):
         if dest_sel == "—":
             dest_sel = ""
 
-    mode = st.selectbox(f"Mode de transport du segment {i+1}", list(factors.keys()), index=list(factors.keys()).index(st.session_state.segments[i]["mode"]) if st.session_state.segments[i]["mode"] in factors else 0, key=f"mode_{i}")
+    mode = st.selectbox(f"Mode de transport du segment {i+1}", list(factors.keys()),
+                        index=list(factors.keys()).index(st.session_state.segments[i]["mode"]) if st.session_state.segments[i]["mode"] in factors else 0,
+                        key=f"mode_{i}")
 
     if weight_mode == "Poids par segment":
         default_weight = st.session_state.segments[i]["weight"]
-        weight_val = st.number_input(f"Poids transporté pour le segment {i+1}", min_value=0.001, value=float(default_weight), step=100.0 if unit=="kg" else 0.1, key=f"weight_{i}")
+        weight_val = st.number_input(f"Poids transporté pour le segment {i+1}", min_value=0.001, value=float(default_weight),
+                                     step=100.0 if unit=="kg" else 0.1, key=f"weight_{i}")
     else:
-        # envoi unique : on prend le poids du segment 0
         default_weight = st.session_state.segments[0]["weight"]
         if i == 0:
-            weight_val = st.number_input(f"Poids transporté (appliqué à tous les segments)", min_value=0.001, value=float(default_weight), step=100.0 if unit=="kg" else 0.1, key=f"weight_{i}")
+            weight_val = st.number_input(f"Poids transporté (appliqué à tous les segments)", min_value=0.001, value=float(default_weight),
+                                         step=100.0 if unit=="kg" else 0.1, key=f"weight_{i}")
         else:
             weight_val = st.session_state.get("weight_0", default_weight)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # maj state
     st.session_state.segments[i] = {
         "origin_raw": origin_raw, "origin_sel": origin_sel,
         "dest_raw": dest_raw, "dest_sel": dest_sel,
@@ -212,6 +251,7 @@ if st.button("Calculer l'empreinte carbone totale"):
             if not seg["origin"] or not seg["destination"]:
                 st.warning(f"Segment {idx} : origine/destination manquante(s).")
                 continue
+
             coord1 = coords_from_formatted(seg["origin"]) or coords_from_formatted(seg["origin"])
             coord2 = coords_from_formatted(seg["destination"]) or coords_from_formatted(seg["destination"])
 
@@ -219,7 +259,15 @@ if st.button("Calculer l'empreinte carbone totale"):
                 st.error(f"Segment {idx} : lieu introuvable ou ambigu.")
                 continue
 
-            distance_km = compute_distance_km(coord1, coord2)
+            # --- Distance: OSRM pour Routier, sinon grand-cercle
+            if seg["mode"].startswith("Routier"):
+                try:
+                    distance_km = osrm_distance_km(coord1, coord2, osrm_base_url)
+                except Exception as e:
+                    st.warning(f"Segment {idx}: OSRM indisponible ({e}). Distance à vol d’oiseau utilisée.")
+                    distance_km = compute_distance_km(coord1, coord2)
+            else:
+                distance_km = compute_distance_km(coord1, coord2)
 
             weight_tonnes = seg["weight"] if unit == "tonnes" else seg["weight"]/1000.0
             factor = float(factors.get(seg["mode"], 0.0))
@@ -241,15 +289,12 @@ if st.button("Calculer l'empreinte carbone totale"):
                 "lat_d": coord2[0], "lon_d": coord2[1],
             })
 
-    # Résultats
     if rows:
         df = pd.DataFrame(rows)
         st.success(f"✅ {len(rows)} segment(s) calculé(s) • Distance totale : **{total_distance:.1f} km** • Émissions totales : **{total_emissions:.2f} kg CO₂e**")
 
-        # Tableau
         st.dataframe(df[["Segment", "Origine", "Destination", "Mode", "Distance (km)", f"Poids ({unit})", "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"]], use_container_width=True)
 
-        # Carte
         st.subheader("🗺️ Carte des segments")
         layers = []
         for r in rows:
@@ -259,14 +304,13 @@ if st.button("Calculer l'empreinte carbone totale"):
                 get_source_position="from",
                 get_target_position="to",
                 get_width=4,
-                get_color=[187, 147, 87, 160],  # #BB9357
+                get_color=[187, 147, 87, 160],
                 pickable=True,
             ))
         midpoint = [sum([r["lat_o"] for r in rows]) / len(rows), sum([r["lon_o"] for r in rows]) / len(rows)]
         r_view = pdk.ViewState(latitude=midpoint[0], longitude=midpoint[1], zoom=2)
         st.pydeck_chart(pdk.Deck(map_style="mapbox://styles/mapbox/light-v9", initial_view_state=r_view, layers=layers))
 
-        # Export CSV
         csv = df.drop(columns=["lat_o","lon_o","lat_d","lon_d"]).to_csv(index=False).encode("utf-8")
         st.download_button("⬇️ Télécharger le détail (CSV)", data=csv, file_name="resultats_co2_multimodal.csv", mime="text/csv")
 
