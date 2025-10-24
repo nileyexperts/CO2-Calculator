@@ -10,9 +10,10 @@
 # - UI segments: boutons d’ajout/suppression (plus de "Nombre de segments")
 # - Carte: auto-zoom/centrage + balises (points + étiquettes)
 # - Option: rayon des points dynamique (mètres) ou fixe (pixels)
-# - Fond de page rendu transparent via CSS
-# - Logo en haut à gauche (PNG transparent)
+# - Fond de page transparent (CSS)
+# - Logo PNG transparent
 # - Icônes par mode sur le trait (IconLayer au milieu du segment)
+# - Champ "N° dossier Transport" + bouton Réinitialiser (carré)
 # ------------------------------------------------------------
 
 import os
@@ -44,27 +45,31 @@ st.set_page_config(
 )
 
 # =========================
-# 🎨 Fond de page (suppression de la couleur de fond)
+# 🎨 Styles globaux (fond transparent + boutons carrés)
 # =========================
-# On force un fond transparent pour l'app, l'en-tête et le conteneur principal.
-# Si tu préfères un fond blanc, remplace `transparent` par `#ffffff`.
 st.markdown("""
     <style>
+        /* Fond transparent pour l'app + header + conteneur */
         .stApp, .stApp > header, .block-container {
             background: transparent !important;
+        }
+        /* Tous les boutons Streamlit en forme carrée */
+        .stButton > button {
+            border-radius: 0px !important;   /* rend le bouton carré */
+            padding: 8px 12px !important;    /* gabarit confortable */
         }
     </style>
 """, unsafe_allow_html=True)
 
 # =========================
-# 🖼️ Logo + fond
+# 🖼️ Logo
 # =========================
 LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png"
 
 st.markdown(
     f"""
     <div style="display:flex;align-items:center;gap:10px;margin:4px 0 12px 0">
-        <img src="{LOGO_URL}" alt="NILEY EXPERTS" height="48" stylepx;line-height:1.2">
+        <img src="{LOGO_URL}" alt="NILEY EXPERTSht:600;font-size:18px;line-height:1.2">
             Calculateur d'empreinte carbone multimodal - NILEY EXPERTS
         </div>
     </div>
@@ -176,7 +181,7 @@ if not API_KEY:
 geocoder = OpenCageGeocode(API_KEY)
 
 # =========================
-# 🏷️ En-tête & Texte explicatif (ASCII-safe)
+# 🏷️ En-tête & Texte explicatif
 # =========================
 st.markdown("## Calculateur d'empreinte carbone multimodal - NILEY EXPERTS")
 st.markdown(
@@ -185,11 +190,10 @@ st.markdown(
 )
 
 # =========================
-# 🔄 N° dossier + Reset
+# 🔄 N° dossier + Reset (bouton carré)
 # =========================
 col_id, col_reset, _ = st.columns([3, 1, 6])
 with col_id:
-    # Saisie libre du numéro de dossier (stockée dans la session)
     dossier_transport = st.text_input(
         "N° dossier Transport",
         value=st.session_state.get("dossier_transport", ""),
@@ -197,8 +201,7 @@ with col_id:
     )
     st.session_state["dossier_transport"] = dossier_transport
 with col_reset:
-    # Petit espace vertical pour aligner le bouton avec le champ texte
-    st.write("")
+    st.write("")  # alignement vertical
     if st.button("🔄 Réinitialiser le formulaire", use_container_width=True):
         reset_form()
 
@@ -235,7 +238,6 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
         help="Ex: https://router.project-osrm.org ou votre propre serveur OSRM"
     )
     st.session_state["osrm_base_url"] = osrm_base_url
-
 with st.expander("🎯 Apparence de la carte (points & logos)"):
     # Option de rayon dynamique (mètres) vs fixe (pixels) pour les points
     dynamic_radius = st.checkbox(
@@ -416,7 +418,6 @@ def mode_to_category(mode_str: str) -> str:
     if "rail" in s: return "ferroviaire"
     return "routier"
 
-# URLs RAW de tes icônes (ajuste si besoin)
 ICON_URLS = {
     "routier": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/truck.png",
     "aerien": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/plane.png",
@@ -452,7 +453,6 @@ if st.button("Calculer l'empreinte carbone totale"):
             if not coord1 or not coord2:
                 st.error(f"Segment {idx} : lieu introuvable ou ambigu.")
                 continue
-
             route_coords = None  # liste de [lon, lat]
             if "routier" in _normalize_no_diacritics(seg["mode"]):
                 try:
@@ -471,6 +471,7 @@ if st.button("Calculer l'empreinte carbone totale"):
 
             total_distance += distance_km
             total_emissions += emissions
+
             rows.append({
                 "Segment": idx,
                 "Origine": seg["origin"],
