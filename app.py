@@ -13,7 +13,8 @@
 # - Fond de page transparent (CSS)
 # - Logo PNG transparent
 # - Icônes par mode sur le trait (IconLayer au milieu du segment)
-# - Champ "N° dossier Transport" + bouton Réinitialiser (carré)
+# - Champ "N° dossier Transport" obligatoire (à droite du bouton Réinitialiser)
+# - Bouton Réinitialiser carré (CSS)
 # ------------------------------------------------------------
 
 import os
@@ -69,7 +70,7 @@ LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/N
 st.markdown(
     f"""
     <div style="display:flex;align-items:center;gap:10px;margin:4px 0 12px 0">
-        <img src="{LOGO_URL}" alt="NILEY EXPERTSht:600;font-size:18px;line-height:1.2">
+        <img src="{LOGO_URL}" alt="NILEY EXPERTS" heightont-size:18px;line-height:1.2">
             Calculateur d'empreinte carbone multimodal - NILEY EXPERTS
         </div>
     </div>
@@ -190,20 +191,23 @@ st.markdown(
 )
 
 # =========================
-# 🔄 N° dossier + Reset (bouton carré)
+# 🔄 Reset (gauche) + N° dossier (droite, obligatoire)
 # =========================
-col_id, col_reset, _ = st.columns([3, 1, 6])
-with col_id:
-    dossier_transport = st.text_input(
-        "N° dossier Transport",
-        value=st.session_state.get("dossier_transport", ""),
-        placeholder="ex : TR-2025-001"
-    )
-    st.session_state["dossier_transport"] = dossier_transport
+col_reset, col_id, _ = st.columns([1, 3, 6])
 with col_reset:
-    st.write("")  # alignement vertical
+    # Alignement vertical du bouton avec le champ à droite
+    st.write("")
     if st.button("🔄 Réinitialiser le formulaire", use_container_width=True):
         reset_form()
+
+with col_id:
+    dossier_transport = st.text_input(
+        "N° dossier Transport (obligatoire) *",
+        value=st.session_state.get("dossier_transport", ""),
+        placeholder="ex : TR-2025-001",
+        help="Renseignez un identifiant de dossier pour lancer le calcul."
+    )
+    st.session_state["dossier_transport"] = dossier_transport.strip()
 
 # =========================
 # ⚙️ Paramètres
@@ -238,6 +242,7 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
         help="Ex: https://router.project-osrm.org ou votre propre serveur OSRM"
     )
     st.session_state["osrm_base_url"] = osrm_base_url
+
 with st.expander("🎯 Apparence de la carte (points & logos)"):
     # Option de rayon dynamique (mètres) vs fixe (pixels) pour les points
     dynamic_radius = st.checkbox(
@@ -332,7 +337,7 @@ for i in range(len(st.session_state.segments)):
                 min_value=0.001,
                 value=float(default_weight),
                 step=100.0 if unit == "kg" else 0.1,
-                key=f"weight_{i}"
+                key="weight_0"  # clé partagée pour tous les segments
             )
         else:
             weight_val = st.session_state.get("weight_0", default_weight)
@@ -437,7 +442,17 @@ def midpoint_on_path(route_coords, lon_o, lat_o, lon_d, lat_d):
         return [float(pt[0]), float(pt[1])]
     return [(lon_o + lon_d) / 2.0, (lat_o + lat_d) / 2.0]
 
-if st.button("Calculer l'empreinte carbone totale"):
+# --- Bouton Calculer avec validation du N° de dossier obligatoire ---
+can_calculate = bool(st.session_state.get("dossier_transport"))
+if not can_calculate:
+    st.warning("Veuillez renseigner le **N° dossier Transport** avant de lancer le calcul.")
+
+if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
+    # Validation serveur (défense en profondeur)
+    if not st.session_state.get("dossier_transport"):
+        st.error("Le N° dossier Transport est obligatoire pour calculer.")
+        st.stop()
+
     rows = []
     total_emissions = 0.0
     total_distance = 0.0
@@ -453,6 +468,7 @@ if st.button("Calculer l'empreinte carbone totale"):
             if not coord1 or not coord2:
                 st.error(f"Segment {idx} : lieu introuvable ou ambigu.")
                 continue
+
             route_coords = None  # liste de [lon, lat]
             if "routier" in _normalize_no_diacritics(seg["mode"]):
                 try:
@@ -495,9 +511,10 @@ if st.button("Calculer l'empreinte carbone totale"):
             f"Émissions totales : {total_emissions:.2f} kg CO₂e"
         )
 
-        # Affiche le N° de dossier si saisi
-        if st.session_state.get("dossier_transport"):
-            st.info(f"**N° dossier Transport :** {st.session_state['dossier_transport']}")
+        # Affiche le N° de dossier saisi
+        dossier_val = st.session_state.get("dossier_transport", "")
+        if dossier_val:
+            st.info(f"**N° dossier Transport :** {dossier_val}")
 
         st.dataframe(
             df[["Segment", "Origine", "Destination", "Mode", "Distance (km)", f"Poids ({unit})", "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"]],
@@ -653,8 +670,17 @@ if st.button("Calculer l'empreinte carbone totale"):
             tooltip={"text": "{name}"}
         ))
 
-        # Export CSV (sans colonnes techniques)
-        csv = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Télécharger le détail (CSV)", data=csv, file_name="resultats_co2_multimodal.csv", mime="text/csv")
+        # ---------- Export CSV : ajoute le N° dossier + suffixe le nom du fichier ----------
+        df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
+        df_export.insert(0, "N° dossier Transport", dossier_val)
+        csv = df_export.to_csv(index=False).encode("utf-8")
+
+        # Suffixe de nom de fichier "safe" (alphanum + - _)
+        raw_suffix = dossier_val.strip()
+        safe_suffix = "".join(c if (c.isalnum() or c in "-_") else "_" for c in raw_suffix)
+        safe_suffix = f"_{safe_suffix}" if safe_suffix else ""
+        filename = f"resultats_co2_multimodal{safe_suffix}.csv"
+
+        st.download_button("⬇️ Télécharger le détail (CSV)", data=csv, file_name=filename, mime="text/csv")
     else:
         st.info("Aucun segment valide n’a été calculé. Vérifiez les entrées ou les sélections.")
