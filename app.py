@@ -24,6 +24,33 @@ MAX_SEGMENTS = 10
 # ⚙️ Configuration Streamlit
 # =========================
 st.set_page_config(page_title="Calculateur CO₂ multimodal - NILEY EXPERTS", page_icon="🌍", layout="centered")
+st.markdown('''
+<style>
+/* Texte blanc */
+.stTextInput label, .stNumberInput label, .stSelectbox label,
+.stRadio label, .stExpander summary, .stMarkdown h1, .stMarkdown h2,
+.stMarkdown h3, .stMarkdown h4, .stMarkdown h5, .stMarkdown h6,
+.stMarkdown p, .stButton > button {
+    color: white !important;
+}
+
+/* Fond sombre général */
+.stApp {
+    background-color: #1e1e1e;
+}
+
+/* Fond plus foncé + texte centré dans les champs de saisie */
+.stTextInput > div > input,
+.stNumberInput > div > input,
+.stSelectbox > div > div,
+.stRadio > div,
+.stExpander > div {
+    background-color: #c0d6e4 !important;
+    text-align: center !important;
+    color: black !important;
+}
+</style>
+''', unsafe_allow_html=True)
 
 # =========================
 # 🎨 CSS personnalisé : texte blanc + fond sombre
