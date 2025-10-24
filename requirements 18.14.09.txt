@@ -1,0 +1,6 @@
+streamlit
+pandas
+requests
+pydeck
+opencage
+geopy
