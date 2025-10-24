@@ -34,20 +34,15 @@ MAX_SEGMENTS = 10  # utilisé pour nettoyer toutes les clés potentielles
 
 st.set_page_config(page_title="Calculateur CO₂ multimodal - NILEY EXPERTS",
 
-
 # --- Styles (labels en blanc pour st.number_input) ---
-def inject_styles():
-    import streamlit as st
-    st.markdown(
-        '''
-        <style>
-            [data-testid="stNumberInput"] label { color: white !important; }
-        </style>
-        ''',
-        unsafe_allow_html=True
-    )
-
-inject_styles()
+st.markdown(
+    '''
+    <style>
+        [data-testid="stNumberInput"] label { color: white !important; }
+    </style>
+    ''',
+    unsafe_allow_html=True
+)
 
                    page_icon="🌍", layout="centered")
 
@@ -207,7 +202,20 @@ geocoder = OpenCageGeocode(API_KEY)
 # =========================
 # 🏷️ En-tête & Texte explicatif (clair)
 # =========================
+st.markdown("""
+<div style='background-color:#002E49;padding:20px;border-radius:10px'>
+  <h1 style='color:white;text-align:center;margin:0'>
+    Calculateur d'empreinte carbone multimodal - NILEY EXPERTS
+  </h1>
+</div>
+""", unsafe_allow_html=True)
 
+st.markdown("""
+<div style="text-align:center; color:#f2f7fb; font-weight:500; margin-top:6px;">
+  Ajoutez plusieurs segments (origine → destination), choisissez le mode et le poids.
+  Le mode <strong>Routier</strong> utilise <strong>OSRM</strong> (distance réelle + tracé).
+</div>
+""", unsafe_allow_html=True)
 
 # =========================
 # 🔄 Reset (utilise reset_form)
