@@ -1,31 +1,6 @@
-# ===== App & UI =====
-streamlit==1.32.2
-
-# ===== Data & HTTP =====
-pandas==2.2.2
-numpy==1.26.4
-requests==2.32.3
-
-# ===== Geocoding & distances =====
-opencage==2.4.0
-geopy==2.4.1
-
-# ===== Interactive map =====
-pydeck==0.9.1
-
-# ===== Static map & GIS stack (sans GDAL/Fiona) =====
-# GeoPandas >=0.14 fonctionne très bien avec pyogrio (I/O vectorielles rapides)
-geopandas==0.14.4
-shapely==2.0.6
-pyproj==3.6.1
-pyogrio==0.7.2
-
-# ===== Figures & images (PDF / logo / carte PNG) =====
-matplotlib==3.8.4
-pillow==10.4.0
-
-# ===== (Optionnel) Si tu veux revenir à un export PDF via PyMuPDF au lieu de Matplotlib :
-# pymupdf==1.24.9
-
-# ===== (Optionnel) Si tu souhaites un fond carto "tuiles web" (contextily) dans la carte statique :
-# contextily==1.6.0
+streamlit
+pandas
+requests
+pydeck
+opencage
+geopy
