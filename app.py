@@ -1,4 +1,4 @@
-# co2_calculator_app.py
+# app.py
 # ------------------------------------------------------------
 # Calculateur CO2 multimodal - NILEY EXPERTS
 # - 🔐 Authentification par mot de passe
@@ -217,12 +217,12 @@ if not API_KEY:
 geocoder = OpenCageGeocode(API_KEY)
 
 # =========================
-# 🧩 En-tête avec logo en haut à gauche
+# 🧩 En-tête avec logo en haut à gauche (compatible toutes versions)
 # =========================
 with st.container():
-    col_logo, col_title = st.columns([1, 6])
+    col_logo, col_title = st.columns([1, 6])  # pas de vertical_alignment (incompatible anciennes versions)
     with col_logo:
-        st.image(LOGO_URL, caption=None, use_column_width=False, width=120)
+        st.image(LOGO_URL, caption=None, width=120)  # éviter use_column_width (déprécié)
     with col_title:
         st.markdown("## Calculateur d'empreinte carbone multimodal - NILEY EXPERTS")
         st.markdown(
@@ -468,6 +468,7 @@ def build_map_image(rows: list, figsize_px=(1400, 900)) -> bytes | None:
                 ax.plot(xs, ys, color="#BB9357", linewidth=2.5, alpha=0.95, zorder=3)
             except Exception:
                 pass
+
     # Segments droits
     for r in rows:
         if not r.get("route_coords"):
@@ -660,6 +661,7 @@ if st.button("Calculer l'empreinte carbone totale"):
             if not seg["origin"] or not seg["destination"]:
                 st.warning(f"Segment {idx} : origine/destination manquante(s).")
                 continue
+
             coord1 = coords_from_formatted(seg["origin"])
             coord2 = coords_from_formatted(seg["destination"])
             if not coord1 or not coord2:
@@ -737,6 +739,7 @@ if st.button("Calculer l'empreinte carbone totale"):
                 pickable=True,
             ))
 
+        # Droites pour le reste
         straight_lines = []
         for r in rows:
             has_osrm = (r["Mode"].startswith("Routier") or "Routier" in r["Mode"]) and r.get("route_coords")
