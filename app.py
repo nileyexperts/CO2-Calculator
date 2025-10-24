@@ -9,7 +9,8 @@
 # - Reset via st.rerun() + reset_form()
 # - UI segments: boutons d’ajout/suppression
 # - Carte: auto-zoom/centrage + balises (points + étiquettes)
-# - Export CSV + PDF avec logo, n° de dossier, et capture de la carte (PNG)
+# - Export CSV + PDF (1 page paysage) avec logo, n° de dossier, et capture de la carte (PNG)
+# - Fond de carte PDF robuste (GeoPandas/pyogrio) avec fallback visuel
 # ------------------------------------------------------------
 
 import os
@@ -81,6 +82,7 @@ def check_password():
         else:
             st.error("Mot de passe incorrect. Réessayez.")
     return False
+
 # Bloque l’app tant que non authentifié
 if not check_password():
     st.stop()
@@ -396,13 +398,31 @@ with bc2:
         st.rerun()
 
 # =========================
-# 🗺️ Génération d'une image statique de la carte (PNG)
+# 🗺️ Fond monde robuste + carte PNG
 # =========================
 @st.cache_data(show_spinner=False, ttl=6*60*60)
 def _load_world():
-    # GeoPandas embarque Natural Earth lowres
+    """
+    Charge le fond 'naturalearth_lowres' et le renvoie en WGS84.
+    Essaie d'abord avec pyogrio (si installé), puis fallback Geopandas standard.
+    Retourne None si indisponible.
+    """
     try:
-        world = gpd.read_file(gpd.datasets.get_path('naturalearth_lowres'))
+        path = gpd.datasets.get_path('naturalearth_lowres')
+    except Exception:
+        return None
+
+    # 1) Essai avec pyogrio
+    try:
+        import pyogrio  # noqa: F401
+        world = gpd.read_file(path, engine="pyogrio")
+        return world.to_crs(epsg=4326)
+    except Exception:
+        pass
+
+    # 2) Fallback lecture standard
+    try:
+        world = gpd.read_file(path)
         return world.to_crs(epsg=4326)
     except Exception:
         return None
@@ -410,7 +430,8 @@ def _load_world():
 def build_map_image(rows: list, figsize_px=(1400, 900)) -> bytes | None:
     """
     Construit une image PNG (bytes) de la carte :
-      - fond monde (Natural Earth)
+      - fond monde (Natural Earth) si disponible
+      - sinon fond 'océan' bleu clair pour éviter une page blanche
       - routes OSRM en orange, segments droits en gris
       - points O/D avec labels
       - zoom auto sur l'étendue des données
@@ -447,9 +468,14 @@ def build_map_image(rows: list, figsize_px=(1400, 900)) -> bytes | None:
     fig_h = figsize_px[1] / dpi
     fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
 
-    # Fond de carte
-    if world is not None:
-        world.plot(ax=ax, color="#f7f7f7", edgecolor="#cccccc", linewidth=0.5, zorder=0)
+    # Fond de carte : si monde dispo, on le trace ; sinon fond 'océan'
+    if world is not None and len(world) > 0:
+        ax.set_facecolor("#eaf4ff")  # océan bleu clair
+        world.plot(ax=ax, color="#f7f7f7", edgecolor="#bdbdbd", linewidth=0.5, zorder=0)
+    else:
+        # Fallback visuel : rectangle plein (océan) pour éviter fond blanc
+        ax.set_facecolor("#eaf4ff")
+
     ax.set_xlim(x_min, x_max)
     ax.set_ylim(y_min, y_max)
 
@@ -457,9 +483,12 @@ def build_map_image(rows: list, figsize_px=(1400, 900)) -> bytes | None:
     # 1) Routes OSRM (Path)
     for r in rows:
         if r.get("route_coords"):
-            ls = LineString([(lon, lat) for lon, lat in r["route_coords"]])
-            xs, ys = ls.xy
-            ax.plot(xs, ys, color="#BB9357", linewidth=2.5, alpha=0.95, zorder=3)
+            try:
+                ls = LineString([(lon, lat) for lon, lat in r["route_coords"]])
+                xs, ys = ls.xy
+                ax.plot(xs, ys, color="#BB9357", linewidth=2.5, alpha=0.95, zorder=3)
+            except Exception:
+                pass
 
     # 2) Segments droits (fallback)
     for r in rows:
@@ -515,7 +544,7 @@ def _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80
     return pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=float(zoom), bearing=0, pitch=0)
 
 # =========================
-# 🧾 Génération du PDF (Matplotlib + PdfPages)
+# 🧾 Génération du PDF (1 page paysage)
 # =========================
 # Compatibilité Pillow (filtre de redimensionnement)
 try:
@@ -533,17 +562,20 @@ def build_pdf_report(df: pd.DataFrame,
                      map_png_bytes: bytes | None = None,
                      case_ref: str | None = None) -> bytes:
     """
-    Génère un PDF (bytes) multi-pages avec Matplotlib + PdfPages :
-      - Page 1 : logo (optionnel), titre, résumé, n° de dossier, carte (optionnelle)
-      - Pages suivantes : tableau des segments paginé
-    Format : A4 portrait (8.27 x 11.69 in). Retourne les bytes du PDF.
+    Génère un PDF **sur une seule page A4 paysage** avec Matplotlib + PdfPages :
+      - Zone entête (logo + titre + métadonnées + n° dossier)
+      - Carte (si fournie)
+      - Tableau des segments compacté (troncature avec …)
     """
+    import io
+    from matplotlib.gridspec import GridSpec
+
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # Mise en page A4
+    # --- Mise en page A4 paysage
     dpi = 150
-    a4_in = (8.27, 11.69)  # pouces (A4)
-    fig_w, fig_h = a4_in
+    a4_landscape_in = (11.69, 8.27)  # Largeur x Hauteur en pouces
+    fig_w, fig_h = a4_landscape_in
 
     # Récupération logo (si fourni)
     logo_img = None
@@ -555,121 +587,131 @@ def build_pdf_report(df: pd.DataFrame,
         except Exception:
             logo_img = None
 
-    # Prépare buffer PDF
+    # ---- Prépare figure et grille
+    fig = plt.figure(figsize=(fig_w, fig_h), dpi=dpi)
+    # Grille : 100 lignes (pour finesse) x 100 colonnes
+    gs = GridSpec(100, 100, figure=fig)
+    fig.patch.set_facecolor("white")
+
+    # Zones :
+    # - Entête : lignes 0..20, colonnes 0..100
+    # - Carte  : lignes 22..62, colonnes 0..48 (à gauche)
+    # - Tableau: lignes 22..98, colonnes 50..100 (à droite), si beaucoup de lignes on étend sous la carte
+    ax_header = fig.add_subplot(gs[0:20, 0:100])
+    ax_header.axis("off")
+
+    # --- Entête
+    y_cursor = 0.92  # relatif dans ax_header
+    if logo_img is not None:
+        # Largeur cible du logo ~ 150 px
+        target_px = 150
+        w, h = logo_img.size
+        scale = target_px / float(w)
+        new_w, new_h = int(w * scale), int(h * scale)
+        logo_disp = logo_img.resize((new_w, new_h), RESAMPLE)
+        imagebox = OffsetImage(logo_disp, zoom=1.0)
+        ab = AnnotationBbox(imagebox, (0.06, y_cursor), frameon=False, xycoords='axes fraction')
+        ax_header.add_artist(ab)
+
+    # Titre à droite du logo
+    ax_header.text(0.18, y_cursor, "Rapport d'empreinte carbone multimodal",
+                   ha="left", va="center", fontsize=16, fontweight="bold", transform=ax_header.transAxes)
+    y_cursor -= 0.28  # on descend dans l'axe header (qui n'occupe que ~20% de la page)
+
+    # Méta + dossier
+    meta_lines = [
+        f"Généré le : {now_str}",
+        f"Éditeur : {company}",
+    ]
+    if case_ref:
+        meta_lines.append(f"Dossier Transport N° : {case_ref}")
+
+    ax_header.text(0.18, y_cursor, "\n".join(meta_lines),
+                   ha="left", va="top", fontsize=10, transform=ax_header.transAxes)
+    # Résumé à droite
+    resume_txt = f"Distance totale : {total_distance_km:.1f} km\nÉmissions totales : {total_emissions_kg:.2f} kg CO₂e"
+    ax_header.text(0.60, 0.30, resume_txt, ha="left", va="center", fontsize=11,
+                   bbox=dict(boxstyle="round,pad=0.3", fc="#f6f6f6", ec="#dddddd"), transform=ax_header.transAxes)
+
+    # Séparateur bas entête
+    ax_header.plot([0.02, 0.98], [0.05, 0.05], color="#444444", linewidth=0.8, transform=ax_header.transAxes)
+
+    # --- Carte (si dispo)
+    if map_png_bytes:
+        try:
+            ax_map = fig.add_subplot(gs[22:62, 0:48])
+            ax_map.axis("off")
+            map_img = Image.open(io.BytesIO(map_png_bytes)).convert("RGB")
+            ax_map.imshow(map_img)
+            ax_map.set_title("Carte des segments (aperçu statique)", fontsize=10, pad=4)
+        except Exception:
+            # Pas de carte: on libère l’espace
+            ax_map = None
+    else:
+        ax_map = None
+
+    # --- Tableau compacté (sur la droite + éventuellement sous la carte)
+    # Colonnes affichées (identiques à la vue dans l'app)
+    columns = [
+        "Segment", "Origine", "Destination", "Mode",
+        "Distance (km)", f"Poids ({unit_label})",
+        "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"
+    ]
+    # Copie sécurisée
+    table_df = df[columns].copy()
+
+    # Troncature douce pour tenir en largeur (évite l'overflow)
+    def trunc(s, maxlen):
+        s = "" if pd.isna(s) else str(s)
+        if len(s) <= maxlen:
+            return s
+        return s[: max(0, maxlen - 1)] + "…"
+
+    # Longueurs max pour colonnes texte (ajuste si besoin)
+    maxlens = {
+        "Segment": 4, "Origine": 36, "Destination": 36, "Mode": 10,
+        "Distance (km)": 8, f"Poids ({unit_label})": 8,
+        "Facteur (kg CO₂e/t.km)": 10, "Émissions (kg CO₂e)": 10
+    }
+    for col, ml in maxlens.items():
+        table_df[col] = table_df[col].map(lambda x: trunc(x, ml))
+
+    # Police/table compacte
+    table_fontsize = 7.5
+
+    # Axe principal du tableau
+    # Si carte présente: occupe la colonne de droite, sinon occupe toute la largeur sous l'entête
+    if ax_map is not None:
+        ax_tbl = fig.add_subplot(gs[22:98, 50:100])
+    else:
+        ax_tbl = fig.add_subplot(gs[22:98, 0:100])
+    ax_tbl.axis("off")
+    ax_tbl.text(0.0, 1.02, "Détail des segments", ha="left", va="bottom", fontsize=11, fontweight="bold", transform=ax_tbl.transAxes)
+
+    values = table_df.values
+    col_labels = table_df.columns.tolist()
+
+    tbl = ax_tbl.table(cellText=values,
+                       colLabels=col_labels,
+                       cellLoc="left", colLoc="left",
+                       loc="upper left")
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(table_fontsize)
+    # Échelle pour densifier verticalement
+    tbl.scale(1.0, 0.9)
+
+    # Styliser entêtes et bordures
+    for (r, c), cell in tbl.get_celld().items():
+        if r == 0:
+            cell.set_facecolor("#f0f0f0")
+            cell.set_text_props(fontweight="bold")
+        cell.set_edgecolor("#dddddd")
+
+    # Sauvegarde PDF (unique page)
     out = io.BytesIO()
     with PdfPages(out) as pdf:
-
-        # ---- Page 1 : Titre, résumé, dossier, carte
-        fig1, ax1 = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
-        ax1.axis("off")
-
-        y_cursor = 0.94  # position verticale relative (0..1 du haut vers le bas)
-
-        # Logo à gauche
-        if logo_img is not None:
-            # redimensionner le logo à ~ 2.8 cm de large (≈ 110 px @ dpi 150)
-            target_px = 110
-            w, h = logo_img.size
-            scale = target_px / float(w)
-            new_w, new_h = int(w * scale), int(h * scale)
-            logo_disp = logo_img.resize((new_w, new_h), RESAMPLE)
-            imagebox = OffsetImage(logo_disp, zoom=1.0)
-            ab = AnnotationBbox(imagebox, (0.12, y_cursor), frameon=False, xycoords='axes fraction')
-            ax1.add_artist(ab)
-
-        # Titre à droite du logo
-        ax1.text(0.27, y_cursor, "Rapport d'empreinte carbone multimodal",
-                 ha="left", va="center", fontsize=16, fontweight="bold", transform=ax1.transAxes)
-        y_cursor -= 0.05
-
-        # Métadonnées
-        ax1.text(0.12, y_cursor, f"Généré le : {now_str}", ha="left", va="center", fontsize=10, transform=ax1.transAxes)
-        y_cursor -= 0.03
-        ax1.text(0.12, y_cursor, f"Éditeur : {company}", ha="left", va="center", fontsize=10, transform=ax1.transAxes)
-        y_cursor -= 0.03
-        if case_ref:
-            ax1.text(0.12, y_cursor, f"Dossier Transport N° : {case_ref}", ha="left", va="center", fontsize=10, transform=ax1.transAxes)
-            y_cursor -= 0.025
-        else:
-            y_cursor -= 0.005
-
-        # Séparateur
-        ax1.plot([0.12, 0.88], [y_cursor, y_cursor], color="#444444", linewidth=0.8, transform=ax1.transAxes)
-        y_cursor -= 0.04
-
-        # Résumé
-        ax1.text(0.12, y_cursor, "Résumé", ha="left", va="center", fontsize=12, fontweight="bold", transform=ax1.transAxes)
-        y_cursor -= 0.04
-        ax1.text(0.12, y_cursor, f"Distance totale : {total_distance_km:.1f} km", ha="left", va="center", fontsize=10, transform=ax1.transAxes)
-        y_cursor -= 0.03
-        ax1.text(0.12, y_cursor, f"Émissions totales : {total_emissions_kg:.2f} kg CO₂e", ha="left", va="center", fontsize=10, transform=ax1.transAxes)
-        y_cursor -= 0.02
-
-        # Carte (si disponible)
-        if map_png_bytes:
-            try:
-                map_img = Image.open(io.BytesIO(map_png_bytes)).convert("RGB")
-                # Espace dédié à la carte (hauteur ~ 40% de la page)
-                card_h_rel = 0.40
-                card_w_rel = 0.76
-                # Position rectangle
-                x0, y0 = 0.12, max(y_cursor - card_h_rel - 0.01, 0.10)
-                x1, y1 = x0 + card_w_rel, y0 + card_h_rel
-                ax1.add_patch(plt.Rectangle((x0, y0), card_w_rel, card_h_rel,
-                                            transform=ax1.transAxes, fill=False, edgecolor="#dddddd", linewidth=1.0))
-                # Affiche l'image
-                ax1.imshow(map_img, extent=(x0, x1, y0, y1), transform=ax1.transAxes, aspect='auto', zorder=0)
-                y_cursor = y0 - 0.03
-            except Exception:
-                pass
-
-        # Séparateur bas de page
-        ax1.plot([0.12, 0.88], [y_cursor, y_cursor], color="#444444", linewidth=0.6, transform=ax1.transAxes)
-
-        pdf.savefig(fig1, bbox_inches="tight")
-        plt.close(fig1)
-
-        # ---- Pages suivantes : tableau paginé
-        # Colonnes affichées (identiques au dataframe montré)
-        columns = [
-            "Segment", "Origine", "Destination", "Mode",
-            "Distance (km)", f"Poids ({unit_label})",
-            "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"
-        ]
-        table_df = df[columns].copy()
-
-        # Pagination simple : ~ 30 lignes par page (selon taille police)
-        rows_per_page = 30
-        n = len(table_df)
-        pages = max(1, (n + rows_per_page - 1) // rows_per_page)
-
-        for p in range(pages):
-            sub = table_df.iloc[p*rows_per_page:(p+1)*rows_per_page]
-            fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
-            ax.axis("off")
-            ax.text(0.12, 0.95, "Détail des segments", ha="left", va="center",
-                    fontsize=12, fontweight="bold", transform=ax.transAxes)
-
-            # Table Matplotlib
-            tbl = ax.table(cellText=sub.values,
-                           colLabels=sub.columns,
-                           loc="upper left",
-                           colLoc="left",
-                           cellLoc="left")
-            tbl.auto_set_font_size(False)
-            tbl.set_fontsize(8)
-            tbl.scale(1.0, 1.2)
-
-            # Styliser l’en‑tête
-            for (row, col), cell in tbl.get_celld().items():
-                if row == 0:
-                    cell.set_facecolor("#f0f0f0")
-                    cell.set_text_props(fontweight="bold")
-                cell.set_edgecolor("#dddddd")
-
-            pdf.savefig(fig, bbox_inches="tight")
-            plt.close(fig)
-
+        pdf.savefig(fig, bbox_inches="tight")
+    plt.close(fig)
     out.seek(0)
     return out.getvalue()
 
@@ -692,7 +734,6 @@ if st.button("Calculer l'empreinte carbone totale"):
             if not coord1 or not coord2:
                 st.error(f"Segment {idx} : lieu introuvable ou ambigu.")
                 continue
-
             # --- Distance: OSRM + géométrie pour Routier, sinon grand-cercle
             route_coords = None  # liste de [lon, lat]
             if seg["mode"].startswith("Routier") or "Routier" in seg["mode"]:
@@ -854,12 +895,16 @@ if st.button("Calculer l'empreinte carbone totale"):
         map_png_bytes = build_map_image(rows, figsize_px=(1400, 900))
         st.session_state["last_map_png"] = map_png_bytes
 
+        # Alerte fond si Natural Earth indisponible
+        if _load_world() is None:
+            st.info("ℹ️ Fond Natural Earth indisponible sur cet environnement : un fond simplifié a été utilisé pour la carte du PDF.")
+
         # Rappel dossier (UI)
         if st.session_state.get("case_ref"):
             st.info(f"**Dossier Transport N° :** {st.session_state['case_ref']}")
 
         # Tableau (aperçu)
-        st.dataframe(
+        sttaframe(
             df[["Segment", "Origine", "Destination", "Mode", "Distance (km)", f"Poids ({unit})", "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"]],
             use_container_width=True
         )
@@ -873,7 +918,7 @@ if st.button("Calculer l'empreinte carbone totale"):
         csv = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).to_csv(index=False).encode("utf-8")
         st.download_button("⬇️ Télécharger le détail (CSV)", data=csv, file_name=csv_name, mime="text/csv")
 
-        # Export PDF (avec logo + carte + n° dossier)
+        # Export PDF (1 page paysage, avec logo + carte + n° dossier)
         try:
             pdf_bytes = build_pdf_report(
                 df=st.session_state["last_result_df"],
