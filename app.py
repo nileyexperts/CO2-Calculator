@@ -23,10 +23,10 @@ from geopy.distance import great_circle
 # 🎯 Paramètres par défaut
 # =========================
 DEFAULT_EMISSION_FACTORS = {
-    "Routier 🚚": 0.100,     # kg CO2e / t.km
-    "Aérien ✈️": 0.500,
-    "Maritime 🚢": 0.015,
-    "Ferroviaire 🚆": 0.030,
+    "🚛 Routier 🚛": 0.100,     # kg CO2e / t.km
+    "✈️ Aérien ✈️": 0.500,
+    "🚢 Maritime 🚢": 0.015,
+    "🚂 Ferroviaire 🚂": 0.030,
 }
 
 BACKGROUND_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/background.png"
