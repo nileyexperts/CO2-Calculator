@@ -177,12 +177,10 @@ with col_r:
 # ⚙️ Paramètres
 # =========================
 with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
-
-password = st.text_input("Mot de passe requis pour accéder aux paramètres", type="password")
-if password != "Niley2019!":
-    st.warning("Mot de passe incorrect. Accès refusé.")
-    st.stop()
-
+    password = st.text_input("Mot de passe requis pour accéder aux paramètres", type="password")
+    if password != 'Niley2019!':
+        st.warning("Mot de passe incorrect.")
+        st.stop()
     default_mode = "Envoi unique (même poids sur tous les segments)"
     weight_mode = st.radio("Mode de gestion du poids :", [default_mode, "Poids par segment"], horizontal=False)
 
