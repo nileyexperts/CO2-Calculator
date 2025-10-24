@@ -157,7 +157,12 @@ geocoder = OpenCageGeocode(API_KEY)
 # 🏷️ En-tête & Texte explicatif
 # =========================
 st.markdown("""
-## Calculateur d'empreinte carbone multimodal - NILEY EXPERTS
+<div style='display: flex; align-items: center;'>
+    <img src='https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png' style='height: 60px; margin-right: 10px;'>
+    <h2 style='margin: 0;'>Calculateur d'empreinte carbone multimodal - NILEY EXPERTS</h2>
+</div>
+"", unsafe_allow_html=True)
+
 
 """, unsafe_allow_html=True)
 st.markdown("""
