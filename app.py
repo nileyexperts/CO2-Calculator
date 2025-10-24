@@ -63,7 +63,7 @@ html, body, [data-testid="stAppViewContainer"], .stApp {{
 }}
 
 /* Cartes/expandeurs */
-div[role="group"] > div:has(> details), details {{
+div[role="group"] > div, details {{
   background: #ffffff !important;
   border-radius: 8px !important;
   border: 1px solid rgba(0,0,0,0.06) !important;
@@ -99,7 +99,9 @@ div[role="group"] > div:has(> details), details {{
 }}
 </style>
 <div id="niley-logo-top-left">
-  <img src="{LOGO_URL}" alt="fe_allow_html=True)
+  <img src="{LOGO_URL}" alt="NILEY EXPERTS Logo" />
+</div>
+""", unsafe_allow_html=True)
 
 st.markdown("<div style='height: 6px'></div>", unsafe_allow_html=True)
 
@@ -192,7 +194,7 @@ def reset_form(max_segments: int = MAX_SEGMENTS):
 # =========================
 API_KEY = read_secret("OPENCAGE_KEY")
 if not API_KEY:
-    st.error("Clé API OpenCage absente. Ajoutez `OPENCAGE_KEY` à `st.secrets` ou à vos variables d’environnement.")
+    st.error("Clé API OpenCage absente. Ajoutez OPENCAGE_KEY à st.secrets ou à vos variables d'environnement.")
     st.stop()
 geocoder = OpenCageGeocode(API_KEY)
 
@@ -231,7 +233,7 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
     unit = st.radio("Unite de saisie du poids", ["kg", "tonnes"], index=0, horizontal=True)
 
     osrm_help = (
-        "**OSRM** – pour test : `https://router.project-osrm.org` (serveur démo, non garanti). "
+        "**OSRM** - pour test : https://router.project-osrm.org (serveur demo, non garanti). "
         "En production, utilisez un serveur auto-heberge ou un provider."
     )
     st.markdown(osrm_help)
@@ -247,14 +249,15 @@ with st.expander("🎯 Apparence de la carte (points & logos)"):
     # Option de rayon dynamique (mètres) vs fixe (pixels) pour les points
     dynamic_radius = st.checkbox(
         "Rayon des points dynamique (varie avec le zoom)", value=True,
-        help="Dynamique: en metres, varie visuellement au zoom. Fixe: en pixels, constant a l’ecran."
+        help="Dynamique: en mètres, varie visuellement au zoom. Fixe: en pixels, constant à l'écran."
     )
     if dynamic_radius:
-        radius_m = st.slider("Rayon des points (metres)", 1000, 100000, 20000, 1000)
+        radius_m = st.slider("Rayon des points (mètres)", 1000, 100000, 20000, 1000)
         radius_px = None
     else:
         radius_px = st.slider("Rayon des points (pixels)", 2, 30, 8, 1)
         radius_m = None
+
     # Taille des logos (IconLayer) en pixels
     icon_size_px = st.slider("Taille des logos de segment (pixels)", 16, 64, 28, 2)
 
@@ -296,8 +299,8 @@ for i in range(len(st.session_state.segments)):
         origin_suggestions = geocode_cached(origin_raw, limit=5) if origin_raw else []
         origin_options = [r['formatted'] for r in origin_suggestions] if origin_suggestions else []
         origin_sel = st.selectbox("Suggestions pour l'origine",
-                                  origin_options or ["—"], index=0, key=f"origin_select_{i}")
-        if origin_sel == "—":
+                                  origin_options or ["-"], index=0, key=f"origin_select_{i}")
+        if origin_sel == "-":
             origin_sel = ""
 
     with c2:
@@ -309,15 +312,14 @@ for i in range(len(st.session_state.segments)):
         dest_suggestions = geocode_cached(dest_raw, limit=5) if dest_raw else []
         dest_options = [r['formatted'] for r in dest_suggestions] if dest_suggestions else []
         dest_sel = st.selectbox("Suggestions pour la destination",
-                                dest_options or ["—"], index=0, key=f"dest_select_{i}")
-        if dest_sel == "—":
+                                dest_options or ["-"], index=0, key=f"dest_select_{i}")
+        if dest_sel == "-":
             dest_sel = ""
 
     mode = st.selectbox(
         f"Mode de transport du segment {i+1}",
         list(factors.keys()),
-        index=list(factors.keys()).index(st.session_state.segments[i]["mode"])
-        if st.session_state.segments[i]["mode"] in factors else 0,
+        index=list(factors.keys()).index(st.session_state.segments[i]["mode"]) if st.session_state.segments[i]["mode"] in factors else 0,
         key=f"mode_{i}"
     )
 
@@ -404,13 +406,12 @@ def _normalize_no_diacritics(s: str) -> str:
     return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn').lower()
 
 def mode_to_category(mode_str: str) -> str:
-    """Mappe un libellé de mode (avec emojis/accent) vers {routier,aerien,maritime,ferroviaire}."""
+    """Mappe un libellé de mode vers {routier,aerien,maritime,ferroviaire}."""
     s = _normalize_no_diacritics(mode_str)
     if "routier" in s: return "routier"
     if "aerien" in s or "aérien" in s:  return "aerien"
     if "maritime" in s or "mer" in s or "bateau" in s: return "maritime"
     if "ferroviaire" in s or "train" in s: return "ferroviaire"
-    # fallback simples
     if "road" in s or "truck" in s: return "routier"
     if "air" in s or "plane" in s: return "aerien"
     if "sea" in s or "ship" in s: return "maritime"
@@ -461,7 +462,7 @@ if st.button("Calculer l'empreinte carbone totale"):
                     distance_km = r["distance_km"]
                     route_coords = r["coords"]
                 except Exception as e:
-                    st.warning(f"Segment {idx}: OSRM indisponible ({e}). Distance a vol d’oiseau utilisee.")
+                    st.warning(f"Segment {idx}: OSRM indisponible ({e}). Distance à vol d'oiseau utilisée.")
                     distance_km = compute_distance_km(coord1, coord2)
             else:
                 distance_km = compute_distance_km(coord1, coord2)
@@ -490,7 +491,7 @@ if st.button("Calculer l'empreinte carbone totale"):
     if rows:
         df = pd.DataFrame(rows)
         st.success(
-            f"{len(rows)} segment(s) calcule(s) • Distance totale : {total_distance:.1f} km • "
+            f"✅ {len(rows)} segment(s) calculé(s) • Distance totale : {total_distance:.1f} km • "
             f"Émissions totales : {total_emissions:.2f} kg CO₂e"
         )
 
@@ -549,14 +550,16 @@ if st.button("Calculer l'empreinte carbone totale"):
         # 2) Points + étiquettes (origines/destinations)
         points, labels = [], []
         for r in rows:
+            # Origine
             points.append({"position": [r["lon_o"], r["lat_o"]],
-                           "name": f"S{r['Segment']} - Origine",
+                           "name": f"S{r['Segment']} • Origine",
                            "color": [0, 122, 255, 220]})
             labels.append({"position": [r["lon_o"], r["lat_o"]],
                            "text": f"S{r['Segment']} O",
                            "color": [0, 122, 255, 255]})
+            # Destination
             points.append({"position": [r["lon_d"], r["lat_d"]],
-                           "name": f"S{r['Segment']} - Destination",
+                           "name": f"S{r['Segment']} • Destination",
                            "color": [220, 66, 66, 220]})
             labels.append({"position": [r["lon_d"], r["lat_d"]],
                            "text": f"S{r['Segment']} D",
@@ -613,6 +616,7 @@ if st.button("Calculer l'empreinte carbone totale"):
             url = ICON_URLS.get(cat)
             if not url:
                 continue
+            # Point milieu du trajet
             lon_mid, lat_mid = midpoint_on_path(
                 r.get("route_coords"),
                 r["lon_o"], r["lat_o"],
@@ -641,7 +645,7 @@ if st.button("Calculer l'empreinte carbone totale"):
                 pickable=True,
             ))
 
-        # 4) Vue auto (tous points + polylignes)
+        # 4) Vue automatiquement adaptée (tous points + polylignes)
         all_lats, all_lons = [], []
         if route_paths and any(d["path"] for d in route_paths):
             all_lats.extend([pt[1] for d in route_paths for pt in d["path"]])
@@ -658,9 +662,9 @@ if st.button("Calculer l'empreinte carbone totale"):
             tooltip={"text": "{name}"}
         ))
 
-        # Export CSV
+        # Export CSV (sans colonnes techniques)
         csv = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).to_csv(index=False).encode("utf-8")
-        st.download_button("Télécharger le détail (CSV)", data=csv,
+        st.download_button("⬇️ Télécharger le détail (CSV)", data=csv,
                            file_name="resultats_co2_multimodal.csv", mime="text/csv")
 
     else:
