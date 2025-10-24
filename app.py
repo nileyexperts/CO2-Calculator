@@ -2,15 +2,13 @@
 # ------------------------------------------------------------
 # Calculateur CO2 multimodal - NILEY EXPERTS
 # - 🔐 Authentification par mot de passe
+# - Logo en haut à gauche + fond #DFEDF5
 # - Géocodage OpenCage
-# - Distance routière via OSRM + polyline sur la carte
+# - Distance OSRM (routier) + tracé / grand-cercle sinon
 # - Facteurs d'émission éditables, poids global ou par segment
-# - Carte PyDeck (PathLayer pour routes OSRM, LineLayer en fallback)
-# - Reset via st.rerun() + reset_form()
-# - UI segments: boutons d’ajout/suppression
-# - Carte: auto-zoom/centrage + balises (points + étiquettes)
-# - Export CSV + PDF (1 page paysage) avec logo, n° de dossier, et capture de la carte (PNG)
-# - Fond de page Streamlit #DFEDF5 • Fond carte PDF robuste (GeoPandas/pyogrio) + fallback
+# - Carte PyDeck interactive + carte PNG statique pour PDF
+# - Export CSV + PDF (1 page paysage) avec logo, n° de dossier, carte
+# - Fond Natural Earth (GeoPandas/pyogrio) avec fallback océan
 # ------------------------------------------------------------
 
 import os
@@ -26,7 +24,7 @@ import pydeck as pdk
 from opencage.geocoder import OpenCageGeocode
 from geopy.distance import great_circle
 
-# --- Image/figures & PDF ---
+# --- Images / PDF ---
 import matplotlib
 matplotlib.use("Agg")  # backend non interactif
 import matplotlib.pyplot as plt
@@ -85,26 +83,22 @@ def check_password():
             st.error("Mot de passe incorrect. Réessayez.")
     return False
 
-# Bloque l’app tant que non authentifié
+# Bloquer l’app tant que non authentifié
 if not check_password():
     st.stop()
 
 # =========================
-# 🎨 Styles (fond de page personnalisé #DFEDF5)
+# 🎨 Styles (fond de page #DFEDF5)
 # =========================
 st.markdown(
     """
     <style>
-    /* Fond global de l'application */
     .stApp { background-color: #DFEDF5 !important; }
-    /* Zone principale */
     .block-container {
         background-color: #DFEDF5 !important;
         padding-top: 1.2rem; padding-bottom: 2rem; border-radius: 8px;
     }
-    /* Sidebar */
     section[data-testid="stSidebar"] { background-color: #DFEDF5 !important; }
-    /* Expanders : fond blanc pour lisibilité */
     div[data-testid="stExpander"] > details {
         background-color: #FFFFFF !important;
         border-radius: 8px; border: 1px solid #E6EEF3;
@@ -193,6 +187,7 @@ def reset_form(max_segments: int = MAX_SEGMENTS):
     - purge le cache de données
     - relance l'app
     """
+    # Supprimer les clés de widgets
     widget_keys = []
     for i in range(max_segments):
         widget_keys.extend([
@@ -204,6 +199,7 @@ def reset_form(max_segments: int = MAX_SEGMENTS):
         if k in st.session_state:
             del st.session_state[k]
 
+    # Réinit état app
     for k in ["segments", "osrm_base_url", "weight_0", "case_ref"]:
         if k in st.session_state:
             del st.session_state[k]
@@ -224,20 +220,25 @@ geocoder = OpenCageGeocode(API_KEY)
 # 🧩 En-tête avec logo en haut à gauche
 # =========================
 with st.container():
-    col_logo, col_title = st.columns([1, 6], vertical_alignment="center")
+    col_logo, col_title = st.columns([1, 6])
     with col_logo:
         st.image(LOGO_URL, caption=None, use_column_width=False, width=120)
     with col_title:
         st.markdown("## Calculateur d'empreinte carbone multimodal - NILEY EXPERTS")
-        st.markdown("Ajoutez plusieurs segments (origine → destination), choisissez le mode et le poids. "
-                    "Le mode **Routier** utilise OSRM (distance réelle + tracé).")
+        st.markdown(
+            "Ajoutez plusieurs segments (origine → destination), choisissez le mode et le poids. "
+            "Le mode **Routier** utilise OSRM (distance réelle + tracé)."
+        )
 
 # =========================
 # 🗂️ Dossier Transport
 # =========================
 st.markdown("### Dossier Transport")
-case_ref = st.text_input("Dossier Transport N°", value=st.session_state.get("case_ref", ""),
-                         help="Identifiant interne de votre expédition / dossier.")
+case_ref = st.text_input(
+    "Dossier Transport N°",
+    value=st.session_state.get("case_ref", ""),
+    help="Identifiant interne de votre expédition / dossier."
+)
 st.session_state["case_ref"] = case_ref
 
 # =========================
@@ -275,8 +276,7 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
 
     osrm_default = st.session_state.get("osrm_base_url", "https://router.project-osrm.org")
     osrm_base_url = st.text_input(
-        "Endpoint OSRM", value=osrm_default,
-        help="Ex: https://router.project-osrm.org ou votre propre serveur OSRM"
+        "Endpoint OSRM", value=osrm_default, help="Ex: https://router.project-osrm.org ou votre propre serveur OSRM"
     )
     st.session_state["osrm_base_url"] = osrm_base_url
 
@@ -284,9 +284,11 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
 # 🧩 Saisie des segments (avec boutons d'ajout/suppression)
 # =========================
 def _default_segment(origin_raw="", origin_sel="", dest_raw="", dest_sel="", mode="🚛 Routier 🚛", weight=1000.0):
-    return {"origin_raw": origin_raw, "origin_sel": origin_sel,
-            "dest_raw": dest_raw,   "dest_sel": dest_sel,
-            "mode": mode,           "weight": weight}
+    return {
+        "origin_raw": origin_raw, "origin_sel": origin_sel,
+        "dest_raw": dest_raw,     "dest_sel": dest_sel,
+        "mode": mode,             "weight": weight
+    }
 
 # État initial : au moins 1 segment
 if "segments" not in st.session_state or not st.session_state.segments:
@@ -358,6 +360,7 @@ for i in range(len(st.session_state.segments)):
         else:
             weight_val = st.session_state.get("weight_0", default_weight)
 
+    # Mise à jour de l'état
     st.session_state.segments[i] = {
         "origin_raw": origin_raw, "origin_sel": origin_sel,
         "dest_raw": dest_raw,     "dest_sel": dest_sel,
@@ -367,7 +370,8 @@ for i in range(len(st.session_state.segments)):
     segments_out.append({
         "origin": origin_sel or origin_raw or "",
         "destination": dest_sel or dest_raw or "",
-        "mode": mode, "weight": weight_val
+        "mode": mode,
+        "weight": weight_val
     })
 
 # Boutons globaux
@@ -464,7 +468,6 @@ def build_map_image(rows: list, figsize_px=(1400, 900)) -> bytes | None:
                 ax.plot(xs, ys, color="#BB9357", linewidth=2.5, alpha=0.95, zorder=3)
             except Exception:
                 pass
-
     # Segments droits
     for r in rows:
         if not r.get("route_coords"):
@@ -537,7 +540,6 @@ def build_pdf_report(df: pd.DataFrame,
     """
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # Mise en page A4 paysage
     dpi = 150
     fig_w, fig_h = (11.69, 8.27)  # pouces
 
@@ -557,7 +559,8 @@ def build_pdf_report(df: pd.DataFrame,
     fig.patch.set_facecolor("white")
 
     # Entête
-    ax_header = fig.add_subplot(gs[0:20, 0:100]); ax_header.axis("off")
+    ax_header = fig.add_subplot(gs[0:20, 0:100])
+    ax_header.axis("off")
     y_cursor = 0.92
     if logo_img is not None:
         target_px = 150
@@ -588,7 +591,8 @@ def build_pdf_report(df: pd.DataFrame,
     # Carte (si dispo)
     if map_png_bytes:
         try:
-            ax_map = fig.add_subplot(gs[22:62, 0:48]); ax_map.axis("off")
+            ax_map = fig.add_subplot(gs[22:62, 0:48])
+            ax_map.axis("off")
             map_img = Image.open(io.BytesIO(map_png_bytes)).convert("RGB")
             ax_map.imshow(map_img)
             ax_map.set_title("Carte des segments (aperçu statique)", fontsize=10, pad=4)
@@ -667,7 +671,8 @@ if st.button("Calculer l'empreinte carbone totale"):
             if seg["mode"].startswith("Routier") or "Routier" in seg["mode"]:
                 try:
                     r = osrm_route(coord1, coord2, st.session_state["osrm_base_url"], overview="full")
-                    distance_km = r["distance_km"]; route_coords = r["coords"]
+                    distance_km = r["distance_km"]
+                    route_coords = r["coords"]
                 except Exception as e:
                     st.warning(f"Segment {idx}: OSRM indisponible ({e}). Distance à vol d’oiseau utilisée.")
                     distance_km = compute_distance_km(coord1, coord2)
@@ -682,12 +687,18 @@ if st.button("Calculer l'empreinte carbone totale"):
             total_emissions += emissions
 
             rows.append({
-                "Segment": idx, "Origine": seg["origin"], "Destination": seg["destination"], "Mode": seg["mode"],
+                "Segment": idx,
+                "Origine": seg["origin"],
+                "Destination": seg["destination"],
+                "Mode": seg["mode"],
                 "Distance (km)": round(distance_km, 1),
                 f"Poids ({unit})": round(seg["weight"], 3 if unit=="tonnes" else 1),
                 "Facteur (kg CO₂e/t.km)": factor,
                 "Émissions (kg CO₂e)": round(emissions, 2),
-                "lat_o": coord1[0], "lon_o": coord1[1], "lat_d": coord2[0], "lon_d": coord2[1],
+                "lat_o": coord1[0],
+                "lon_o": coord1[1],
+                "lat_d": coord2[0],
+                "lon_d": coord2[1],
                 "route_coords": route_coords,
             })
 
@@ -708,6 +719,7 @@ if st.button("Calculer l'empreinte carbone totale"):
         # 🗺️ Carte interactive (pydeck)
         st.subheader("🗺️ Carte des segments")
 
+        # Lignes (OSRM ou droites)
         route_paths = []
         for r in rows:
             if (r["Mode"].startswith("Routier") or "Routier" in r["Mode"]) and r.get("route_coords"):
@@ -716,8 +728,13 @@ if st.button("Calculer l'empreinte carbone totale"):
         layers = []
         if route_paths:
             layers.append(pdk.Layer(
-                "PathLayer", data=route_paths, get_path="path",
-                get_color=[187, 147, 87, 220], width_scale=1, width_min_pixels=4, pickable=True,
+                "PathLayer",
+                data=route_paths,
+                get_path="path",
+                get_color=[187, 147, 87, 220],
+                width_scale=1,
+                width_min_pixels=4,
+                pickable=True,
             ))
 
         straight_lines = []
@@ -725,16 +742,22 @@ if st.button("Calculer l'empreinte carbone totale"):
             has_osrm = (r["Mode"].startswith("Routier") or "Routier" in r["Mode"]) and r.get("route_coords")
             if not has_osrm:
                 straight_lines.append({
-                    "from": [r["lon_o"], r["lat_o"]], "to": [r["lon_d"], r["lat_d"]],
+                    "from": [r["lon_o"], r["lat_o"]],
+                    "to": [r["lon_d"], r["lat_d"]],
                     "name": f"Segment {r['Segment']} - {r['Mode']}",
                 })
         if straight_lines:
             layers.append(pdk.Layer(
-                "LineLayer", data=straight_lines,
-                get_source_position="from", get_target_position="to",
-                get_width=3, get_color=[120, 120, 120, 160], pickable=True,
+                "LineLayer",
+                data=straight_lines,
+                get_source_position="from",
+                get_target_position="to",
+                get_width=3,
+                get_color=[120, 120, 120, 160],
+                pickable=True,
             ))
 
+        # Points + labels
         points, labels = [], []
         for r in rows:
             points.append({"position": [r["lon_o"], r["lat_o"]], "name": f"S{r['Segment']} • Origine", "color": [0, 122, 255, 220]})
@@ -744,20 +767,34 @@ if st.button("Calculer l'empreinte carbone totale"):
 
         if points:
             layers.append(pdk.Layer(
-                "ScatterplotLayer", data=points,
-                get_position="position", get_fill_color="color",
-                get_radius=20000, radius_min_pixels=4, radius_max_pixels=12,
-                pickable=True, stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=1,
+                "ScatterplotLayer",
+                data=points,
+                get_position="position",
+                get_fill_color="color",
+                get_radius=20000,
+                radius_min_pixels=4,
+                radius_max_pixels=12,
+                pickable=True,
+                stroked=True,
+                get_line_color=[255, 255, 255],
+                line_width_min_pixels=1,
             ))
         if labels:
             layers.append(pdk.Layer(
-                "TextLayer", data=labels,
-                get_position="position", get_text="text", get_color="color",
-                get_size=16, size_units="pixels",
-                get_text_anchor='"start"', get_alignment_baseline='"top"',
-                background=True, get_background_color=[255, 255, 255, 160],
+                "TextLayer",
+                data=labels,
+                get_position="position",
+                get_text="text",
+                get_color="color",
+                get_size=16,
+                size_units="pixels",
+                get_text_anchor='"start"',        # littéral JS
+                get_alignment_baseline='"top"',   # littéral JS
+                background=True,
+                get_background_color=[255, 255, 255, 160],
             ))
 
+        # Vue auto
         all_lats, all_lons = [], []
         if route_paths and any(d["path"] for d in route_paths):
             all_lats.extend([pt[1] for d in route_paths for pt in d["path"]])
@@ -768,7 +805,9 @@ if st.button("Calculer l'empreinte carbone totale"):
         view = _compute_auto_view(all_lats, all_lons)
         st.pydeck_chart(pdk.Deck(
             map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
-            initial_view_state=view, layers=layers, tooltip={"text": "{name}"}
+            initial_view_state=view,
+            layers=layers,
+            tooltip={"text": "{name}"}
         ))
 
         # ======= Image statique de la carte (PNG) pour PDF =======
@@ -781,7 +820,7 @@ if st.button("Calculer l'empreinte carbone totale"):
         if st.session_state.get("case_ref"):
             st.info(f"**Dossier Transport N° :** {st.session_state['case_ref']}")
 
-        # ✅ Tableau (aperçu)
+        # Tableau (aperçu)
         st.dataframe(
             df[[
                 "Segment", "Origine", "Destination", "Mode",
@@ -818,9 +857,12 @@ if st.button("Calculer l'empreinte carbone totale"):
 
         # (Optionnel) PNG de la carte
         if map_png_bytes:
-            st.download_button("🖼️ Télécharger l'image de la carte (PNG)",
-                               data=map_png_bytes, file_name=f"carte_co2_multimodal{suffix}.png", mime="image/png")
+            st.download_button(
+                "🖼️ Télécharger l'image de la carte (PNG)",
+                data=map_png_bytes,
+                file_name=f"carte_co2_multimodal{suffix}.png",
+                mime="image/png"
+            )
 
     else:
         st.info("Aucun segment valide n’a été calculé. Vérifiez les entrées ou les sélections.")
-``
