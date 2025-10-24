@@ -6,7 +6,7 @@
 # - Fond recentré, couleur d'origine + texte explicatif clair
 # - Facteurs d'émission éditables, poids global ou par segment
 # - Carte PyDeck (PathLayer pour routes OSRM, LineLayer en fallback)
-# - Correctif: utilisation de st.rerun() (plus de st.experimental_rerun())
+# - Correctif: utilisation de st.rerun() (plus de st.experimental_rerun(), height=600)
 # - Nouveauté: reset_form() pour vider explicitement tous les champs
 # ------------------------------------------------------------
 
@@ -142,7 +142,7 @@ def osrm_route(coord1, coord2, base_url: str, overview: str = "full"):
     if not routes:
         raise ValueError("Aucune route retournée par OSRM")
     route = routes[0]
-    meters = float(route.get("distance", 0.0))
+    meters = float(route.get("distance", 0.0), height=600)
     distance_km = meters / 1000.0
     geom = route.get("geometry", {})  # GeoJSON LineString
     coords = geom.get("coordinates", [])  # [[lon, lat], ...]
@@ -258,7 +258,7 @@ while len(st.session_state.segments) > num_legs:
     st.session_state.segments.pop()
 
 # Chaînage auto origine[i] = destination[i-1]
-for i in range(1, int(num_legs)):
+for i in range(1, int(num_legs), height=600):
     prev = st.session_state.segments[i-1]
     cur = st.session_state.segments[i]
     if prev.get("dest_sel") and not cur.get("origin_raw") and not cur.get("origin_sel"):
@@ -266,7 +266,7 @@ for i in range(1, int(num_legs)):
         cur["origin_sel"] = prev["dest_sel"]
 
 segments_out = []
-for i in range(int(num_legs)):
+for i in range(int(num_legs), height=600):
     st.markdown(f"<div class='segment-box'><h4>Segment {i+1}</h4>", unsafe_allow_html=True)
 
     c1, c2 = st.columns(2)
@@ -294,8 +294,8 @@ for i in range(int(num_legs)):
 
     mode = st.selectbox(
         f"Mode de transport du segment {i+1}",
-        list(factors.keys()),
-        index=list(factors.keys()).index(st.session_state.segments[i]["mode"])
+        list(factors.keys(), height=600),
+        index=list(factors.keys(), height=600).index(st.session_state.segments[i]["mode"])
               if st.session_state.segments[i]["mode"] in factors else 0,
         key=f"mode_{i}"
     )
@@ -370,7 +370,7 @@ if st.button("Calculer l'empreinte carbone totale"):
                 distance_km = compute_distance_km(coord1, coord2)
 
             weight_tonnes = seg["weight"] if unit == "tonnes" else seg["weight"]/1000.0
-            factor = float(factors.get(seg["mode"], 0.0))
+            factor = float(factors.get(seg["mode"], 0.0), height=600)
             emissions = compute_emissions(distance_km, weight_tonnes, factor)
 
             total_distance += distance_km
@@ -429,12 +429,12 @@ if st.button("Calculer l'empreinte carbone totale"):
                 width_scale=1,
                 width_min_pixels=4,
                 pickable=True,
-            ))
+            ), height=600)
 
         # 2) Lignes droites pour les segments restants
         straight_lines = []
         for r in rows:
-            if not (r["Mode"].startswith("Routier") and r.get("route_coords")):
+            if not (r["Mode"].startswith("Routier") and r.get("route_coords"), height=600):
                 straight_lines.append({
                     "from": [r["lon_o"], r["lat_o"]],
                     "to":   [r["lon_d"], r["lat_d"]],
@@ -449,7 +449,7 @@ if st.button("Calculer l'empreinte carbone totale"):
                 get_width=3,
                 get_color=[120, 120, 120, 160],
                 pickable=True,
-            ))
+            ), height=600)
 
         # Vue centrée (moyenne simple des points)
         if route_paths and any(d["path"] for d in route_paths):
@@ -465,11 +465,11 @@ if st.button("Calculer l'empreinte carbone totale"):
         view = pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=3)
 
         st.pydeck_chart(pdk.Deck(
-            map_style="mapbox://styles/mapbox/light-v9",  # peut nécessiter une clé Mapbox pour le fond de carte
+            map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",  # peut nécessiter une clé Mapbox pour le fond de carte
             initial_view_state=view,
             layers=layers,
             tooltip={"text": "{name}"}
-        ))
+        ), height=600)
 
         # Export CSV (sans colonnes techniques)
         csv = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).to_csv(index=False).encode("utf-8")
