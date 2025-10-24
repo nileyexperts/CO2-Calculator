@@ -6,19 +6,30 @@
 # - Facteurs d'émission éditables, poids global ou par segment
 # - Carte PyDeck (PathLayer pour routes OSRM, LineLayer en fallback)
 # - Reset via st.rerun() + reset_form()
-# - UI segments: boutons d’ajout/suppression (plus de "Nombre de segments")
+# - UI segments: boutons d’ajout/suppression
 # - Carte: auto-zoom/centrage + balises (points + étiquettes)
+# - Export CSV + PDF avec logo et capture de la carte (PNG)
 # ------------------------------------------------------------
 
 import os
+import io
 import time
 import math
 import requests
+import datetime
 import pandas as pd
 import streamlit as st
 import pydeck as pdk
+import fitz  # PyMuPDF
 from opencage.geocoder import OpenCageGeocode
 from geopy.distance import great_circle
+
+# --- Pour la génération d'image de la carte (statique)
+import matplotlib
+matplotlib.use("Agg")  # backend non interactif
+import matplotlib.pyplot as plt
+import geopandas as gpd
+from shapely.geometry import LineString, Point
 
 # =========================
 # 🎯 Paramètres par défaut
@@ -29,8 +40,11 @@ DEFAULT_EMISSION_FACTORS = {
     "🚢 Maritime 🚢": 0.015,
     "🚂 Ferroviaire 🚂": 0.030,
 }
-BACKGROUND_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/background.png"
 MAX_SEGMENTS = 10  # limite haute
+
+# Logo NILEY EXPERTS (URL raw GitHub)
+LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png"
+
 st.set_page_config(
     page_title="Calculateur CO₂ multimodal - NILEY EXPERTS",
     page_icon="🌍",
@@ -230,7 +244,7 @@ for i in range(1, len(st.session_state.segments)):
 
 segments_out = []
 
-# Rendu de chaque segment + boutons en bas de section
+# Rendu de chaque segment
 for i in range(len(st.session_state.segments)):
     st.markdown(f"##### Segment {i+1}", unsafe_allow_html=True)
 
@@ -310,11 +324,11 @@ for i in range(len(st.session_state.segments)):
         "weight": weight_val
     })
 
-# --- Boutons d'ajout/suppression ---
+# --- Boutons globaux d'ajout/suppression ---
 bc1, bc2, bc3 = st.columns([2, 2, 6])
 
 with bc1:
-    # ➕ Ajouter un segment APRÈS ce segment
+    # ➕ Ajouter un segment à la fin (pratique)
     can_add = len(st.session_state.segments) < MAX_SEGMENTS
     if st.button("➕ Ajouter un segment à la fin", key="add_at_end", disabled=not can_add):
         last = st.session_state.segments[-1]
@@ -328,10 +342,104 @@ with bc1:
         st.rerun()
 
 with bc2:
-    # ❌ Supprimer le dernier segment si > 1
+    # 🗑️ Supprimer le dernier segment si > 1
     if st.button("🗑️ Supprimer le dernier segment", key="del_last", disabled=len(st.session_state.segments) <= 1):
         st.session_state.segments.pop(-1)
         st.rerun()
+
+# =========================
+# 🗺️ Génération d'une image statique de la carte (PNG)
+# =========================
+@st.cache_data(show_spinner=False, ttl=6*60*60)
+def _load_world():
+    # GeoPandas embarque Natural Earth lowres
+    try:
+        world = gpd.read_file(gpd.datasets.get_path('naturalearth_lowres'))
+        return world.to_crs(epsg=4326)
+    except Exception:
+        return None
+
+def build_map_image(rows: list, figsize_px=(1400, 900)) -> bytes | None:
+    """
+    Construit une image PNG (bytes) de la carte :
+      - fond monde (Natural Earth)
+      - routes OSRM en orange, segments droits en gris
+      - points O/D avec labels
+      - zoom auto sur l'étendue des données
+    """
+    if not rows:
+        return None
+
+    world = _load_world()
+    # Collecte des points pour l'étendue
+    all_lats, all_lons = [], []
+    for r in rows:
+        all_lats.extend([r["lat_o"], r["lat_d"]])
+        all_lons.extend([r["lon_o"], r["lon_d"]])
+        if r.get("route_coords"):
+            for lon, lat in r["route_coords"]:
+                all_lats.append(lat)
+                all_lons.append(lon)
+
+    if not all_lats or not all_lons:
+        return None
+
+    min_lat, max_lat = min(all_lats), max(all_lats)
+    min_lon, max_lon = min(all_lons), max(all_lons)
+
+    # Marges (~10%)
+    lat_pad = (max_lat - min_lat) * 0.10 or 2.0
+    lon_pad = (max_lon - min_lon) * 0.10 or 2.0
+    x_min, x_max = min_lon - lon_pad, max_lon + lon_pad
+    y_min, y_max = min_lat - lat_pad, max_lat + lat_pad
+
+    # Figure en pouces
+    dpi = 150
+    fig_w = figsize_px[0] / dpi
+    fig_h = figsize_px[1] / dpi
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
+
+    # Fond de carte
+    if world is not None:
+        world.plot(ax=ax, color="#f7f7f7", edgecolor="#cccccc", linewidth=0.5, zorder=0)
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
+
+    # Tracés
+    # 1) Routes OSRM (Path)
+    for r in rows:
+        if r.get("route_coords"):
+            ls = LineString([(lon, lat) for lon, lat in r["route_coords"]])
+            xs, ys = ls.xy
+            ax.plot(xs, ys, color="#BB9357", linewidth=2.5, alpha=0.95, zorder=3)
+
+    # 2) Segments droits (fallback)
+    for r in rows:
+        if not r.get("route_coords"):
+            ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]],
+                    color="#888888", linewidth=1.8, alpha=0.9, linestyle="-.", zorder=2)
+
+    # 3) Points O/D + labels
+    for r in rows:
+        ax.scatter(r["lon_o"], r["lat_o"], c="#007AFF", s=40, edgecolor="white", linewidth=0.8, zorder=4)
+        ax.scatter(r["lon_d"], r["lat_d"], c="#DC4242", s=40, edgecolor="white", linewidth=0.8, zorder=4)
+        ax.text(r["lon_o"], r["lat_o"], f" S{r['Segment']} O", fontsize=9, color="#0a0a0a",
+                va="bottom", ha="left", zorder=5, bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.6))
+        ax.text(r["lon_d"], r["lat_d"], f" S{r['Segment']} D", fontsize=9, color="#0a0a0a",
+                va="bottom", ha="left", zorder=5, bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.6))
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.set_title("Carte des segments (aperçu statique)", fontsize=12, pad=8)
+
+    plt.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=dpi, facecolor="white")
+    plt.close(fig)
+    buf.seek(0)
+    return buf.getvalue()
 
 # =========================
 # 🧮 Calcul + Carte (auto-zoom + balises points)
@@ -339,9 +447,6 @@ with bc2:
 def _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80):
     """
     Calcule un ViewState (centre + zoom) à partir d'une liste de latitudes/longitudes.
-    - viewport_px: taille approximative du canvas (px) pour estimer le zoom
-    - padding_px : marge interne à conserver (px)
-    Heuristique: zoom 'mercator-like' à partir de l'étendue (lat/lon).
     """
     if not all_lats or not all_lons:
         return pdk.ViewState(latitude=48.8534, longitude=2.3488, zoom=3)  # fallback: Paris ~ Europe
@@ -353,19 +458,207 @@ def _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80
     # Étendue
     span_lat = max(1e-6, max_lat - min_lat)
     span_lon = max(1e-6, max_lon - min_lon)
-    # Corrige l'axe Est-Ouest par cos(lat) pour l'étendue équivalente
+    # Corrige l'axe Est-Ouest par cos(lat)
     span_lon_equiv = span_lon * max(0.1, math.cos(math.radians(mid_lat)))
-    # Heuristic zoom ≈ log2(360 / span_degrees_equivalent)
     world_deg_width = 360.0
     zoom_x = math.log2(world_deg_width / max(1e-6, span_lon_equiv))
-    zoom_y = math.log2(180.0 / max(1e-6, span_lat))  # 180° de lat visibles
-    zoom = max(1.0, min(15.0, min(zoom_x, zoom_y)))  # borne le zoom
+    zoom_y = math.log2(180.0 / max(1e-6, span_lat))
+    zoom = max(1.0, min(15.0, min(zoom_x, zoom_y)))
     return pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=float(zoom), bearing=0, pitch=0)
 
+# =========================
+# 🧾 Génération du PDF (avec logo + image de carte)
+# =========================
+def build_pdf_report(df: pd.DataFrame,
+                     total_distance_km: float,
+                     total_emissions_kg: float,
+                     unit_label: str,
+                     company: str = "NILEY EXPERTS",
+                     logo_url=None,
+                     map_png_bytes: bytes | None = None) -> bytes:
+    """
+    Génère un PDF (bytes) avec:
+      - En-tête (logo optionnel, titre, date/heure, éditeur)
+      - Résumé des totaux
+      - Image statique de la carte (optionnelle)
+      - Tableau détaillé des segments
+    """
+    # --- Préparation document
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    doc = fitz.open()
+    page = doc.new_page()  # A4 (595 x 842 pt approx)
+    width, height = page.rect.width, page.rect.height
+
+    # Marges et styles
+    margin_x = 40
+    margin_top = 50
+    y = margin_top
+    line_gap = 6
+    font_text = "helv"
+    font_bold = "helv-Bold"
+
+    # Helpers
+    def draw_title(p, text, y_pos):
+        p.insert_text((margin_x, y_pos), text, fontname=font_bold, fontsize=16, color=(0,0,0))
+        return y_pos + 24
+
+    def draw_kv(p, key, value, y_pos):
+        p.insert_text((margin_x, y_pos), f"{key}: ", fontname=font_bold, fontsize=10, color=(0,0,0))
+        p.insert_text((margin_x + 90, y_pos), f"{value}", fontname=font_text, fontsize=10, color=(0,0,0))
+        return y_pos + 14
+
+    def new_page():
+        _page = doc.new_page()
+        return _page
+
+    # --- Logo (optionnel)
+    logo_right_pad = 10
+    try:
+        if logo_url:
+            resp = requests.get(logo_url, timeout=10)
+            resp.raise_for_status()
+            img_bytes = resp.content
+            img_doc = fitz.open(stream=img_bytes, filetype="png")
+            pix = fitz.Pixmap(img_doc[0])
+            img_w, img_h = pix.width, pix.height
+            target_w = 120  # pt
+            target_h = img_h * target_w / img_w
+            logo_rect = fitz.Rect(margin_x, y, margin_x + target_w, y + target_h)
+            page.insert_image(logo_rect, stream=img_bytes, keep_proportion=True)
+
+            if (margin_x + target_w + logo_right_pad + 250) < (width - margin_x):
+                title_x = margin_x + target_w + logo_right_pad
+                title_y = y + 6
+                page.insert_text((title_x, title_y), "Rapport d'empreinte carbone multimodal",
+                                 fontname=font_bold, fontsize=16, color=(0,0,0))
+                y = max(y + target_h, title_y + 26)
+            else:
+                y = y + target_h + 10
+                y = draw_title(page, "Rapport d'empreinte carbone multimodal", y)
+        else:
+            y = draw_title(page, "Rapport d'empreinte carbone multimodal", y)
+    except Exception:
+        y = draw_title(page, "Rapport d'empreinte carbone multimodal", y)
+
+    # --- Métadonnées en-tête
+    y = draw_kv(page, "Généré le", now, y)
+    y = draw_kv(page, "Éditeur", company, y)
+    y += 6
+    page.draw_line((margin_x, y), (width - margin_x, y))
+    y += 14
+
+    # --- Résumé
+    page.insert_text((margin_x, y), "Résumé", fontname=font_bold, fontsize=12); y += 18
+    y = draw_kv(page, "Distance totale", f"{total_distance_km:.1f} km", y)
+    y = draw_kv(page, "Émissions totales", f"{total_emissions_kg:.2f} kg CO₂e", y)
+    y += 8
+
+    # --- Image de la carte (si fournie)
+    if map_png_bytes:
+        try:
+            # Calcul du rect de destination (max largeur = width - 2*margin_x, max hauteur ~ 340pt)
+            max_w = width - 2*margin_x
+            max_h = 340
+            img_doc = fitz.open(stream=map_png_bytes, filetype="png")
+            pix = fitz.Pixmap(img_doc[0])
+            iw, ih = pix.width, pix.height
+            scale = min(max_w / iw, max_h / ih, 1.0)
+            dest_w = iw * scale
+            dest_h = ih * scale
+            rect = fitz.Rect(margin_x, y, margin_x + dest_w, y + dest_h)
+            page.insert_image(rect, stream=map_png_bytes)
+            y += dest_h + 8
+        except Exception:
+            # On ignore l'image si erreur
+            pass
+
+    page.draw_line((margin_x, y), (width - margin_x, y))
+    y += 16
+
+    # --- Tableau (mêmes colonnes que la vue Streamlit)
+    columns = [
+        "Segment", "Origine", "Destination", "Mode",
+        "Distance (km)", f"Poids ({unit_label})",
+        "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"
+    ]
+    table_df = df[columns].copy()
+
+    # Largeurs de colonnes (total ≈ 515pt)
+    col_widths = {
+        "Segment": 45,
+        "Origine": 125,
+        "Destination": 125,
+        "Mode": 80,
+        "Distance (km)": 60,
+        f"Poids ({unit_label})": 60,
+        "Facteur (kg CO₂e/t.km)": 85,
+        "Émissions (kg CO₂e)": 85,
+    }
+
+    def ensure_space_or_newpage(req_height):
+        nonlocal page, y
+        if y + req_height > height - 40:
+            page = new_page()
+            y = margin_top
+
+    # En-tête du tableau
+    def draw_table_header():
+        nonlocal y
+        ensure_space_or_newpage(28)
+        x = margin_x
+        for col in columns:
+            page.insert_text((x, y), col, fontname=font_bold, fontsize=9)
+            x += col_widths[col]
+        y += 16
+        page.draw_line((margin_x, y), (width - margin_x, y))
+        y += 10
+
+    draw_table_header()
+
+    # Lignes du tableau
+    for _, row in table_df.iterrows():
+        max_lines = 1
+        for col in ["Origine", "Destination"]:
+            txt = str(row[col])
+            if len(txt) > 55:
+                max_lines = 2
+                break
+        row_height = 12 * max_lines + line_gap
+        ensure_space_or_newpage(row_height)
+        if y == margin_top:
+            draw_table_header()
+
+        x = margin_x
+        for col in columns:
+            value = row[col]
+            txt = "" if pd.isna(value) else str(value)
+            if col in ["Origine", "Destination"] and max_lines > 1 and len(txt) > 55:
+                first = txt[:55]
+                second = txt[55:]
+                page.insert_text((x, y), first, fontname=font_text, fontsize=9)
+                page.insert_text((x, y+12), second, fontname=font_text, fontsize=9)
+            else:
+                page.insert_text((x, y), txt, fontname=font_text, fontsize=9)
+            x += col_widths[col]
+        y += row_height
+
+    # Pieds de page (numéro de page)
+    for i, p in enumerate(doc, start=1):
+        p.insert_text((width - margin_x - 60, height - 20),
+                      f"Page {i}/{len(doc)}", fontname=font_text, fontsize=8, color=(0,0,0))
+
+    pdf_bytes = doc.tobytes()
+    doc.close()
+    return pdf_bytes
+
+# =========================
+# ▶️ Bouton de calcul
+# =========================
 if st.button("Calculer l'empreinte carbone totale"):
     rows = []
     total_emissions = 0.0
     total_distance = 0.0
+
     with st.spinner("Calcul en cours…"):
         for idx, seg in enumerate(segments_out, start=1):
             if not seg["origin"] or not seg["destination"]:
@@ -422,13 +715,13 @@ if st.button("Calculer l'empreinte carbone totale"):
             f"Émissions totales : **{total_emissions:.2f} kg CO₂e**"
         )
 
-        # Tableau
-        st.dataframe(
-            df[["Segment", "Origine", "Destination", "Mode", "Distance (km)", f"Poids ({unit})", "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"]],
-            use_container_width=True
-        )
+        # Stocker le dernier résultat pour CSV/PDF
+        st.session_state["last_result_df"] = df
+        st.session_state["last_total_distance"] = total_distance
+        st.session_state["last_total_emissions"] = total_emissions
+        st.session_state["last_unit"] = unit
 
-        # 🗺️ Carte : routes + points + étiquettes (auto-zoom)
+        # 🗺️ Carte interactive (pydeck)
         st.subheader("🗺️ Carte des segments")
 
         # 1) Data pour les lignes (OSRM ou droites)
@@ -502,7 +795,7 @@ if st.button("Calculer l'empreinte carbone totale"):
             ))
 
         if labels:
-            # ⚠️ Correctif : valeurs littérales sans quotes internes
+            # littéraux JS pour deck.gl
             layers.append(pdk.Layer(
                 "TextLayer",
                 data=labels,
@@ -511,8 +804,8 @@ if st.button("Calculer l'empreinte carbone totale"):
                 get_color="color",
                 get_size=16,
                 size_units="pixels",
-                get_text_anchor="start",          # <- corrigé
-                get_alignment_baseline="top",     # <- corrigé
+                get_text_anchor='"start"',
+                get_alignment_baseline='"top"',
                 background=True,
                 get_background_color=[255, 255, 255, 160],
             ))
@@ -535,8 +828,43 @@ if st.button("Calculer l'empreinte carbone totale"):
             tooltip={"text": "{name}"}
         ))
 
-        # Export CSV (sans colonnes techniques)
+        # ======= Image statique de la carte (PNG) pour PDF =======
+        map_png_bytes = build_map_image(rows, figsize_px=(1400, 900))
+        st.session_state["last_map_png"] = map_png_bytes
+
+        # Export CSV
         csv = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).to_csv(index=False).encode("utf-8")
         st.download_button("⬇️ Télécharger le détail (CSV)", data=csv, file_name="resultats_co2_multimodal.csv", mime="text/csv")
+
+        # Export PDF (avec logo + carte)
+        pdf_name = "rapport_co2_multimodal.pdf"
+        try:
+            pdf_bytes = build_pdf_report(
+                df=st.session_state["last_result_df"],
+                total_distance_km=st.session_state["last_total_distance"],
+                total_emissions_kg=st.session_state["last_total_emissions"],
+                unit_label=st.session_state["last_unit"],
+                company="NILEY EXPERTS",
+                logo_url=LOGO_URL,
+                map_png_bytes=st.session_state.get("last_map_png")
+            )
+            st.download_button(
+                "🧾 Exporter le rapport (PDF)",
+                data=pdf_bytes,
+                file_name=pdf_name,
+                mime="application/pdf"
+            )
+        except Exception as e:
+            st.warning(f"Impossible de générer le PDF : {e}")
+
+        # (Optionnel) Permettre de télécharger aussi l'image PNG seule
+        if map_png_bytes:
+            st.download_button(
+                "🖼️ Télécharger l'image de la carte (PNG)",
+                data=map_png_bytes,
+                file_name="carte_co2_multimodal.png",
+                mime="image/png"
+            )
+
     else:
         st.info("Aucun segment valide n’a été calculé. Vérifiez les entrées ou les sélections.")
