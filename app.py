@@ -33,17 +33,6 @@ BACKGROUND_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/
 MAX_SEGMENTS = 10  # utilisé pour nettoyer toutes les clés potentielles
 
 st.set_page_config(page_title="Calculateur CO₂ multimodal - NILEY EXPERTS",
-
-# --- Styles (labels en blanc pour st.number_input) ---
-st.markdown(
-    '''
-    <style>
-        [data-testid="stNumberInput"] label { color: white !important; }
-    </style>
-    ''',
-    unsafe_allow_html=True
-)
-
                    page_icon="🌍", layout="centered")
 
 # =========================
