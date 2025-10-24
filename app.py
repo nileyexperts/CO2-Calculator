@@ -36,7 +36,7 @@ st.set_page_config(page_title="Calculateur CO₂ multimodal - NILEY EXPERTS",
 
 
 # --- Styles (labels en blanc pour st.number_input) ---
-st.markdown(
+st.markdown("""...""")
     '''
     <style>
         [data-testid="stNumberInput"] label { color: white !important; }
