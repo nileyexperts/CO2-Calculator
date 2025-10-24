@@ -8,6 +8,9 @@
 # - Reset via st.rerun() + reset_form()
 # - UI segments: boutons d’ajout/suppression (plus de "Nombre de segments")
 # - Carte: auto-zoom/centrage + balises (points + étiquettes)
+# - Option: rayon des points dynamique (mètres) ou fixe (pixels)
+# - Fond: #DFEDF5
+# - Logo en haut à gauche (depuis GitHub)
 # ------------------------------------------------------------
 
 import os
@@ -24,12 +27,11 @@ from geopy.distance import great_circle
 # 🎯 Paramètres par défaut
 # =========================
 DEFAULT_EMISSION_FACTORS = {
-    "🚛 Routier 🚛": 0.100,     # kg CO2e / t.km
+    "🚛 Routier 🚛": 0.100,   # kg CO2e / t.km
     "✈️ Aérien ✈️": 0.500,
     "🚢 Maritime 🚢": 0.015,
     "🚂 Ferroviaire 🚂": 0.030,
 }
-BACKGROUND_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/background.png"
 MAX_SEGMENTS = 10  # limite haute
 
 st.set_page_config(
@@ -39,13 +41,65 @@ st.set_page_config(
 )
 
 # =========================
-# 🎨 Styles (placeholder)
+# 🖼️ Logo en haut à gauche
 # =========================
-st.markdown("""
+# URL RAW GitHub du logo fourni
+LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png"
+
+st.markdown(f"""
 <style>
-/* Ajoutez votre CSS personnalisé ici si besoin */
+/* Couleur de fond globale */
+:root {{ --app-bg: #DFEDF5; }}
+html, body, [data-testid="stAppViewContainer"], .stApp {{
+  background-color: var(--app-bg) !important;
+}}
+
+/* Sidebar plus lisible (facultatif) */
+[data-testid="stSidebar"] {{
+  background: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(2px);
+}}
+
+/* Cartes/expandeurs */
+div[role="group"] > div:has(> details), details {{
+  background: #ffffff !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(0,0,0,0.06) !important;
+}}
+
+/* Boutons + inputs */
+.stButton>button {{ border-radius: 8px; }}
+.stButton>button:hover {{ box-shadow: 0 2px 10px rgba(0,0,0,0.08); }}
+.stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stNumberInput input {{
+  border-radius: 8px !important;
+}}
+
+/* Logo fixe en haut à gauche */
+.stApp {{ position: relative; }}
+#niley-logo-top-left {{
+  position: fixed;
+  top: 12px;
+  left: 16px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+}}
+#niley-logo-top-left img {{
+  height: 42px;
+  width: auto;
+  object-fit: contain;
+  image-rendering: -webkit-optimize-contrast;
+}}
+@media (max-width: 768px) {{
+  #niley-logo-top-left img {{ height: 34px; }}
+}}
 </style>
-""", unsafe_allow_html=True)
+<div id="niley-logo-top-left">
+  <img src="{LOGO_URL}" alt="NILEY EXPERTS Logo"
+# Petit espace sous le logo pour éviter un chevauchement éventuel
+st.markdown("<div style='height: 6px'></div>", unsafe_allow_html=True)
 
 # =========================
 # 🧠 Utilitaires
@@ -177,8 +231,8 @@ with col_r:
 # ⚙️ Paramètres
 # =========================
 with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
-    default_mode = "Envoi unique (même poids sur tous les segments)"
-    weight_mode = st.radio("Mode de gestion du poids :", [default_mode, "Poids par segment"], horizontal=False)
+    default_mode_label = "Envoi unique (même poids sur tous les segments)"
+    weight_mode = st.radio("Mode de gestion du poids :", [default_mode_label, "Poids par segment"], horizontal=False)
 
     factors = {}
     for mode_name, val in DEFAULT_EMISSION_FACTORS.items():
@@ -203,10 +257,35 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
     )
     st.session_state["osrm_base_url"] = osrm_base_url
 
+with st.expander("🎯 Apparence des points (carte)"):
+    # Option de rayon dynamique (mètres) vs fixe (pixels)
+    dynamic_radius = st.checkbox(
+        "Rayon dynamique (varie avec le zoom)", value=True,
+        help="En mode dynamique, le rayon est en mètres et change visuellement quand on zoome/dézoome. "
+             "En mode fixe, le rayon est en pixels et reste constant à l’écran."
+    )
+    if dynamic_radius:
+        radius_m = st.slider(
+            "Rayon des points (mètres)", min_value=1000, max_value=100000,
+            value=20000, step=1000,
+            help="Plus la valeur est grande, plus le point est visible à petite échelle."
+        )
+        radius_px = None
+    else:
+        radius_px = st.slider(
+            "Rayon des points (pixels)", min_value=2, max_value=30,
+            value=8, step=1,
+            help="Taille constante à l’écran, quelle que soit l’échelle de la carte."
+        )
+        radius_m = None
+
 # =========================
 # 🧩 Saisie des segments (avec boutons d'ajout/suppression)
 # =========================
-def _default_segment(origin_raw="", origin_sel="", dest_raw="", dest_sel="", mode="Routier 🚚", weight=1000.0):
+def _default_segment(origin_raw="", origin_sel="", dest_raw="", dest_sel="", mode=None, weight=1000.0):
+    if mode is None:
+        # Mode par défaut = première clé du dict de facteurs
+        mode = list(DEFAULT_EMISSION_FACTORS.keys())[0]
     return {
         "origin_raw": origin_raw, "origin_sel": origin_sel,
         "dest_raw": dest_raw, "dest_sel": dest_sel,
@@ -317,7 +396,7 @@ for i in range(len(st.session_state.segments)):
     # -------------------------
     # Boutons en bas de la section
     # -------------------------
-    bc1, bc2, bc3 = st.columns([2, 2, 6])
+    bc1, bc2, _ = st.columns([2, 2, 6])
 
     with bc1:
         # ➕ Ajouter un segment APRÈS ce segment
@@ -346,7 +425,7 @@ if st.button("➕ Ajouter un segment à la fin", key="add_at_end", disabled=len(
     new_seg = _default_segment(
         origin_raw=last.get("dest_sel") or last.get("dest_raw") or "",
         origin_sel=last.get("dest_sel") or "",
-        mode=last.get("mode", "Routier 🚚"),
+        mode=last.get("mode", list(DEFAULT_EMISSION_FACTORS.keys())[0]),
         weight=last.get("weight", 1000.0)
     )
     st.session_state.segments.append(new_seg)
@@ -379,12 +458,11 @@ def _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80
     # Corrige l'axe Est-Ouest par cos(lat) pour l'étendue équivalente
     span_lon_equiv = span_lon * max(0.1, math.cos(math.radians(mid_lat)))
 
-    # Convertit l'étendue en "degrés visibles" compatibles avec le viewport (très simplifié)
     # Heuristic zoom ≈ log2(360 / span_degrees_equivalent)
     world_deg_width = 360.0
     zoom_x = math.log2(world_deg_width / max(1e-6, span_lon_equiv))
     zoom_y = math.log2(180.0 / max(1e-6, span_lat))  # 180° de lat visibles
-    zoom = max(1.0, min(15.0, min(zoom_x, zoom_y)))  # borne le zoom dans une plage raisonnable
+    zoom = max(1.0, min(15.0, min(zoom_x, zoom_y)))  # borne le zoom
 
     return pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=float(zoom), bearing=0, pitch=0)
 
@@ -392,7 +470,6 @@ if st.button("Calculer l'empreinte carbone totale"):
     rows = []
     total_emissions = 0.0
     total_distance = 0.0
-
     with st.spinner("Calcul en cours…"):
         for idx, seg in enumerate(segments_out, start=1):
             if not seg["origin"] or not seg["destination"]:
@@ -407,7 +484,7 @@ if st.button("Calculer l'empreinte carbone totale"):
 
             # --- Distance: OSRM + géométrie pour Routier, sinon grand-cercle
             route_coords = None  # liste de [lon, lat]
-            if seg["mode"].startswith("Routier"):
+            if "Routier" in seg["mode"]:
                 try:
                     r = osrm_route(coord1, coord2, st.session_state["osrm_base_url"], overview="full")
                     distance_km = r["distance_km"]
@@ -462,7 +539,7 @@ if st.button("Calculer l'empreinte carbone totale"):
         # 1) Data pour les lignes (OSRM ou droites)
         route_paths = []
         for r in rows:
-            if r["Mode"].startswith("Routier") and r.get("route_coords"):
+            if "Routier" in r["Mode"] and r.get("route_coords"):
                 route_paths.append({
                     "path": r["route_coords"],  # [[lon, lat], ...]
                     "name": f"Segment {r['Segment']} - {r['Mode']}",
@@ -485,7 +562,7 @@ if st.button("Calculer l'empreinte carbone totale"):
         # 1b) Lignes droites pour les segments restants
         straight_lines = []
         for r in rows:
-            if not (r["Mode"].startswith("Routier") and r.get("route_coords")):
+            if not ("Routier" in r["Mode"] and r.get("route_coords")):
                 straight_lines.append({
                     "from": [r["lon_o"], r["lat_o"]],
                     "to": [r["lon_d"], r["lat_d"]],
@@ -521,21 +598,40 @@ if st.button("Calculer l'empreinte carbone totale"):
                            "text": f"S{r['Segment']} D",
                            "color": [220, 66, 66, 255]})
 
+        # --- ScatterplotLayer selon le mode de rayon
         if points:
-            layers.append(pdk.Layer(
-                "ScatterplotLayer",
-                data=points,
-                get_position="position",
-                get_fill_color="color",
-                get_radius=20000,   # rayon en mètres (ajustez si nécessaire)
-                radius_min_pixels=4,
-                radius_max_pixels=12,
-                pickable=True,
-                stroked=True,
-                get_line_color=[255, 255, 255],
-                line_width_min_pixels=1,
-            ))
+            if dynamic_radius:
+                # Rayon en mètres → apparence dynamique selon le zoom
+                layers.append(pdk.Layer(
+                    "ScatterplotLayer",
+                    data=points,
+                    get_position="position",
+                    get_fill_color="color",
+                    get_radius=radius_m if radius_m is not None else 20000,
+                    # radius_units par défaut = "meters"
+                    radius_min_pixels=2,
+                    radius_max_pixels=60,
+                    pickable=True,
+                    stroked=True,
+                    get_line_color=[255, 255, 255],
+                    line_width_min_pixels=1,
+                ))
+            else:
+                # Rayon fixe en pixels → taille constante à l’écran
+                layers.append(pdk.Layer(
+                    "ScatterplotLayer",
+                    data=points,
+                    get_position="position",
+                    get_fill_color="color",
+                    get_radius=radius_px if radius_px is not None else 8,
+                    radius_units="pixels",
+                    pickable=True,
+                    stroked=True,
+                    get_line_color=[255, 255, 255],
+                    line_width_min_pixels=1,
+                ))
 
+        # --- Étiquettes (TextLayer)
         if labels:
             layers.append(pdk.Layer(
                 "TextLayer",
@@ -545,8 +641,8 @@ if st.button("Calculer l'empreinte carbone totale"):
                 get_color="color",
                 get_size=16,
                 size_units="pixels",
-                get_text_anchor="'start'",
-                get_alignment_baseline="'top'",
+                get_text_anchor="start",
+                get_alignment_baseline="top",
                 background=True,
                 get_background_color=[255, 255, 255, 160],
             ))
