@@ -4,3 +4,8 @@ requests
 pydeck
 opencage
 geopy
+matplotlib
+Pillow
+geopandas
+shapely
+pyogrio
