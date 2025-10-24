@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # co2_calculator_app.py
 # ------------------------------------------------------------
 # Calculateur CO2 multimodal - NILEY EXPERTS
@@ -11,7 +12,7 @@
 # - Option: rayon des points dynamique (mètres) ou fixe (pixels)
 # - Fond: #DFEDF5
 # - Logo en haut à gauche (depuis GitHub)
-# - 🆕 Icônes par mode sur le trait (IconLayer au milieu de chaque segment)
+# - Icônes par mode sur le trait (IconLayer au milieu du segment)
 # ------------------------------------------------------------
 
 import os
@@ -35,6 +36,7 @@ DEFAULT_EMISSION_FACTORS = {
     "🚂 Ferroviaire 🚂": 0.030,
 }
 MAX_SEGMENTS = 10  # limite haute
+
 st.set_page_config(
     page_title="Calculateur CO₂ multimodal - NILEY EXPERTS",
     page_icon="🌍",
@@ -97,7 +99,7 @@ div[role="group"] > div:has(> details), details {{
 }}
 </style>
 <div id="niley-logo-top-left">
-  <img src="{LOGO_URL}" alt="NILEY EXPERTS=True)
+  <img src="{LOGO_URL}" alt="fe_allow_html=True)
 
 st.markdown("<div style='height: 6px'></div>", unsafe_allow_html=True)
 
@@ -142,7 +144,7 @@ def osrm_route(coord1, coord2, base_url: str, overview: str = "full"):
     Distance routière (km) + géométrie (polyline GeoJSON) via OSRM /route/v1/driving.
     - coord1/coord2: (lat, lon)
     - base_url: ex. https://router.project-osrm.org
-    Utilise: overview=full, geometries=geojson, alternatives=false, annotations=false
+    Utilise: overview=full, géometries=geojson, alternatives=false, annotations=false
     """
     # OSRM attend lon,lat
     lon1, lat1 = coord1[1], coord1[0]
@@ -195,15 +197,13 @@ if not API_KEY:
 geocoder = OpenCageGeocode(API_KEY)
 
 # =========================
-# 🏷️ En-tête & Texte explicatif
+# 🏷️ En-tête & Texte explicatif (ASCII-safe)
 # =========================
-st.markdown("""
-## Calculateur d'empreinte carbone multimodal - NILEY EXPERTS
-""", unsafe_allow_html=True)
-st.markdown("""
-Ajoutez plusieurs segments (origine → destination), choisissez le mode et le poids.
-Le mode Routier utilise OSRM (distance réelle + tracé).
-""", unsafe_allow_html=True)
+st.markdown("## Calculateur d'empreinte carbone multimodal - NILEY EXPERTS")
+st.markdown(
+    "Ajoutez plusieurs segments (origine -> destination), choisissez le mode et le poids. "
+    "Le mode Routier utilise OSRM (distance reelle + trace)."
+)
 
 # =========================
 # 🔄 Reset (utilise reset_form)
@@ -217,7 +217,7 @@ with col_r:
 # ⚙️ Paramètres
 # =========================
 with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
-    default_mode_label = "Envoi unique (même poids sur tous les segments)"
+    default_mode_label = "Envoi unique (meme poids sur tous les segments)"
     weight_mode = st.radio("Mode de gestion du poids :", [default_mode_label, "Poids par segment"], horizontal=False)
 
     factors = {}
@@ -228,11 +228,11 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
             key=f"factor_{mode_name}"
         )
 
-    unit = st.radio("Unité de saisie du poids", ["kg", "tonnes"], index=0, horizontal=True)
+    unit = st.radio("Unite de saisie du poids", ["kg", "tonnes"], index=0, horizontal=True)
 
     osrm_help = (
         "**OSRM** – pour test : `https://router.project-osrm.org` (serveur démo, non garanti). "
-        "En production, utilisez un serveur auto‑hébergé ou un provider."
+        "En production, utilisez un serveur auto-heberge ou un provider."
     )
     st.markdown(osrm_help)
 
@@ -247,16 +247,15 @@ with st.expander("🎯 Apparence de la carte (points & logos)"):
     # Option de rayon dynamique (mètres) vs fixe (pixels) pour les points
     dynamic_radius = st.checkbox(
         "Rayon des points dynamique (varie avec le zoom)", value=True,
-        help="Dynamique: en mètres, varie visuellement au zoom. Fixe: en pixels, constant à l’écran."
+        help="Dynamique: en metres, varie visuellement au zoom. Fixe: en pixels, constant a l’ecran."
     )
     if dynamic_radius:
-        radius_m = st.slider("Rayon des points (mètres)", 1000, 100000, 20000, 1000)
+        radius_m = st.slider("Rayon des points (metres)", 1000, 100000, 20000, 1000)
         radius_px = None
     else:
         radius_px = st.slider("Rayon des points (pixels)", 2, 30, 8, 1)
         radius_m = None
-
-    # 🆕 Taille des logos (IconLayer) en pixels
+    # Taille des logos (IconLayer) en pixels
     icon_size_px = st.slider("Taille des logos de segment (pixels)", 16, 64, 28, 2)
 
 # =========================
@@ -408,17 +407,17 @@ def mode_to_category(mode_str: str) -> str:
     """Mappe un libellé de mode (avec emojis/accent) vers {routier,aerien,maritime,ferroviaire}."""
     s = _normalize_no_diacritics(mode_str)
     if "routier" in s: return "routier"
-    if "aerien" in s:  return "aerien"
-    if "maritime" in s:return "maritime"
-    if "ferroviaire" in s: return "ferroviaire"
-    # fallback simple par mots-clés anglais éventuels
+    if "aerien" in s or "aérien" in s:  return "aerien"
+    if "maritime" in s or "mer" in s or "bateau" in s: return "maritime"
+    if "ferroviaire" in s or "train" in s: return "ferroviaire"
+    # fallback simples
     if "road" in s or "truck" in s: return "routier"
     if "air" in s or "plane" in s: return "aerien"
-    if "sea" in s or "ship" in s or "maritime" in s: return "maritime"
-    if "rail" in s or "train" in s: return "ferroviaire"
+    if "sea" in s or "ship" in s: return "maritime"
+    if "rail" in s: return "ferroviaire"
     return "routier"
 
-# ⚠️ Renseigne les URLs RAW de tes icônes ici :
+# URLs RAW de tes icônes (ajuste si besoin)
 ICON_URLS = {
     "routier":     "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/truck.png",
     "aerien":      "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/plane.png",
@@ -435,9 +434,7 @@ def midpoint_on_path(route_coords, lon_o, lat_o, lon_d, lat_d):
     if route_coords and isinstance(route_coords, list) and len(route_coords) >= 2:
         idx = len(route_coords) // 2
         pt = route_coords[idx]
-        # route_coords = [[lon, lat], ...]
         return [float(pt[0]), float(pt[1])]
-    # fallback: milieu des extrémités
     return [(lon_o + lon_d) / 2.0, (lat_o + lat_d) / 2.0]
 
 if st.button("Calculer l'empreinte carbone totale"):
@@ -445,7 +442,7 @@ if st.button("Calculer l'empreinte carbone totale"):
     total_emissions = 0.0
     total_distance = 0.0
 
-    with st.spinner("Calcul en cours…"):
+    with st.spinner("Calcul en cours..."):
         for idx, seg in enumerate(segments_out, start=1):
             if not seg["origin"] or not seg["destination"]:
                 st.warning(f"Segment {idx} : origine/destination manquante(s).")
@@ -464,7 +461,7 @@ if st.button("Calculer l'empreinte carbone totale"):
                     distance_km = r["distance_km"]
                     route_coords = r["coords"]
                 except Exception as e:
-                    st.warning(f"Segment {idx}: OSRM indisponible ({e}). Distance à vol d’oiseau utilisée.")
+                    st.warning(f"Segment {idx}: OSRM indisponible ({e}). Distance a vol d’oiseau utilisee.")
                     distance_km = compute_distance_km(coord1, coord2)
             else:
                 distance_km = compute_distance_km(coord1, coord2)
@@ -493,8 +490,8 @@ if st.button("Calculer l'empreinte carbone totale"):
     if rows:
         df = pd.DataFrame(rows)
         st.success(
-            f"✅ {len(rows)} segment(s) calculé(s) • Distance totale : **{total_distance:.1f} km** • "
-            f"Émissions totales : **{total_emissions:.2f} kg CO₂e**"
+            f"{len(rows)} segment(s) calcule(s) • Distance totale : {total_distance:.1f} km • "
+            f"Émissions totales : {total_emissions:.2f} kg CO₂e"
         )
 
         st.dataframe(
@@ -506,7 +503,7 @@ if st.button("Calculer l'empreinte carbone totale"):
         # -------------------------
         # 🗺️ Carte : routes + points + étiquettes + icônes de mode
         # -------------------------
-        st.subheader("🗺️ Carte des segments")
+        st.subheader("Carte des segments")
 
         # 1) Lignes (OSRM ou droites)
         route_paths = []
@@ -553,13 +550,13 @@ if st.button("Calculer l'empreinte carbone totale"):
         points, labels = [], []
         for r in rows:
             points.append({"position": [r["lon_o"], r["lat_o"]],
-                           "name": f"S{r['Segment']} • Origine",
+                           "name": f"S{r['Segment']} - Origine",
                            "color": [0, 122, 255, 220]})
             labels.append({"position": [r["lon_o"], r["lat_o"]],
                            "text": f"S{r['Segment']} O",
                            "color": [0, 122, 255, 255]})
             points.append({"position": [r["lon_d"], r["lat_d"]],
-                           "name": f"S{r['Segment']} • Destination",
+                           "name": f"S{r['Segment']} - Destination",
                            "color": [220, 66, 66, 220]})
             labels.append({"position": [r["lon_d"], r["lat_d"]],
                            "text": f"S{r['Segment']} D",
@@ -609,7 +606,7 @@ if st.button("Calculer l'empreinte carbone totale"):
                 get_background_color=[255, 255, 255, 160],
             ))
 
-        # 3) 🆕 Icônes de mode placées sur le trait (milieu)
+        # 3) Icônes de mode au milieu du trait
         icons = []
         for r in rows:
             cat = mode_to_category(r["Mode"])
@@ -623,12 +620,12 @@ if st.button("Calculer l'empreinte carbone totale"):
             )
             icons.append({
                 "position": [lon_mid, lat_mid],
-                "name": f"S{r['Segment']} • {cat.capitalize()}",
+                "name": f"S{r['Segment']} - {cat.capitalize()}",
                 "icon": {
                     "url": url,
-                    "width": 64,    # dimensions nominales de l’image source
+                    "width": 64,
                     "height": 64,
-                    "anchorY": 64,  # point d’ancrage en bas (pour “poser” l’icône sur la ligne)
+                    "anchorY": 64,
                     "anchorX": 32
                 },
             })
@@ -639,7 +636,7 @@ if st.button("Calculer l'empreinte carbone totale"):
                 data=icons,
                 get_icon="icon",
                 get_position="position",
-                get_size=icon_size_px,     # taille affichée en pixels (échelle écran)
+                get_size=icon_size_px,
                 size_units="pixels",
                 pickable=True,
             ))
@@ -663,7 +660,7 @@ if st.button("Calculer l'empreinte carbone totale"):
 
         # Export CSV
         csv = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Télécharger le détail (CSV)", data=csv,
+        st.download_button("Télécharger le détail (CSV)", data=csv,
                            file_name="resultats_co2_multimodal.csv", mime="text/csv")
 
     else:
