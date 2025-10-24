@@ -8,11 +8,12 @@
 # - Reset via st.rerun() + reset_form()
 # - UI segments: boutons d’ajout/suppression
 # - Carte: auto-zoom/centrage + balises (points + étiquettes)
-# - Export CSV + PDF avec logo et capture de la carte (PNG)
+# - Export CSV + PDF avec logo, n° de dossier, et capture de la carte (PNG)
 # ------------------------------------------------------------
 
 import os
 import io
+import re
 import time
 import math
 import requests
@@ -43,6 +44,7 @@ DEFAULT_EMISSION_FACTORS = {
     "🚂 Ferroviaire 🚂": 0.030,
 }
 MAX_SEGMENTS = 10  # limite haute
+
 # Logo NILEY EXPERTS (URL raw GitHub)
 LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png"
 
@@ -64,6 +66,12 @@ def read_secret(key: str, default: str = "") -> str:
     if "secrets" in dir(st) and key in st.secrets:
         return st.secrets[key]
     return os.getenv(key, default)
+
+def safe_filename_component(s: str) -> str:
+    """Conserve lettres/chiffres/._- et remplace le reste par _"""
+    if not s:
+        return ""
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", s).strip("_")
 
 @st.cache_data(show_spinner=False, ttl=60*60)
 def geocode_cached(query: str, limit: int = 5):
@@ -147,7 +155,7 @@ def reset_form(max_segments: int = MAX_SEGMENTS):
             del st.session_state[k]
 
     # Réinitialiser les données d'app
-    for k in ["segments", "osrm_base_url", "weight_0"]:
+    for k in ["segments", "osrm_base_url", "weight_0", "case_ref"]:
         if k in st.session_state:
             del st.session_state[k]
 
@@ -175,6 +183,13 @@ st.markdown("""
 st.markdown("""
 Ajoutez plusieurs segments (origine → destination), choisissez le mode et le poids. Le mode **Routier** utilise OSRM (distance réelle + tracé).
 """, unsafe_allow_html=True)
+
+# =========================
+# 🗂️ Dossier Transport
+# =========================
+st.markdown("### Dossier Transport")
+case_ref = st.text_input("Dossier Transport N°", value=st.session_state.get("case_ref", ""), help="Identifiant interne de votre expédition / dossier.")
+st.session_state["case_ref"] = case_ref
 
 # =========================
 # 🔄 Reset (utilise reset_form)
@@ -484,10 +499,11 @@ def build_pdf_report(df: pd.DataFrame,
                      unit_label: str,
                      company: str = "NILEY EXPERTS",
                      logo_url: str | None = None,
-                     map_png_bytes: bytes | None = None) -> bytes:
+                     map_png_bytes: bytes | None = None,
+                     case_ref: str | None = None) -> bytes:
     """
     Génère un PDF (bytes) multi-pages avec Matplotlib + PdfPages :
-      - Page 1 : logo (optionnel), titre, résumé, carte (optionnelle)
+      - Page 1 : logo (optionnel), titre, résumé, n° de dossier, carte (optionnelle)
       - Pages suivantes : tableau des segments paginé
     Format : A4 portrait (8.27 x 11.69 in). Retourne les bytes du PDF.
     """
@@ -507,11 +523,12 @@ def build_pdf_report(df: pd.DataFrame,
             logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
         except Exception:
             logo_img = None
+
     # Prépare buffer PDF
     out = io.BytesIO()
     with PdfPages(out) as pdf:
 
-        # ---- Page 1 : Titre, résumé, carte
+        # ---- Page 1 : Titre, résumé, dossier, carte
         fig1, ax1 = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
         ax1.axis("off")
 
@@ -538,7 +555,12 @@ def build_pdf_report(df: pd.DataFrame,
         ax1.text(0.12, y_cursor, f"Généré le : {now_str}", ha="left", va="center", fontsize=10, transform=ax1.transAxes)
         y_cursor -= 0.03
         ax1.text(0.12, y_cursor, f"Éditeur : {company}", ha="left", va="center", fontsize=10, transform=ax1.transAxes)
-        y_cursor -= 0.025
+        y_cursor -= 0.03
+        if case_ref:
+            ax1.text(0.12, y_cursor, f"Dossier Transport N° : {case_ref}", ha="left", va="center", fontsize=10, transform=ax1.transAxes)
+            y_cursor -= 0.025
+        else:
+            y_cursor -= 0.005
 
         # Séparateur
         ax1.plot([0.12, 0.88], [y_cursor, y_cursor], color="#444444", linewidth=0.8, transform=ax1.transAxes)
@@ -801,18 +823,26 @@ if st.button("Calculer l'empreinte carbone totale"):
         map_png_bytes = build_map_image(rows, figsize_px=(1400, 900))
         st.session_state["last_map_png"] = map_png_bytes
 
+        # Rappel dossier (UI)
+        if st.session_state.get("case_ref"):
+            st.info(f"**Dossier Transport N° :** {st.session_state['case_ref']}")
+
         # Tableau (aperçu)
         st.dataframe(
             df[["Segment", "Origine", "Destination", "Mode", "Distance (km)", f"Poids ({unit})", "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"]],
             use_container_width=True
         )
 
+        # Noms de fichiers avec suffixe dossier
+        suffix = f"_{safe_filename_component(st.session_state['case_ref'])}" if st.session_state.get("case_ref") else ""
+        csv_name = f"resultats_co2_multimodal{suffix}.csv"
+        pdf_name = f"rapport_co2_multimodal{suffix}.pdf"
+
         # Export CSV
         csv = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Télécharger le détail (CSV)", data=csv, file_name="resultats_co2_multimodal.csv", mime="text/csv")
+        st.download_button("⬇️ Télécharger le détail (CSV)", data=csv, file_name=csv_name, mime="text/csv")
 
-        # Export PDF (avec logo + carte)
-        pdf_name = "rapport_co2_multimodal.pdf"
+        # Export PDF (avec logo + carte + n° dossier)
         try:
             pdf_bytes = build_pdf_report(
                 df=st.session_state["last_result_df"],
@@ -821,7 +851,8 @@ if st.button("Calculer l'empreinte carbone totale"):
                 unit_label=st.session_state["last_unit"],
                 company="NILEY EXPERTS",
                 logo_url=LOGO_URL,
-                map_png_bytes=st.session_state.get("last_map_png")
+                map_png_bytes=st.session_state.get("last_map_png"),
+                case_ref=st.session_state.get("case_ref")
             )
             st.download_button(
                 "🧾 Exporter le rapport (PDF)",
@@ -837,7 +868,7 @@ if st.button("Calculer l'empreinte carbone totale"):
             st.download_button(
                 "🖼️ Télécharger l'image de la carte (PNG)",
                 data=map_png_bytes,
-                file_name="carte_co2_multimodal.png",
+                file_name=f"carte_co2_multimodal{suffix}.png",
                 mime="image/png"
             )
 
