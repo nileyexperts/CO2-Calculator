@@ -3,22 +3,23 @@
 # Calculateur CO2 multimodal - NILEY EXPERTS
 # - Géocodage OpenCage
 # - Distance routière via OSRM + polyline sur la carte
-# - Fond recentré, couleur d'origine + texte explicatif clair
 # - Facteurs d'émission éditables, poids global ou par segment
 # - Carte PyDeck (PathLayer pour routes OSRM, LineLayer en fallback)
-# - Correctif: utilisation de st.rerun() (plus de st.experimental_rerun())
-# - Nouveauté: reset_form() pour vider explicitement tous les champs
-# - Modification: suppression du champ "Nombre de segments..."
-#                 + boutons d'ajout/suppression de segments
+# - Reset via st.rerun() + reset_form()
+# - UI segments: boutons d’ajout/suppression (plus de "Nombre de segments")
+# - Carte: auto-zoom/centrage + balises (points + étiquettes)
 # ------------------------------------------------------------
+
 import os
 import time
+import math
 import requests
 import pandas as pd
 import streamlit as st
 import pydeck as pdk
 from opencage.geocoder import OpenCageGeocode
 from geopy.distance import great_circle
+
 # =========================
 # 🎯 Paramètres par défaut
 # =========================
@@ -30,6 +31,7 @@ DEFAULT_EMISSION_FACTORS = {
 }
 BACKGROUND_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/background.png"
 MAX_SEGMENTS = 10  # limite haute
+
 st.set_page_config(
     page_title="Calculateur CO₂ multimodal - NILEY EXPERTS",
     page_icon="🌍",
@@ -39,9 +41,9 @@ st.set_page_config(
 # =========================
 # 🎨 Styles (placeholder)
 # =========================
-st.markdown(f"""
+st.markdown("""
 <style>
-/* Vous pouvez ajouter ici votre CSS custom si besoin */
+/* Ajoutez votre CSS personnalisé ici si besoin */
 </style>
 """, unsafe_allow_html=True)
 
@@ -76,6 +78,7 @@ def coords_from_formatted(formatted: str):
 
 def compute_distance_km(coord1, coord2) -> float:
     return great_circle(coord1, coord2).km
+
 def compute_emissions(distance_km: float, weight_tonnes: float, factor_kg_per_tkm: float) -> float:
     return distance_km * weight_tonnes * factor_kg_per_tkm
 
@@ -155,6 +158,7 @@ geocoder = OpenCageGeocode(API_KEY)
 # =========================
 st.markdown("""
 ## Calculateur d'empreinte carbone multimodal - NILEY EXPERTS
+
 """, unsafe_allow_html=True)
 st.markdown("""
 Ajoutez plusieurs segments (origine → destination), choisissez le mode et le poids.
@@ -349,12 +353,46 @@ if st.button("➕ Ajouter un segment à la fin", key="add_at_end", disabled=len(
     st.rerun()
 
 # =========================
-# 🧮 Calcul + Carte
+# 🧮 Calcul + Carte (auto-zoom + balises points)
 # =========================
+def _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80):
+    """
+    Calcule un ViewState (centre + zoom) à partir d'une liste de latitudes/longitudes.
+    - viewport_px: taille approximative du canvas (px) pour estimer le zoom
+    - padding_px : marge interne à conserver (px)
+    Heuristique: zoom 'mercator-like' à partir de l'étendue (lat/lon).
+    """
+    if not all_lats or not all_lons:
+        return pdk.ViewState(latitude=48.8534, longitude=2.3488, zoom=3)  # fallback: Paris ~ Europe
+
+    min_lat, max_lat = min(all_lats), max(all_lats)
+    min_lon, max_lon = min(all_lons), max(all_lons)
+
+    # Centre
+    mid_lat = (min_lat + max_lat) / 2.0
+    mid_lon = (min_lon + max_lon) / 2.0
+
+    # Étendue
+    span_lat = max(1e-6, max_lat - min_lat)
+    span_lon = max(1e-6, max_lon - min_lon)
+
+    # Corrige l'axe Est-Ouest par cos(lat) pour l'étendue équivalente
+    span_lon_equiv = span_lon * max(0.1, math.cos(math.radians(mid_lat)))
+
+    # Convertit l'étendue en "degrés visibles" compatibles avec le viewport (très simplifié)
+    # Heuristic zoom ≈ log2(360 / span_degrees_equivalent)
+    world_deg_width = 360.0
+    zoom_x = math.log2(world_deg_width / max(1e-6, span_lon_equiv))
+    zoom_y = math.log2(180.0 / max(1e-6, span_lat))  # 180° de lat visibles
+    zoom = max(1.0, min(15.0, min(zoom_x, zoom_y)))  # borne le zoom dans une plage raisonnable
+
+    return pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=float(zoom), bearing=0, pitch=0)
+
 if st.button("Calculer l'empreinte carbone totale"):
     rows = []
     total_emissions = 0.0
     total_distance = 0.0
+
     with st.spinner("Calcul en cours…"):
         for idx, seg in enumerate(segments_out, start=1):
             if not seg["origin"] or not seg["destination"]:
@@ -416,10 +454,12 @@ if st.button("Calculer l'empreinte carbone totale"):
             use_container_width=True
         )
 
-        # Carte : PathLayer (OSRM) + LineLayer (fallback)
+        # -------------------------
+        # 🗺️ Carte : routes + points + étiquettes (auto-zoom)
+        # -------------------------
         st.subheader("🗺️ Carte des segments")
 
-        # Données pour PathLayer (routier avec géométrie OSRM)
+        # 1) Data pour les lignes (OSRM ou droites)
         route_paths = []
         for r in rows:
             if r["Mode"].startswith("Routier") and r.get("route_coords"):
@@ -430,7 +470,7 @@ if st.button("Calculer l'empreinte carbone totale"):
 
         layers = []
 
-        # 1) Polyline routière exacte (OSRM)
+        # 1a) Polyline routière exacte (OSRM)
         if route_paths:
             layers.append(pdk.Layer(
                 "PathLayer",
@@ -442,7 +482,7 @@ if st.button("Calculer l'empreinte carbone totale"):
                 pickable=True,
             ))
 
-        # 2) Lignes droites pour les segments restants
+        # 1b) Lignes droites pour les segments restants
         straight_lines = []
         for r in rows:
             if not (r["Mode"].startswith("Routier") and r.get("route_coords")):
@@ -462,17 +502,66 @@ if st.button("Calculer l'empreinte carbone totale"):
                 pickable=True,
             ))
 
-        # Vue centrée (moyenne simple des points)
-        if route_paths and any(d["path"] for d in route_paths):
-            all_lats = [pt[1] for d in route_paths for pt in d["path"]]
-            all_lons = [pt[0] for d in route_paths for pt in d["path"]]
-        else:
-            all_lats = [r["lat_o"] for r in rows] + [r["lat_d"] for r in rows]
-            all_lons = [r["lon_o"] for r in rows] + [r["lon_d"] for r in rows]
-        mid_lat = sum(all_lats) / len(all_lats)
-        mid_lon = sum(all_lons) / len(all_lons)
+        # 2) Points + balises (origines & destinations)
+        points = []
+        labels = []
+        for r in rows:
+            # Origine
+            points.append({"position": [r["lon_o"], r["lat_o"]],
+                           "name": f"S{r['Segment']} • Origine",
+                           "color": [0, 122, 255, 220]})
+            labels.append({"position": [r["lon_o"], r["lat_o"]],
+                           "text": f"S{r['Segment']} O",
+                           "color": [0, 122, 255, 255]})
+            # Destination
+            points.append({"position": [r["lon_d"], r["lat_d"]],
+                           "name": f"S{r['Segment']} • Destination",
+                           "color": [220, 66, 66, 220]})
+            labels.append({"position": [r["lon_d"], r["lat_d"]],
+                           "text": f"S{r['Segment']} D",
+                           "color": [220, 66, 66, 255]})
 
-        view = pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=3)
+        if points:
+            layers.append(pdk.Layer(
+                "ScatterplotLayer",
+                data=points,
+                get_position="position",
+                get_fill_color="color",
+                get_radius=20000,   # rayon en mètres (ajustez si nécessaire)
+                radius_min_pixels=4,
+                radius_max_pixels=12,
+                pickable=True,
+                stroked=True,
+                get_line_color=[255, 255, 255],
+                line_width_min_pixels=1,
+            ))
+
+        if labels:
+            layers.append(pdk.Layer(
+                "TextLayer",
+                data=labels,
+                get_position="position",
+                get_text="text",
+                get_color="color",
+                get_size=16,
+                size_units="pixels",
+                get_text_anchor="'start'",
+                get_alignment_baseline="'top'",
+                background=True,
+                get_background_color=[255, 255, 255, 160],
+            ))
+
+        # 3) Vue automatiquement adaptée (tous points + polylignes OSRM)
+        all_lats, all_lons = [], []
+        if route_paths and any(d["path"] for d in route_paths):
+            all_lats.extend([pt[1] for d in route_paths for pt in d["path"]])
+            all_lons.extend([pt[0] for d in route_paths for pt in d["path"]])
+        # Ajoute aussi les extrémités (utile quand aucun OSRM)
+        all_lats.extend([r["lat_o"] for r in rows] + [r["lat_d"] for r in rows])
+        all_lons.extend([r["lon_o"] for r in rows] + [r["lon_d"] for r in rows])
+
+        view = _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80)
+
         st.pydeck_chart(pdk.Deck(
             map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
             initial_view_state=view,
