@@ -20,16 +20,18 @@ import datetime
 import pandas as pd
 import streamlit as st
 import pydeck as pdk
-import fitz  # PyMuPDF
 from opencage.geocoder import OpenCageGeocode
 from geopy.distance import great_circle
 
-# --- Pour la génération d'image de la carte (statique)
+# --- Pour la génération d'image de la carte (statique) et du PDF
 import matplotlib
 matplotlib.use("Agg")  # backend non interactif
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.offsetbox import AnnotationBbox, OffsetImage
+from PIL import Image
 import geopandas as gpd
-from shapely.geometry import LineString, Point
+from shapely.geometry import LineString
 
 # =========================
 # 🎯 Paramètres par défaut
@@ -41,7 +43,6 @@ DEFAULT_EMISSION_FACTORS = {
     "🚂 Ferroviaire 🚂": 0.030,
 }
 MAX_SEGMENTS = 10  # limite haute
-
 # Logo NILEY EXPERTS (URL raw GitHub)
 LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png"
 
@@ -217,6 +218,7 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
         help="Ex: https://router.project-osrm.org ou votre propre serveur OSRM"
     )
     st.session_state["osrm_base_url"] = osrm_base_url
+
 # =========================
 # 🧩 Saisie des segments (avec boutons d'ajout/suppression)
 # =========================
@@ -442,7 +444,7 @@ def build_map_image(rows: list, figsize_px=(1400, 900)) -> bytes | None:
     return buf.getvalue()
 
 # =========================
-# 🧮 Calcul + Carte (auto-zoom + balises points)
+# 🔎 Vue auto pour PyDeck
 # =========================
 def _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80):
     """
@@ -467,189 +469,156 @@ def _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80
     return pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=float(zoom), bearing=0, pitch=0)
 
 # =========================
-# 🧾 Génération du PDF (avec logo + image de carte)
+# 🧾 Génération du PDF (Matplotlib + PdfPages)
 # =========================
+# Compatibilité Pillow (filtre de redimensionnement)
+try:
+    RESAMPLE = Image.LANCZOS
+except AttributeError:
+    from PIL import Image as _Image
+    RESAMPLE = _Image.Resampling.LANCZOS
+
 def build_pdf_report(df: pd.DataFrame,
                      total_distance_km: float,
                      total_emissions_kg: float,
                      unit_label: str,
                      company: str = "NILEY EXPERTS",
-                     logo_url=None,
+                     logo_url: str | None = None,
                      map_png_bytes: bytes | None = None) -> bytes:
     """
-    Génère un PDF (bytes) avec:
-      - En-tête (logo optionnel, titre, date/heure, éditeur)
-      - Résumé des totaux
-      - Image statique de la carte (optionnelle)
-      - Tableau détaillé des segments
+    Génère un PDF (bytes) multi-pages avec Matplotlib + PdfPages :
+      - Page 1 : logo (optionnel), titre, résumé, carte (optionnelle)
+      - Pages suivantes : tableau des segments paginé
+    Format : A4 portrait (8.27 x 11.69 in). Retourne les bytes du PDF.
     """
-    # --- Préparation document
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    doc = fitz.open()
-    page = doc.new_page()  # A4 (595 x 842 pt approx)
-    width, height = page.rect.width, page.rect.height
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # Marges et styles
-    margin_x = 40
-    margin_top = 50
-    y = margin_top
-    line_gap = 6
-    font_text = "helv"
-    font_bold = "helv-Bold"
+    # Mise en page A4
+    dpi = 150
+    a4_in = (8.27, 11.69)  # pouces (A4)
+    fig_w, fig_h = a4_in
 
-    # Helpers
-    def draw_title(p, text, y_pos):
-        p.insert_text((margin_x, y_pos), text, fontname=font_bold, fontsize=16, color=(0,0,0))
-        return y_pos + 24
-
-    def draw_kv(p, key, value, y_pos):
-        p.insert_text((margin_x, y_pos), f"{key}: ", fontname=font_bold, fontsize=10, color=(0,0,0))
-        p.insert_text((margin_x + 90, y_pos), f"{value}", fontname=font_text, fontsize=10, color=(0,0,0))
-        return y_pos + 14
-
-    def new_page():
-        _page = doc.new_page()
-        return _page
-
-    # --- Logo (optionnel)
-    logo_right_pad = 10
-    try:
-        if logo_url:
+    # Récupération logo (si fourni)
+    logo_img = None
+    if logo_url:
+        try:
             resp = requests.get(logo_url, timeout=10)
             resp.raise_for_status()
-            img_bytes = resp.content
-            img_doc = fitz.open(stream=img_bytes, filetype="png")
-            pix = fitz.Pixmap(img_doc[0])
-            img_w, img_h = pix.width, pix.height
-            target_w = 120  # pt
-            target_h = img_h * target_w / img_w
-            logo_rect = fitz.Rect(margin_x, y, margin_x + target_w, y + target_h)
-            page.insert_image(logo_rect, stream=img_bytes, keep_proportion=True)
-
-            if (margin_x + target_w + logo_right_pad + 250) < (width - margin_x):
-                title_x = margin_x + target_w + logo_right_pad
-                title_y = y + 6
-                page.insert_text((title_x, title_y), "Rapport d'empreinte carbone multimodal",
-                                 fontname=font_bold, fontsize=16, color=(0,0,0))
-                y = max(y + target_h, title_y + 26)
-            else:
-                y = y + target_h + 10
-                y = draw_title(page, "Rapport d'empreinte carbone multimodal", y)
-        else:
-            y = draw_title(page, "Rapport d'empreinte carbone multimodal", y)
-    except Exception:
-        y = draw_title(page, "Rapport d'empreinte carbone multimodal", y)
-
-    # --- Métadonnées en-tête
-    y = draw_kv(page, "Généré le", now, y)
-    y = draw_kv(page, "Éditeur", company, y)
-    y += 6
-    page.draw_line((margin_x, y), (width - margin_x, y))
-    y += 14
-
-    # --- Résumé
-    page.insert_text((margin_x, y), "Résumé", fontname=font_bold, fontsize=12); y += 18
-    y = draw_kv(page, "Distance totale", f"{total_distance_km:.1f} km", y)
-    y = draw_kv(page, "Émissions totales", f"{total_emissions_kg:.2f} kg CO₂e", y)
-    y += 8
-
-    # --- Image de la carte (si fournie)
-    if map_png_bytes:
-        try:
-            # Calcul du rect de destination (max largeur = width - 2*margin_x, max hauteur ~ 340pt)
-            max_w = width - 2*margin_x
-            max_h = 340
-            img_doc = fitz.open(stream=map_png_bytes, filetype="png")
-            pix = fitz.Pixmap(img_doc[0])
-            iw, ih = pix.width, pix.height
-            scale = min(max_w / iw, max_h / ih, 1.0)
-            dest_w = iw * scale
-            dest_h = ih * scale
-            rect = fitz.Rect(margin_x, y, margin_x + dest_w, y + dest_h)
-            page.insert_image(rect, stream=map_png_bytes)
-            y += dest_h + 8
+            logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
         except Exception:
-            # On ignore l'image si erreur
-            pass
+            logo_img = None
+    # Prépare buffer PDF
+    out = io.BytesIO()
+    with PdfPages(out) as pdf:
 
-    page.draw_line((margin_x, y), (width - margin_x, y))
-    y += 16
+        # ---- Page 1 : Titre, résumé, carte
+        fig1, ax1 = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
+        ax1.axis("off")
 
-    # --- Tableau (mêmes colonnes que la vue Streamlit)
-    columns = [
-        "Segment", "Origine", "Destination", "Mode",
-        "Distance (km)", f"Poids ({unit_label})",
-        "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"
-    ]
-    table_df = df[columns].copy()
+        y_cursor = 0.94  # position verticale relative (0..1 du haut vers le bas)
 
-    # Largeurs de colonnes (total ≈ 515pt)
-    col_widths = {
-        "Segment": 45,
-        "Origine": 125,
-        "Destination": 125,
-        "Mode": 80,
-        "Distance (km)": 60,
-        f"Poids ({unit_label})": 60,
-        "Facteur (kg CO₂e/t.km)": 85,
-        "Émissions (kg CO₂e)": 85,
-    }
+        # Logo à gauche
+        if logo_img is not None:
+            # redimensionner le logo à ~ 2.8 cm de large (≈ 110 px @ dpi 150)
+            target_px = 110
+            w, h = logo_img.size
+            scale = target_px / float(w)
+            new_w, new_h = int(w * scale), int(h * scale)
+            logo_disp = logo_img.resize((new_w, new_h), RESAMPLE)
+            imagebox = OffsetImage(logo_disp, zoom=1.0)
+            ab = AnnotationBbox(imagebox, (0.12, y_cursor), frameon=False, xycoords='axes fraction')
+            ax1.add_artist(ab)
 
-    def ensure_space_or_newpage(req_height):
-        nonlocal page, y
-        if y + req_height > height - 40:
-            page = new_page()
-            y = margin_top
+        # Titre à droite du logo
+        ax1.text(0.27, y_cursor, "Rapport d'empreinte carbone multimodal",
+                 ha="left", va="center", fontsize=16, fontweight="bold", transform=ax1.transAxes)
+        y_cursor -= 0.05
 
-    # En-tête du tableau
-    def draw_table_header():
-        nonlocal y
-        ensure_space_or_newpage(28)
-        x = margin_x
-        for col in columns:
-            page.insert_text((x, y), col, fontname=font_bold, fontsize=9)
-            x += col_widths[col]
-        y += 16
-        page.draw_line((margin_x, y), (width - margin_x, y))
-        y += 10
+        # Métadonnées
+        ax1.text(0.12, y_cursor, f"Généré le : {now_str}", ha="left", va="center", fontsize=10, transform=ax1.transAxes)
+        y_cursor -= 0.03
+        ax1.text(0.12, y_cursor, f"Éditeur : {company}", ha="left", va="center", fontsize=10, transform=ax1.transAxes)
+        y_cursor -= 0.025
 
-    draw_table_header()
+        # Séparateur
+        ax1.plot([0.12, 0.88], [y_cursor, y_cursor], color="#444444", linewidth=0.8, transform=ax1.transAxes)
+        y_cursor -= 0.04
 
-    # Lignes du tableau
-    for _, row in table_df.iterrows():
-        max_lines = 1
-        for col in ["Origine", "Destination"]:
-            txt = str(row[col])
-            if len(txt) > 55:
-                max_lines = 2
-                break
-        row_height = 12 * max_lines + line_gap
-        ensure_space_or_newpage(row_height)
-        if y == margin_top:
-            draw_table_header()
+        # Résumé
+        ax1.text(0.12, y_cursor, "Résumé", ha="left", va="center", fontsize=12, fontweight="bold", transform=ax1.transAxes)
+        y_cursor -= 0.04
+        ax1.text(0.12, y_cursor, f"Distance totale : {total_distance_km:.1f} km", ha="left", va="center", fontsize=10, transform=ax1.transAxes)
+        y_cursor -= 0.03
+        ax1.text(0.12, y_cursor, f"Émissions totales : {total_emissions_kg:.2f} kg CO₂e", ha="left", va="center", fontsize=10, transform=ax1.transAxes)
+        y_cursor -= 0.02
 
-        x = margin_x
-        for col in columns:
-            value = row[col]
-            txt = "" if pd.isna(value) else str(value)
-            if col in ["Origine", "Destination"] and max_lines > 1 and len(txt) > 55:
-                first = txt[:55]
-                second = txt[55:]
-                page.insert_text((x, y), first, fontname=font_text, fontsize=9)
-                page.insert_text((x, y+12), second, fontname=font_text, fontsize=9)
-            else:
-                page.insert_text((x, y), txt, fontname=font_text, fontsize=9)
-            x += col_widths[col]
-        y += row_height
+        # Carte (si disponible)
+        if map_png_bytes:
+            try:
+                map_img = Image.open(io.BytesIO(map_png_bytes)).convert("RGB")
+                # Espace dédié à la carte (hauteur ~ 40% de la page)
+                card_h_rel = 0.40
+                card_w_rel = 0.76
+                # Position rectangle
+                x0, y0 = 0.12, max(y_cursor - card_h_rel - 0.01, 0.10)
+                x1, y1 = x0 + card_w_rel, y0 + card_h_rel
+                ax1.add_patch(plt.Rectangle((x0, y0), card_w_rel, card_h_rel,
+                                            transform=ax1.transAxes, fill=False, edgecolor="#dddddd", linewidth=1.0))
+                # Affiche l'image
+                ax1.imshow(map_img, extent=(x0, x1, y0, y1), transform=ax1.transAxes, aspect='auto', zorder=0)
+                y_cursor = y0 - 0.03
+            except Exception:
+                pass
 
-    # Pieds de page (numéro de page)
-    for i, p in enumerate(doc, start=1):
-        p.insert_text((width - margin_x - 60, height - 20),
-                      f"Page {i}/{len(doc)}", fontname=font_text, fontsize=8, color=(0,0,0))
+        # Séparateur bas de page
+        ax1.plot([0.12, 0.88], [y_cursor, y_cursor], color="#444444", linewidth=0.6, transform=ax1.transAxes)
 
-    pdf_bytes = doc.tobytes()
-    doc.close()
-    return pdf_bytes
+        pdf.savefig(fig1, bbox_inches="tight")
+        plt.close(fig1)
+
+        # ---- Pages suivantes : tableau paginé
+        # Colonnes affichées (identiques au dataframe montré)
+        columns = [
+            "Segment", "Origine", "Destination", "Mode",
+            "Distance (km)", f"Poids ({unit_label})",
+            "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"
+        ]
+        table_df = df[columns].copy()
+
+        # Pagination simple : ~ 30 lignes par page (selon taille police)
+        rows_per_page = 30
+        n = len(table_df)
+        pages = max(1, (n + rows_per_page - 1) // rows_per_page)
+
+        for p in range(pages):
+            sub = table_df.iloc[p*rows_per_page:(p+1)*rows_per_page]
+            fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
+            ax.axis("off")
+            ax.text(0.12, 0.95, "Détail des segments", ha="left", va="center",
+                    fontsize=12, fontweight="bold", transform=ax.transAxes)
+
+            # Table Matplotlib
+            tbl = ax.table(cellText=sub.values,
+                           colLabels=sub.columns,
+                           loc="upper left",
+                           colLoc="left",
+                           cellLoc="left")
+            tbl.auto_set_font_size(False)
+            tbl.set_fontsize(8)
+            tbl.scale(1.0, 1.2)
+
+            # Styliser l’en‑tête
+            for (row, col), cell in tbl.get_celld().items():
+                if row == 0:
+                    cell.set_facecolor("#f0f0f0")
+                    cell.set_text_props(fontweight="bold")
+                cell.set_edgecolor("#dddddd")
+
+            pdf.savefig(fig, bbox_inches="tight")
+            plt.close(fig)
+
+    out.seek(0)
+    return out.getvalue()
 
 # =========================
 # ▶️ Bouton de calcul
@@ -795,7 +764,7 @@ if st.button("Calculer l'empreinte carbone totale"):
             ))
 
         if labels:
-            # littéraux JS pour deck.gl
+            # littéraux JS pour deck.gl (passer la chaîne avec guillemets)
             layers.append(pdk.Layer(
                 "TextLayer",
                 data=labels,
@@ -832,6 +801,12 @@ if st.button("Calculer l'empreinte carbone totale"):
         map_png_bytes = build_map_image(rows, figsize_px=(1400, 900))
         st.session_state["last_map_png"] = map_png_bytes
 
+        # Tableau (aperçu)
+        st.dataframe(
+            df[["Segment", "Origine", "Destination", "Mode", "Distance (km)", f"Poids ({unit})", "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"]],
+            use_container_width=True
+        )
+
         # Export CSV
         csv = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).to_csv(index=False).encode("utf-8")
         st.download_button("⬇️ Télécharger le détail (CSV)", data=csv, file_name="resultats_co2_multimodal.csv", mime="text/csv")
@@ -857,7 +832,7 @@ if st.button("Calculer l'empreinte carbone totale"):
         except Exception as e:
             st.warning(f"Impossible de générer le PDF : {e}")
 
-        # (Optionnel) Permettre de télécharger aussi l'image PNG seule
+        # (Optionnel) Télécharger aussi l'image PNG seule
         if map_png_bytes:
             st.download_button(
                 "🖼️ Télécharger l'image de la carte (PNG)",
