@@ -157,12 +157,7 @@ geocoder = OpenCageGeocode(API_KEY)
 # 🏷️ En-tête & Texte explicatif
 # =========================
 st.markdown("""
-<div style='display: flex; align-items: center;'>
-    <img src='https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png' style='height: 60px; margin-right: 10px;'>
-    <h2 style='margin: 0;'>Calculateur d'empreinte carbone multimodal - NILEY EXPERTS</h2>
-</div>
-"", unsafe_allow_html=True)
-
+## Calculateur d'empreinte carbone multimodal - NILEY EXPERTS
 
 """, unsafe_allow_html=True)
 st.markdown("""
@@ -182,6 +177,11 @@ with col_r:
 # ⚙️ Paramètres
 # =========================
 with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
+with st.expander('⚙️ Paramètres, facteurs d'émission & OSRM'):
+    password = st.text_input('Mot de passe requis pour modifier les paramètres', type='password')
+    if password != 'Niley2019!':
+        st.warning('Mot de passe incorrect.')
+        st.stop()
     default_mode = "Envoi unique (même poids sur tous les segments)"
     weight_mode = st.radio("Mode de gestion du poids :", [default_mode, "Poids par segment"], horizontal=False)
 
