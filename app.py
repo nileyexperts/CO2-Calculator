@@ -64,7 +64,7 @@ LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/N
 st.markdown(
     f"""
     <div style="display:flex;align-items:center;gap:10px;margin:4px 0 12px 0">
-        <img src="{LOGO_URL}" alt="NILEY EXPERTght:600;font-size:18px;line-height:1.2">
+        <img src="{LOGO_URL}" alt="NILEY EXPERTS" height="48" stylepx;line-height:1.2">
             Calculateur d'empreinte carbone multimodal - NILEY EXPERTS
         </div>
     </div>
@@ -471,7 +471,6 @@ if st.button("Calculer l'empreinte carbone totale"):
 
             total_distance += distance_km
             total_emissions += emissions
-
             rows.append({
                 "Segment": idx,
                 "Origine": seg["origin"],
@@ -598,8 +597,7 @@ if st.button("Calculer l'empreinte carbone totale"):
                 size_units="pixels",
                 get_text_anchor="start",
                 get_alignment_baseline="top",
-                background=False,  # pas de fond
-                # get_background_color supprimé
+                background=False  # pas de fond
             ))
 
         # 3) Icônes de mode au milieu du trait
