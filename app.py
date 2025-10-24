@@ -200,7 +200,8 @@ with col_reset:
     # Petit espace vertical pour aligner le bouton avec le champ texte
     st.write("")
     if st.button("🔄 Réinitialiser le formulaire", use_container_width=True):
-    
+        reset_form()
+
 # =========================
 # ⚙️ Paramètres
 # =========================
