@@ -26,13 +26,16 @@ import pydeck as pdk
 from opencage.geocoder import OpenCageGeocode
 from geopy.distance import great_circle
 
-# --- Pour la génération d'image de la carte (statique) et du PDF
+# --- Image/figures & PDF ---
 import matplotlib
 matplotlib.use("Agg")  # backend non interactif
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
+from matplotlib.gridspec import GridSpec
 from PIL import Image
+
+# --- Cartographie statique ---
 import geopandas as gpd
 from shapely.geometry import LineString
 
@@ -59,7 +62,7 @@ st.set_page_config(
 # =========================
 # 🔐 Authentification simple par mot de passe
 # =========================
-APP_PASSWORD = "Niley2019!"  # ⚠️ Pour la prod: préférez st.secrets / variable d'environnement
+APP_PASSWORD = "Niley2019!"  # ⚠️ En prod: préférez st.secrets / variable d'environnement
 
 def check_password():
     if "auth_ok" not in st.session_state:
@@ -69,7 +72,6 @@ def check_password():
 
     st.title("🔐 Accès protégé")
     st.write("Veuillez saisir le mot de passe pour accéder à l’application.")
-
     with st.form("password_form", clear_on_submit=False):
         pwd = st.text_input("Mot de passe", type="password")
         submitted = st.form_submit_button("Se connecter")
@@ -139,14 +141,12 @@ def osrm_route(coord1, coord2, base_url: str, overview: str = "full"):
     Distance routière (km) + géométrie (polyline GeoJSON) via OSRM /route/v1/driving.
     - coord1/coord2: (lat, lon)
     - base_url: ex. https://router.project-osrm.org
-    Utilise: overview=full, geometries=geojson, alternatives=false, annotations=false
     """
-    # OSRM attend lon,lat
     lon1, lat1 = coord1[1], coord1[0]
     lon2, lat2 = coord2[1], coord2[0]
     url = f"{base_url.rstrip('/')}/route/v1/driving/{lon1},{lat1};{lon2},{lat2}"
     params = {
-        "overview": overview,           # 'simplified' ou 'full'
+        "overview": overview,
         "alternatives": "false",
         "annotations": "false",
         "geometries": "geojson",
@@ -172,7 +172,6 @@ def reset_form(max_segments: int = MAX_SEGMENTS):
     - purge le cache de données
     - relance l'app
     """
-    # Supprimer les clés de widgets potentielles
     widget_keys = []
     for i in range(max_segments):
         widget_keys.extend([
@@ -187,15 +186,11 @@ def reset_form(max_segments: int = MAX_SEGMENTS):
         if k in st.session_state:
             del st.session_state[k]
 
-    # Réinitialiser les données d'app
     for k in ["segments", "osrm_base_url", "weight_0", "case_ref"]:
         if k in st.session_state:
             del st.session_state[k]
 
-    # Purger le cache (géocodage, routes, etc.)
     st.cache_data.clear()
-
-    # Relancer l'app
     st.rerun()
 
 # =========================
@@ -223,11 +218,10 @@ Ajoutez plusieurs segments (origine → destination), choisissez le mode et le p
 st.markdown("### Dossier Transport")
 case_ref = st.text_input("Dossier Transport N°", value=st.session_state.get("case_ref", ""), help="Identifiant interne de votre expédition / dossier.")
 st.session_state["case_ref"] = case_ref
-
 # =========================
 # 🔄 Reset (utilise reset_form)
 # =========================
-col_r, col_dummy = st.columns([1, 4])
+col_r, _ = st.columns([1, 4])
 with col_r:
     if st.button("🔄 Réinitialiser le formulaire"):
         reset_form()
@@ -331,7 +325,7 @@ for i in range(len(st.session_state.segments)):
         key=f"mode_{i}"
     )
 
-    # Gestion du poids: "Envoi unique" vs "Poids par segment"
+    # Gestion du poids
     if weight_mode == "Poids par segment":
         default_weight = st.session_state.segments[i]["weight"]
         weight_val = st.number_input(
@@ -352,12 +346,11 @@ for i in range(len(st.session_state.segments)):
                 key=f"weight_{i}"
             )
         else:
-            # Pas d'input pour les suivants : on réutilise la valeur du segment 0 si présente
             weight_val = st.session_state.get("weight_0", default_weight)
 
     st.markdown("\n", unsafe_allow_html=True)
 
-    # Mise à jour de l'état pour le segment i
+    # Mise à jour de l'état
     st.session_state.segments[i] = {
         "origin_raw": origin_raw,
         "origin_sel": origin_sel,
@@ -375,10 +368,8 @@ for i in range(len(st.session_state.segments)):
     })
 
 # --- Boutons globaux d'ajout/suppression ---
-bc1, bc2, bc3 = st.columns([2, 2, 6])
-
+bc1, bc2, _ = st.columns([2, 2, 6])
 with bc1:
-    # ➕ Ajouter un segment à la fin (pratique)
     can_add = len(st.session_state.segments) < MAX_SEGMENTS
     if st.button("➕ Ajouter un segment à la fin", key="add_at_end", disabled=not can_add):
         last = st.session_state.segments[-1]
@@ -392,7 +383,6 @@ with bc1:
         st.rerun()
 
 with bc2:
-    # 🗑️ Supprimer le dernier segment si > 1
     if st.button("🗑️ Supprimer le dernier segment", key="del_last", disabled=len(st.session_state.segments) <= 1):
         st.session_state.segments.pop(-1)
         st.rerun()
@@ -429,18 +419,16 @@ def _load_world():
 
 def build_map_image(rows: list, figsize_px=(1400, 900)) -> bytes | None:
     """
-    Construit une image PNG (bytes) de la carte :
-      - fond monde (Natural Earth) si disponible
-      - sinon fond 'océan' bleu clair pour éviter une page blanche
-      - routes OSRM en orange, segments droits en gris
-      - points O/D avec labels
+    Construit une image PNG (bytes) de la carte:
+      - fond Natural Earth si dispo, sinon fond 'océan' bleu clair
+      - routes OSRM (orange), segments droits (gris)
+      - points & labels O/D
       - zoom auto sur l'étendue des données
     """
     if not rows:
         return None
 
     world = _load_world()
-    # Collecte des points pour l'étendue
     all_lats, all_lons = [], []
     for r in rows:
         all_lats.extend([r["lat_o"], r["lat_d"]])
@@ -462,25 +450,21 @@ def build_map_image(rows: list, figsize_px=(1400, 900)) -> bytes | None:
     x_min, x_max = min_lon - lon_pad, max_lon + lon_pad
     y_min, y_max = min_lat - lat_pad, max_lat + lat_pad
 
-    # Figure en pouces
     dpi = 150
     fig_w = figsize_px[0] / dpi
     fig_h = figsize_px[1] / dpi
     fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
 
-    # Fond de carte : si monde dispo, on le trace ; sinon fond 'océan'
     if world is not None and len(world) > 0:
         ax.set_facecolor("#eaf4ff")  # océan bleu clair
         world.plot(ax=ax, color="#f7f7f7", edgecolor="#bdbdbd", linewidth=0.5, zorder=0)
     else:
-        # Fallback visuel : rectangle plein (océan) pour éviter fond blanc
         ax.set_facecolor("#eaf4ff")
 
     ax.set_xlim(x_min, x_max)
     ax.set_ylim(y_min, y_max)
 
-    # Tracés
-    # 1) Routes OSRM (Path)
+    # Routes OSRM
     for r in rows:
         if r.get("route_coords"):
             try:
@@ -489,14 +473,13 @@ def build_map_image(rows: list, figsize_px=(1400, 900)) -> bytes | None:
                 ax.plot(xs, ys, color="#BB9357", linewidth=2.5, alpha=0.95, zorder=3)
             except Exception:
                 pass
-
-    # 2) Segments droits (fallback)
+    # Segments droits
     for r in rows:
         if not r.get("route_coords"):
             ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]],
                     color="#888888", linewidth=1.8, alpha=0.9, linestyle="-.", zorder=2)
 
-    # 3) Points O/D + labels
+    # Points + labels
     for r in rows:
         ax.scatter(r["lon_o"], r["lat_o"], c="#007AFF", s=40, edgecolor="white", linewidth=0.8, zorder=4)
         ax.scatter(r["lon_d"], r["lat_d"], c="#DC4242", s=40, edgecolor="white", linewidth=0.8, zorder=4)
@@ -507,8 +490,6 @@ def build_map_image(rows: list, figsize_px=(1400, 900)) -> bytes | None:
 
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_xlabel("")
-    ax.set_ylabel("")
     ax.set_title("Carte des segments (aperçu statique)", fontsize=12, pad=8)
 
     plt.tight_layout()
@@ -522,20 +503,15 @@ def build_map_image(rows: list, figsize_px=(1400, 900)) -> bytes | None:
 # 🔎 Vue auto pour PyDeck
 # =========================
 def _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80):
-    """
-    Calcule un ViewState (centre + zoom) à partir d'une liste de latitudes/longitudes.
-    """
+    """Calcule un ViewState (centre + zoom) à partir d'une liste lat/lon."""
     if not all_lats or not all_lons:
-        return pdk.ViewState(latitude=48.8534, longitude=2.3488, zoom=3)  # fallback: Paris ~ Europe
+        return pdk.ViewState(latitude=48.8534, longitude=2.3488, zoom=3)  # Paris ~ Europe
     min_lat, max_lat = min(all_lats), max(all_lats)
     min_lon, max_lon = min(all_lons), max(all_lons)
-    # Centre
     mid_lat = (min_lat + max_lat) / 2.0
     mid_lon = (min_lon + max_lon) / 2.0
-    # Étendue
     span_lat = max(1e-6, max_lat - min_lat)
     span_lon = max(1e-6, max_lon - min_lon)
-    # Corrige l'axe Est-Ouest par cos(lat)
     span_lon_equiv = span_lon * max(0.1, math.cos(math.radians(mid_lat)))
     world_deg_width = 360.0
     zoom_x = math.log2(world_deg_width / max(1e-6, span_lon_equiv))
@@ -546,7 +522,6 @@ def _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80
 # =========================
 # 🧾 Génération du PDF (1 page paysage)
 # =========================
-# Compatibilité Pillow (filtre de redimensionnement)
 try:
     RESAMPLE = Image.LANCZOS
 except AttributeError:
@@ -562,22 +537,18 @@ def build_pdf_report(df: pd.DataFrame,
                      map_png_bytes: bytes | None = None,
                      case_ref: str | None = None) -> bytes:
     """
-    Génère un PDF **sur une seule page A4 paysage** avec Matplotlib + PdfPages :
-      - Zone entête (logo + titre + métadonnées + n° dossier)
+    Génère un PDF **sur une seule page A4 paysage** (Matplotlib + PdfPages):
+      - Entête (logo + titre + métadonnées + n° dossier)
       - Carte (si fournie)
-      - Tableau des segments compacté (troncature avec …)
+      - Tableau compacté (troncature avec …)
     """
-    import io
-    from matplotlib.gridspec import GridSpec
-
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # --- Mise en page A4 paysage
+    # Mise en page A4 paysage
     dpi = 150
-    a4_landscape_in = (11.69, 8.27)  # Largeur x Hauteur en pouces
-    fig_w, fig_h = a4_landscape_in
+    fig_w, fig_h = (11.69, 8.27)  # pouces
 
-    # Récupération logo (si fourni)
+    # Logo (optionnel)
     logo_img = None
     if logo_url:
         try:
@@ -587,23 +558,16 @@ def build_pdf_report(df: pd.DataFrame,
         except Exception:
             logo_img = None
 
-    # ---- Prépare figure et grille
+    # Figure + grille
     fig = plt.figure(figsize=(fig_w, fig_h), dpi=dpi)
-    # Grille : 100 lignes (pour finesse) x 100 colonnes
     gs = GridSpec(100, 100, figure=fig)
     fig.patch.set_facecolor("white")
 
-    # Zones :
-    # - Entête : lignes 0..20, colonnes 0..100
-    # - Carte  : lignes 22..62, colonnes 0..48 (à gauche)
-    # - Tableau: lignes 22..98, colonnes 50..100 (à droite), si beaucoup de lignes on étend sous la carte
+    # Entête
     ax_header = fig.add_subplot(gs[0:20, 0:100])
     ax_header.axis("off")
-
-    # --- Entête
-    y_cursor = 0.92  # relatif dans ax_header
+    y_cursor = 0.92
     if logo_img is not None:
-        # Largeur cible du logo ~ 150 px
         target_px = 150
         w, h = logo_img.size
         scale = target_px / float(w)
@@ -613,30 +577,23 @@ def build_pdf_report(df: pd.DataFrame,
         ab = AnnotationBbox(imagebox, (0.06, y_cursor), frameon=False, xycoords='axes fraction')
         ax_header.add_artist(ab)
 
-    # Titre à droite du logo
     ax_header.text(0.18, y_cursor, "Rapport d'empreinte carbone multimodal",
                    ha="left", va="center", fontsize=16, fontweight="bold", transform=ax_header.transAxes)
-    y_cursor -= 0.28  # on descend dans l'axe header (qui n'occupe que ~20% de la page)
+    y_cursor -= 0.28
 
-    # Méta + dossier
-    meta_lines = [
-        f"Généré le : {now_str}",
-        f"Éditeur : {company}",
-    ]
+    meta_lines = [f"Généré le : {now_str}", f"Éditeur : {company}"]
     if case_ref:
         meta_lines.append(f"Dossier Transport N° : {case_ref}")
-
     ax_header.text(0.18, y_cursor, "\n".join(meta_lines),
                    ha="left", va="top", fontsize=10, transform=ax_header.transAxes)
-    # Résumé à droite
+
     resume_txt = f"Distance totale : {total_distance_km:.1f} km\nÉmissions totales : {total_emissions_kg:.2f} kg CO₂e"
     ax_header.text(0.60, 0.30, resume_txt, ha="left", va="center", fontsize=11,
                    bbox=dict(boxstyle="round,pad=0.3", fc="#f6f6f6", ec="#dddddd"), transform=ax_header.transAxes)
 
-    # Séparateur bas entête
     ax_header.plot([0.02, 0.98], [0.05, 0.05], color="#444444", linewidth=0.8, transform=ax_header.transAxes)
 
-    # --- Carte (si dispo)
+    # Carte (si dispo)
     if map_png_bytes:
         try:
             ax_map = fig.add_subplot(gs[22:62, 0:48])
@@ -645,29 +602,22 @@ def build_pdf_report(df: pd.DataFrame,
             ax_map.imshow(map_img)
             ax_map.set_title("Carte des segments (aperçu statique)", fontsize=10, pad=4)
         except Exception:
-            # Pas de carte: on libère l’espace
             ax_map = None
     else:
         ax_map = None
 
-    # --- Tableau compacté (sur la droite + éventuellement sous la carte)
-    # Colonnes affichées (identiques à la vue dans l'app)
+    # Tableau compacté
     columns = [
         "Segment", "Origine", "Destination", "Mode",
         "Distance (km)", f"Poids ({unit_label})",
         "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"
     ]
-    # Copie sécurisée
     table_df = df[columns].copy()
 
-    # Troncature douce pour tenir en largeur (évite l'overflow)
     def trunc(s, maxlen):
         s = "" if pd.isna(s) else str(s)
-        if len(s) <= maxlen:
-            return s
-        return s[: max(0, maxlen - 1)] + "…"
+        return s if len(s) <= maxlen else s[: max(0, maxlen - 1)] + "…"
 
-    # Longueurs max pour colonnes texte (ajuste si besoin)
     maxlens = {
         "Segment": 4, "Origine": 36, "Destination": 36, "Mode": 10,
         "Distance (km)": 8, f"Poids ({unit_label})": 8,
@@ -676,38 +626,27 @@ def build_pdf_report(df: pd.DataFrame,
     for col, ml in maxlens.items():
         table_df[col] = table_df[col].map(lambda x: trunc(x, ml))
 
-    # Police/table compacte
     table_fontsize = 7.5
-
-    # Axe principal du tableau
-    # Si carte présente: occupe la colonne de droite, sinon occupe toute la largeur sous l'entête
-    if ax_map is not None:
-        ax_tbl = fig.add_subplot(gs[22:98, 50:100])
-    else:
-        ax_tbl = fig.add_subplot(gs[22:98, 0:100])
+    ax_tbl = fig.add_subplot(gs[22:98, 50:100]) if map_png_bytes else fig.add_subplot(gs[22:98, 0:100])
     ax_tbl.axis("off")
     ax_tbl.text(0.0, 1.02, "Détail des segments", ha="left", va="bottom", fontsize=11, fontweight="bold", transform=ax_tbl.transAxes)
 
-    values = table_df.values
-    col_labels = table_df.columns.tolist()
-
-    tbl = ax_tbl.table(cellText=values,
-                       colLabels=col_labels,
-                       cellLoc="left", colLoc="left",
-                       loc="upper left")
+    tbl = ax_tbl.table(
+        cellText=table_df.values,
+        colLabels=table_df.columns.tolist(),
+        cellLoc="left", colLoc="left",
+        loc="upper left"
+    )
     tbl.auto_set_font_size(False)
     tbl.set_fontsize(table_fontsize)
-    # Échelle pour densifier verticalement
     tbl.scale(1.0, 0.9)
 
-    # Styliser entêtes et bordures
     for (r, c), cell in tbl.get_celld().items():
         if r == 0:
             cell.set_facecolor("#f0f0f0")
             cell.set_text_props(fontweight="bold")
         cell.set_edgecolor("#dddddd")
 
-    # Sauvegarde PDF (unique page)
     out = io.BytesIO()
     with PdfPages(out) as pdf:
         pdf.savefig(fig, bbox_inches="tight")
@@ -734,8 +673,9 @@ if st.button("Calculer l'empreinte carbone totale"):
             if not coord1 or not coord2:
                 st.error(f"Segment {idx} : lieu introuvable ou ambigu.")
                 continue
-            # --- Distance: OSRM + géométrie pour Routier, sinon grand-cercle
-            route_coords = None  # liste de [lon, lat]
+
+            # Distance: OSRM pour Routier, sinon grand-cercle
+            route_coords = None
             if seg["mode"].startswith("Routier") or "Routier" in seg["mode"]:
                 try:
                     r = osrm_route(coord1, coord2, st.session_state["osrm_base_url"], overview="full")
@@ -767,7 +707,7 @@ if st.button("Calculer l'empreinte carbone totale"):
                 "lon_o": coord1[1],
                 "lat_d": coord2[0],
                 "lon_d": coord2[1],
-                "route_coords": route_coords,  # polyline OSRM si dispo
+                "route_coords": route_coords,
             })
 
     # ---- Résultats
@@ -778,7 +718,7 @@ if st.button("Calculer l'empreinte carbone totale"):
             f"Émissions totales : **{total_emissions:.2f} kg CO₂e**"
         )
 
-        # Stocker le dernier résultat pour CSV/PDF
+        # Stock session pour CSV/PDF
         st.session_state["last_result_df"] = df
         st.session_state["last_total_distance"] = total_distance
         st.session_state["last_total_emissions"] = total_emissions
@@ -787,34 +727,28 @@ if st.button("Calculer l'empreinte carbone totale"):
         # 🗺️ Carte interactive (pydeck)
         st.subheader("🗺️ Carte des segments")
 
-        # 1) Data pour les lignes (OSRM ou droites)
+        # Lignes (OSRM ou droites)
         route_paths = []
         for r in rows:
             if (r["Mode"].startswith("Routier") or "Routier" in r["Mode"]) and r.get("route_coords"):
-                route_paths.append({
-                    "path": r["route_coords"],   # [[lon, lat], ...]
-                    "name": f"Segment {r['Segment']} - {r['Mode']}",
-                })
+                route_paths.append({"path": r["route_coords"], "name": f"Segment {r['Segment']} - {r['Mode']}"})
 
         layers = []
-
-        # 1a) Polyline routière exacte (OSRM)
         if route_paths:
             layers.append(pdk.Layer(
                 "PathLayer",
                 data=route_paths,
                 get_path="path",
-                get_color=[187, 147, 87, 220],  # #BB9357 avec alpha
+                get_color=[187, 147, 87, 220],
                 width_scale=1,
                 width_min_pixels=4,
                 pickable=True,
             ))
 
-        # 1b) Lignes droites pour les segments restants
         straight_lines = []
         for r in rows:
-            has_osrm_line = (r["Mode"].startswith("Routier") or "Routier" in r["Mode"]) and r.get("route_coords")
-            if not has_osrm_line:
+            has_osrm = (r["Mode"].startswith("Routier") or "Routier" in r["Mode"]) and r.get("route_coords")
+            if not has_osrm:
                 straight_lines.append({
                     "from": [r["lon_o"], r["lat_o"]],
                     "to": [r["lon_d"], r["lat_d"]],
@@ -831,14 +765,10 @@ if st.button("Calculer l'empreinte carbone totale"):
                 pickable=True,
             ))
 
-        # 2) Points + balises (origines & destinations)
-        points = []
-        labels = []
+        points, labels = [], []
         for r in rows:
-            # Origine
             points.append({"position": [r["lon_o"], r["lat_o"]], "name": f"S{r['Segment']} • Origine", "color": [0, 122, 255, 220]})
             labels.append({"position": [r["lon_o"], r["lat_o"]], "text": f"S{r['Segment']} O", "color": [0, 122, 255, 255]})
-            # Destination
             points.append({"position": [r["lon_d"], r["lat_d"]], "name": f"S{r['Segment']} • Destination", "color": [220, 66, 66, 220]})
             labels.append({"position": [r["lon_d"], r["lat_d"]], "text": f"S{r['Segment']} D", "color": [220, 66, 66, 255]})
 
@@ -848,7 +778,7 @@ if st.button("Calculer l'empreinte carbone totale"):
                 data=points,
                 get_position="position",
                 get_fill_color="color",
-                get_radius=20000,               # rayon en mètres
+                get_radius=20000,
                 radius_min_pixels=4,
                 radius_max_pixels=12,
                 pickable=True,
@@ -856,9 +786,7 @@ if st.button("Calculer l'empreinte carbone totale"):
                 get_line_color=[255, 255, 255],
                 line_width_min_pixels=1,
             ))
-
         if labels:
-            # littéraux JS pour deck.gl (passer la chaîne avec guillemets)
             layers.append(pdk.Layer(
                 "TextLayer",
                 data=labels,
@@ -867,23 +795,20 @@ if st.button("Calculer l'empreinte carbone totale"):
                 get_color="color",
                 get_size=16,
                 size_units="pixels",
-                get_text_anchor='"start"',
-                get_alignment_baseline='"top"',
+                get_text_anchor='"start"',        # littéral JS
+                get_alignment_baseline='"top"',   # littéral JS
                 background=True,
                 get_background_color=[255, 255, 255, 160],
             ))
 
-        # 3) Vue automatiquement adaptée (tous points + polylignes OSRM)
         all_lats, all_lons = [], []
         if route_paths and any(d["path"] for d in route_paths):
             all_lats.extend([pt[1] for d in route_paths for pt in d["path"]])
             all_lons.extend([pt[0] for d in route_paths for pt in d["path"]])
-        # Ajoute aussi les extrémités (utile quand aucun OSRM)
         all_lats.extend([r["lat_o"] for r in rows] + [r["lat_d"] for r in rows])
         all_lons.extend([r["lon_o"] for r in rows] + [r["lon_d"] for r in rows])
 
-        view = _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80)
-
+        view = _compute_auto_view(all_lats, all_lons)
         st.pydeck_chart(pdk.Deck(
             map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
             initial_view_state=view,
@@ -894,18 +819,20 @@ if st.button("Calculer l'empreinte carbone totale"):
         # ======= Image statique de la carte (PNG) pour PDF =======
         map_png_bytes = build_map_image(rows, figsize_px=(1400, 900))
         st.session_state["last_map_png"] = map_png_bytes
-
-        # Alerte fond si Natural Earth indisponible
         if _load_world() is None:
-            st.info("ℹ️ Fond Natural Earth indisponible sur cet environnement : un fond simplifié a été utilisé pour la carte du PDF.")
+            st.info("ℹ️ Fond Natural Earth indisponible : un fond simplifié a été utilisé pour la carte du PDF.")
 
         # Rappel dossier (UI)
         if st.session_state.get("case_ref"):
             st.info(f"**Dossier Transport N° :** {st.session_state['case_ref']}")
 
-        # Tableau (aperçu)
-        sttaframe(
-            df[["Segment", "Origine", "Destination", "Mode", "Distance (km)", f"Poids ({unit})", "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"]],
+        # ✅ Tableau (aperçu) — correction: st.dataframe
+        st.dataframe(
+            df[[
+                "Segment", "Origine", "Destination", "Mode",
+                "Distance (km)", f"Poids ({unit})",
+                "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"
+            ]],
             use_container_width=True
         )
 
@@ -939,7 +866,7 @@ if st.button("Calculer l'empreinte carbone totale"):
         except Exception as e:
             st.warning(f"Impossible de générer le PDF : {e}")
 
-        # (Optionnel) Télécharger aussi l'image PNG seule
+        # (Optionnel) PNG de la carte
         if map_png_bytes:
             st.download_button(
                 "🖼️ Télécharger l'image de la carte (PNG)",
