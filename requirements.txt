@@ -1,25 +1,6 @@
-# --- App & UI ---
-streamlit>=1.32
-
-# --- Données & calculs ---
-pandas>=2.0
-numpy>=1.24
-requests>=2.31
-
-# --- Géocodage & distances ---
-opencage>=2.4
-geopy>=2.4
-
-# --- Cartographie interactive (carte dans l'app) ---
-pydeck>=0.8
-
-# --- Cartographie statique (image pour le PDF) ---
-geopandas>=0.14
-shapely>=2.0
-matplotlib>=3.7
-
-# --- Images (logo + carte dans le PDF) ---
-pillow>=10.0
-
-# --- (Optionnel) Moteur PDF alternatif si tu veux repasser sur PyMuPDF :
-# pymupdf>=1.23
+streamlit
+pandas
+requests
+pydeck
+opencage
+geopy
