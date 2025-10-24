@@ -10,8 +10,8 @@
 # - UI segments: boutons d’ajout/suppression (plus de "Nombre de segments")
 # - Carte: auto-zoom/centrage + balises (points + étiquettes)
 # - Option: rayon des points dynamique (mètres) ou fixe (pixels)
-# - Fond: #DFEDF5  (remplacé par fond transparent via CSS)
-# - Logo en haut à gauche (depuis GitHub)
+# - Fond de page rendu transparent via CSS
+# - Logo en haut à gauche (PNG transparent)
 # - Icônes par mode sur le trait (IconLayer au milieu du segment)
 # ------------------------------------------------------------
 
@@ -64,7 +64,7 @@ LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/N
 st.markdown(
     f"""
     <div style="display:flex;align-items:center;gap:10px;margin:4px 0 12px 0">
-        <img src="{LOGO_URL}" alt="NILEY EXPERTS" height="48"ize:18px;line-height:1.2">
+        <img src="{LOGO_URL}" alt="NILEY EXPERTght:600;font-size:18px;line-height:1.2">
             Calculateur d'empreinte carbone multimodal - NILEY EXPERTS
         </div>
     </div>
@@ -106,6 +106,8 @@ def coords_from_formatted(formatted: str):
 
 def compute_distance_km(coord1, coord2) -> float:
     return great_circle(coord1, coord2).km
+
+
 def compute_emissions(distance_km: float, weight_tonnes: float, factor_kg_per_tkm: float) -> float:
     return distance_km * weight_tonnes * factor_kg_per_tkm
 
@@ -157,7 +159,7 @@ def reset_form(max_segments: int = MAX_SEGMENTS):
     for k in widget_keys:
         if k in st.session_state:
             del st.session_state[k]
-    for k in ["segments", "osrm_base_url", "weight_0"]:
+    for k in ["segments", "osrm_base_url", "weight_0", "dossier_transport"]:
         if k in st.session_state:
             del st.session_state[k]
     st.cache_data.clear()
@@ -183,11 +185,21 @@ st.markdown(
 )
 
 # =========================
-# 🔄 Reset (utilise reset_form)
+# 🔄 N° dossier + Reset
 # =========================
-col_r, _ = st.columns([1, 4])
-with col_r:
-    if st.button("🔄 Réinitialiser le formulaire"):
+col_id, col_reset, _ = st.columns([3, 1, 6])
+with col_id:
+    # Saisie libre du numéro de dossier (stockée dans la session)
+    dossier_transport = st.text_input(
+        "N° dossier Transport",
+        value=st.session_state.get("dossier_transport", ""),
+        placeholder="ex : TR-2025-001"
+    )
+    st.session_state["dossier_transport"] = dossier_transport
+with col_reset:
+    # Petit espace vertical pour aligner le bouton avec le champ texte
+    st.write("")
+    if st.button("🔄 Réinitialiser le formulaire", use_container_width=True):
         reset_form()
 
 # =========================
@@ -440,6 +452,7 @@ if st.button("Calculer l'empreinte carbone totale"):
             if not coord1 or not coord2:
                 st.error(f"Segment {idx} : lieu introuvable ou ambigu.")
                 continue
+
             route_coords = None  # liste de [lon, lat]
             if "routier" in _normalize_no_diacritics(seg["mode"]):
                 try:
@@ -481,6 +494,10 @@ if st.button("Calculer l'empreinte carbone totale"):
             f"✅ {len(rows)} segment(s) calculé(s) • Distance totale : {total_distance:.1f} km • "
             f"Émissions totales : {total_emissions:.2f} kg CO₂e"
         )
+
+        # Affiche le N° de dossier si saisi
+        if st.session_state.get("dossier_transport"):
+            st.info(f"**N° dossier Transport :** {st.session_state['dossier_transport']}")
 
         st.dataframe(
             df[["Segment", "Origine", "Destination", "Mode", "Distance (km)", f"Poids ({unit})", "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"]],
@@ -642,3 +659,4 @@ if st.button("Calculer l'empreinte carbone totale"):
         st.download_button("⬇️ Télécharger le détail (CSV)", data=csv, file_name="resultats_co2_multimodal.csv", mime="text/csv")
     else:
         st.info("Aucun segment valide n’a été calculé. Vérifiez les entrées ou les sélections.")
+``
