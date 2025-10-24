@@ -1,4 +1,19 @@
 # co2_calculator_app.py
+import base64
+
+# Image camion encodée en base64 (flat design)
+truck_base64 = """
+<INSÉRER_ICI_LA_CHAÎNE_BASE64>
+"""
+
+# Affichage dans Streamlit
+st.markdown(
+    f"""
+    <div style="text-align:center;">
+        <img src="data:image/png;base64,{truck_base64}"
+    """,
+    unsafe_allow_html=True
+)
 # ------------------------------------------------------------
 # Calculateur CO2 multimodal - NILEY EXPERTS
 # - Géocodage OpenCage
