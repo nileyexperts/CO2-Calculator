@@ -11,6 +11,7 @@
 # - Carte: auto-zoom/centrage + balises (points + étiquettes)
 # - Export CSV + PDF (1 page paysage) avec logo, n° de dossier, et capture de la carte (PNG)
 # - Fond de carte PDF robuste (GeoPandas/pyogrio) avec fallback visuel
+# - 🎨 Fond de page de l’app Streamlit : WEB #DFEDF5
 # ------------------------------------------------------------
 
 import os
@@ -49,7 +50,6 @@ DEFAULT_EMISSION_FACTORS = {
     "🚂 Ferroviaire 🚂": 0.030,
 }
 MAX_SEGMENTS = 10  # limite haute
-
 # Logo NILEY EXPERTS (URL raw GitHub)
 LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png"
 
@@ -90,9 +90,40 @@ if not check_password():
     st.stop()
 
 # =========================
-# 🎨 Styles (placeholder)
+# 🎨 Styles (fond de page personnalisé #DFEDF5)
 # =========================
-st.markdown("""""", unsafe_allow_html=True)
+st.markdown(
+    """
+    <style>
+    /* Fond global de l'application */
+    .stApp {
+        background-color: #DFEDF5 !important;
+    }
+    /* Zone principale */
+    .block-container {
+        background-color: #DFEDF5 !important;
+        padding-top: 1.2rem;
+        padding-bottom: 2rem;
+        border-radius: 8px;
+    }
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: #DFEDF5 !important;
+    }
+    /* Cartes/expanders : fond blanc pour lisibilité sur fond bleu clair */
+    div[data-testid="stExpander"] > details {
+        background-color: #FFFFFF !important;
+        border-radius: 8px;
+        border: 1px solid #E6EEF3;
+    }
+    /* Boutons : légère harmonisation */
+    .stButton>button {
+        border-radius: 6px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # =========================
 # 🧠 Utilitaires
@@ -218,6 +249,7 @@ Ajoutez plusieurs segments (origine → destination), choisissez le mode et le p
 st.markdown("### Dossier Transport")
 case_ref = st.text_input("Dossier Transport N°", value=st.session_state.get("case_ref", ""), help="Identifiant interne de votre expédition / dossier.")
 st.session_state["case_ref"] = case_ref
+
 # =========================
 # 🔄 Reset (utilise reset_form)
 # =========================
@@ -473,6 +505,7 @@ def build_map_image(rows: list, figsize_px=(1400, 900)) -> bytes | None:
                 ax.plot(xs, ys, color="#BB9357", linewidth=2.5, alpha=0.95, zorder=3)
             except Exception:
                 pass
+
     # Segments droits
     for r in rows:
         if not r.get("route_coords"):
@@ -826,7 +859,7 @@ if st.button("Calculer l'empreinte carbone totale"):
         if st.session_state.get("case_ref"):
             st.info(f"**Dossier Transport N° :** {st.session_state['case_ref']}")
 
-        # ✅ Tableau (aperçu) — correction: st.dataframe
+        # ✅ Tableau (aperçu)
         st.dataframe(
             df[[
                 "Segment", "Origine", "Destination", "Mode",
