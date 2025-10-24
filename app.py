@@ -34,13 +34,16 @@ MAX_SEGMENTS = 10  # utilisé pour nettoyer toutes les clés potentielles
 
 st.set_page_config(page_title="Calculateur CO₂ multimodal - NILEY EXPERTS",
 
-st.markdown("""
+
+# --- Styles (labels en blanc pour st.number_input) ---
+st.markdown(
+    '''
     <style>
-        label[data-testid="stNumberInputLabel"] {
-            color: white !important;
-        }
+        [data-testid="stNumberInput"] label { color: white !important; }
     </style>
-""", unsafe_allow_html=True)
+    ''' , unsafe_allow_html=True
+)
+
                    page_icon="🌍", layout="centered")
 
 # =========================
