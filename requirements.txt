@@ -1,6 +1,12 @@
-streamlit
-pandas
-requests
-pydeck
-opencage
-geopy
+pip install pymupdf
+# ou, dans un fichier requirements.txt :
+# streamlit
+# opencage
+# geopy
+# pydeck
+# pandas
+# requests
+# geopandas
+# shapely
+# matplotlib
+# pymupdf
