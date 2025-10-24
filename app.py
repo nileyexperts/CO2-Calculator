@@ -201,6 +201,12 @@ with col_reset:
     st.write("")
     if st.button("🔄 Réinitialiser le formulaire", use_container_width=True):
         reset_form()
+        <style>
+.stButton > button {
+    border-radius: 0px !important; /* carré */
+    padding: 8px 12px !important;
+}
+</style>
 
 # =========================
 # ⚙️ Paramètres
