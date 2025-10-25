@@ -35,6 +35,32 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import io
+
+
+def _pdf_add_mode_icon(ax, lon, lat, cat_key, size_px, transform=None):
+    """Place le logo du mode (ICON_URLS[cat_key]) au point (lon, lat) sur la carte PDF.
+    cat_key: 'routier' | 'aerien' | 'maritime' | 'ferroviaire'
+    size_px: taille cible en pixels de largeur
+    transform: projection (ex: ccrs.PlateCarree()) ou None pour axes simples
+    """
+    try:
+        url = ICON_URLS.get(cat_key)
+        if not url:
+            return
+        resp = requests.get(url, timeout=6)
+        if resp.status_code != 200:
+            return
+        pil = PILImage.open(io.BytesIO(resp.content)).convert('RGBA')
+        w = max(1, pil.width)
+        zoom = max(0.1, float(size_px) / float(w))
+        imgbox = OffsetImage(pil, zoom=zoom)
+        ab = AnnotationBbox(imgbox, (lon, lat), frameon=False)
+        if transform is not None:
+            ab.set_transform(transform)
+        ab.set_zorder(5)
+        ax.add_artist(ab)
+    except Exception:
+        pass
 import tempfile
 import numpy as np
 
@@ -375,17 +401,6 @@ def generate_pdf_report(
                 # Graticule discret (sans labels)
                 ax.gridlines(draw_labels=False, linewidth=0.4, color='#DDE3EA', alpha=1.0, linestyle='--', zorder=1)
 
-# Pré-charger les icônes pour le PDF (Cartopy)
-icon_arrays = {}
-for _cat, _url in ICON_URLS.items():
-    try:
-        _resp = requests.get(_url, timeout=6)
-        if _resp.status_code == 200:
-            _img = PILImage.open(io.BytesIO(_resp.content)).convert('RGBA')
-            icon_arrays[_cat] = _img
-    except Exception:
-        pass
-
                 # Traces segments
                 mode_colors = {
                     "routier": "#0066CC",
@@ -404,9 +419,7 @@ for _cat, _url in ICON_URLS.items():
                                edgecolors='white', linewidths=0.8, transform=ccrs.PlateCarree(), zorder=4)
                     mid_lon = (r["lon_o"] + r["lon_d"]) / 2
                     mid_lat = (r["lat_o"] + r["lat_d"]) / 2
-                    ax.text(mid_lon, mid_lat, f"S{r['Segment']}", fontsize=7.5, ha='center', va='center',
-                            bbox=dict(boxstyle='round,pad=0.25', facecolor='white', edgecolor=color, alpha=0.9),
-                            transform=ccrs.PlateCarree(), zorder=5)
+                    _pdf_add_mode_icon(ax, mid_lon, mid_lat, cat, pdf_icon_size_px, transform=ccrs.PlateCarree())
 
                 ax.set_title("")
                 map_buffer = io.BytesIO()
@@ -470,8 +483,7 @@ for _cat, _url in ICON_URLS.items():
                 ax.scatter(r["lon_d"], r["lat_d"], s=22, c="#FF3B30", edgecolors='white', linewidths=0.8, zorder=3)
                 mid_lon = (r["lon_o"] + r["lon_d"]) / 2
                 mid_lat = (r["lat_o"] + r["lat_d"]) / 2
-                ax.text(mid_lon, mid_lat, f"S{r['Segment']}", fontsize=7.5, ha='center', va='center',
-                        bbox=dict(boxstyle='round,pad=0.25', facecolor='white', edgecolor=color, alpha=0.9), zorder=4)
+                _pdf_add_mode_icon(ax, mid_lon, mid_lat, cat, pdf_icon_size_px, transform=None), zorder=4)
 
             ax.set_xlabel(""); ax.set_ylabel("")
             ax.set_xticks([]); ax.set_yticks([])
