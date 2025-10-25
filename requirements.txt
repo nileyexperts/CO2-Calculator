@@ -14,11 +14,9 @@ Pillow>=10.0
 matplotlib>=3.7
 
 # --- Cartopy + Natural Earth (fond de carte PDF) ---
-# Cartopy >=0.22 propose des wheels manylinux / macOS / Windows (Python >=3.10)
 cartopy>=0.22
 shapely>=2.0
 pyproj>=3.6
 
 # --- Divers utiles ---
-# (Optionnel) pour robustesse conversion d'encodages, etc.
 chardet>=5.2
