@@ -1,9 +1,24 @@
-streamlit>=1.28.0
-pandas>=2.0.0
-pydeck>=0.8.0
-opencage>=2.0.0
-geopy>=2.3.0
-requests>=2.31.0
-reportlab>=4.0.0
-Pillow>=10.0.0
-matplotlib>=3.7.0
+# --- Core app ---
+streamlit>=1.36
+pandas>=2.1
+numpy>=1.24
+requests>=2.31
+pydeck>=0.9
+geopy>=2.4
+opencage>=2.3
+python-dateutil>=2.8
+
+# --- PDF & rendu graphique ---
+reportlab>=4.1
+Pillow>=10.0
+matplotlib>=3.7
+
+# --- Cartopy + Natural Earth (fond de carte PDF) ---
+# Cartopy >=0.22 propose des wheels manylinux / macOS / Windows (Python >=3.10)
+cartopy>=0.22
+shapely>=2.0
+pyproj>=3.6
+
+# --- Divers utiles ---
+# (Optionnel) pour robustesse conversion d'encodages, etc.
+chardet>=5.2
