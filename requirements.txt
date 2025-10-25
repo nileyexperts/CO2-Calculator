@@ -1,23 +1,13 @@
-# --- Core app ---
-streamlit>=1.36
-pandas>=2.1
-numpy>=1.24
-requests>=2.31
-pydeck>=0.9
-geopy>=2.4
-opencage>=2.3
-python-dateutil>=2.8
-pip install searoute
-
-# --- PDF & rendu graphique ---
-reportlab>=4.1
-Pillow>=10.0
+streamlit
+pandas
 matplotlib>=3.7
-
-# --- Cartopy + Natural Earth (fond de carte PDF) ---
-cartopy>=0.22
+numpy>=1.24
+pydeck
+opencage
+geopy
+reportlab
+Pillow
 shapely>=2.0
 pyproj>=3.6
-
-# --- Divers utiles ---
-chardet>=5.2
+cartopy>=0.22
+searoute
