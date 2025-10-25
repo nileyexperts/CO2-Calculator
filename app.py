@@ -498,6 +498,62 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         ))
 
         df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
+
+    if st.button("📄 Exporter en PDF"):
+        import fitz
+        from PIL import Image
+        import io
+
+        pdf = fitz.open()
+        page_width, page_height = fitz.paper_size("a4-landscape")
+        page = pdf.new_page(width=page_width, height=page_height)
+
+        x_margin, y_margin = 50, 50
+        cursor_y = y_margin
+
+        try:
+            with open("niley_logo.png", "rb") as f:
+                logo_img = Image.open(f).convert("RGB")
+                logo_bytes = io.BytesIO()
+                logo_img.save(logo_bytes, format="PNG")
+                page.insert_image(fitz.Rect(x_margin, cursor_y, x_margin + 120, cursor_y + 60), stream=logo_bytes.getvalue())
+        except Exception:
+            page.insert_text((x_margin, cursor_y), "NILEY EXPERTS", fontsize=16)
+        cursor_y += 70
+
+        num_dossier = df_export.iloc[0]["N° dossier Transport"]
+        page.insert_text((x_margin, cursor_y), f"N° dossier Transport : {num_dossier}", fontsize=12)
+        cursor_y += 30
+
+        columns = [col for col in df_export.columns if col != "N° dossier Transport"]
+        col_width = (page_width - 2 * x_margin) / len(columns)
+        row_height = 20
+
+        for i, col in enumerate(columns):
+            page.insert_text((x_margin + i * col_width, cursor_y), col, fontsize=10)
+        cursor_y += row_height
+
+        for _, row in df_export.iterrows():
+            for i, col in enumerate(columns):
+                page.insert_text((x_margin + i * col_width, cursor_y), str(row[col]), fontsize=9)
+            cursor_y += row_height
+
+        try:
+            with open("mini_map.png", "rb") as f:
+                map_img = Image.open(f).convert("RGB")
+                map_img.thumbnail((300, 200))
+                map_bytes = io.BytesIO()
+                map_img.save(map_bytes, format="PNG")
+                page.insert_image(fitz.Rect(page_width - x_margin - 300, y_margin, page_width - x_margin, y_margin + 200), stream=map_bytes.getvalue())
+        except Exception:
+            page.insert_text((page_width - x_margin - 300, y_margin), "Carte miniature non disponible", fontsize=10)
+
+        pdf_path = f"rapport_co2_multimodal_{num_dossier}.pdf"
+        pdf.save(pdf_path)
+        pdf.close()
+
+        with open(pdf_path, "rb") as f:
+            st.download_button("📥 Télécharger le rapport PDF", data=f.read(), file_name=pdf_path, mime="application/pdf")
         df_export.insert(0, "N° dossier Transport", dossier_val)
         csv = df_export.to_csv(index=False).encode("utf-8")
 
@@ -507,67 +563,5 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         filename = f"resultats_co2_multimodal{safe_suffix}.csv"
 
         st.download_button("⬇️ Télécharger le détail (CSV)", data=csv, file_name=filename, mime="text/csv")
-
-import fitz  # PyMuPDF
-from PIL import Image
-import io
-
-if st.button("📄 Exporter en PDF"):
-    pdf = fitz.open()
-    page_width, page_height = fitz.paper_size("a4-landscape")
-    page = pdf.new_page(width=page_width, height=page_height)
-
-    x_margin, y_margin = 50, 50
-    cursor_y = y_margin
-
-    # Logo NILEY (local or fallback text)
-    try:
-        with open("niley_logo.png", "rb") as f:
-            logo_img = Image.open(f).convert("RGB")
-            logo_bytes = io.BytesIO()
-            logo_img.save(logo_bytes, format="PNG")
-            page.insert_image(fitz.Rect(x_margin, cursor_y, x_margin + 120, cursor_y + 60), stream=logo_bytes.getvalue())
-    except Exception:
-        page.insert_text((x_margin, cursor_y), "NILEY EXPERTS", fontsize=16)
-    cursor_y += 70
-
-    # N° dossier
-    num_dossier = df_export.iloc[0]["N° dossier Transport"]
-    page.insert_text((x_margin, cursor_y), f"N° dossier Transport : {num_dossier}", fontsize=12)
-    cursor_y += 30
-
-    # Tableau récapitulatif
-    columns = [col for col in df_export.columns if col != "N° dossier Transport"]
-    col_width = (page_width - 2 * x_margin) / len(columns)
-    row_height = 20
-
-    for i, col in enumerate(columns):
-        page.insert_text((x_margin + i * col_width, cursor_y), col, fontsize=10)
-    cursor_y += row_height
-
-    for _, row in df_export.iterrows():
-        for i, col in enumerate(columns):
-            page.insert_text((x_margin + i * col_width, cursor_y), str(row[col]), fontsize=9)
-        cursor_y += row_height
-
-    # Carte miniature (optional)
-    try:
-        with open("mini_map.png", "rb") as f:
-            map_img = Image.open(f).convert("RGB")
-            map_img.thumbnail((300, 200))
-            map_bytes = io.BytesIO()
-            map_img.save(map_bytes, format="PNG")
-            page.insert_image(fitz.Rect(page_width - x_margin - 300, y_margin, page_width - x_margin, y_margin + 200), stream=map_bytes.getvalue())
-    except Exception:
-        page.insert_text((page_width - x_margin - 300, y_margin), "Carte miniature non disponible", fontsize=10)
-
-    # Save and offer download
-    pdf_path = f"rapport_co2_multimodal_{num_dossier}.pdf"
-    pdf.save(pdf_path)
-    pdf.close()
-
-    with open(pdf_path, "rb") as f:
-        st.download_button("📥 Télécharger le rapport PDF", data=f.read(), file_name=pdf_path, mime="application/pdf")
-
     else:
         st.info("Aucun segment valide n’a été calculé. Vérifiez les entrées ou les sélections.")
