@@ -1,6 +1,7 @@
 # Webapp
 streamlit>=1.32
 pydeck>=0.8
+pymupdf
 
 # Data/compute
 pandas>=2.0
@@ -23,4 +24,3 @@ pyogrio>=0.7
 # ajoutez explicitement ces dépendances carto :
 # fiona>=1.9
 # pyproj>=3.6
-pymupdf
