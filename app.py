@@ -146,7 +146,7 @@ st.markdown("## Calculateur d'empreinte carbone multimodal - NILEY EXPERTS")
 st.markdown("Ajoutez plusieurs segments (origine -> destination), choisissez le mode et le poids. Le mode Routier utilise OSRM (distance reelle + trace).")
 
 # =========================
-# 🔄 Réinitialiser (gauche) + 🗂️ N° dossier (droite, obligatoire)
+# 🗂️ N° dossier (gauche, obligatoire) + 🔄 Réinitialiser (droite) 
 # =========================
 col_reset, col_id, _ = st.columns([1, 3, 6])
 with col_reset:
