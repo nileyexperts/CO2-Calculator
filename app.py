@@ -307,6 +307,7 @@ def _pdf_add_mode_icon(ax, lon, lat, cat_key, size_px, transform=None):
         ax.add_artist(ab)
     except Exception:
         pass
+
 # =========================
 # Génération du PDF
 # =========================
@@ -358,7 +359,6 @@ def generate_pdf_report(
             story.append(logo)
     except Exception:
         pass
-
     story.append(Paragraph("RAPPORT D'EMPREINTE CARBONE MULTIMODAL", title_style))
     story.append(Spacer(1, 0.2*cm))
 
@@ -606,15 +606,13 @@ st.session_state["dossier_transport"] = (dossier_transport or "").strip()
 close_box()
 
 # =========================
-# Paramètres MASQUÉS : valeurs par défaut
+# Paramètres MASQUÉS : valeurs par défaut (pas d'UI)
 # =========================
-# Mode de gestion du poids
 default_mode_label = "Envoi unique (même poids sur tous les segments)"
 if "weight_mode" not in st.session_state:
     st.session_state["weight_mode"] = default_mode_label
 weight_mode = st.session_state["weight_mode"]
 
-# Facteurs d'émission (kg CO2e / t.km)
 factors = {
     "Routier":     float(DEFAULT_EMISSION_FACTORS["Routier"]),
     "Aerien":      float(DEFAULT_EMISSION_FACTORS["Aerien"]),
@@ -622,35 +620,29 @@ factors = {
     "Ferroviaire": float(DEFAULT_EMISSION_FACTORS["Ferroviaire"]),
 }
 
-# Unité de saisie du poids
 if "unit" not in st.session_state:
     st.session_state["unit"] = "kg"  # "kg" | "tonnes"
 unit = st.session_state["unit"]
 
-# Endpoint OSRM
 if "osrm_base_url" not in st.session_state:
     st.session_state["osrm_base_url"] = "https://router.project-osrm.org"
 osrm_base_url = st.session_state["osrm_base_url"]
 
-# Apparence carte (rayon dynamique)
 if "dynamic_radius" not in st.session_state:
     st.session_state["dynamic_radius"] = True
 dynamic_radius = st.session_state["dynamic_radius"]
 radius_m  = 20000 if dynamic_radius else None
 radius_px = None if dynamic_radius else 8
 
-# Taille des logos (web & PDF)
 if "icon_size_px" not in st.session_state:
     st.session_state["icon_size_px"] = 28
 icon_size_px = st.session_state["icon_size_px"]
 
-# Fond de carte du PDF
 if "pdf_basemap_choice" not in st.session_state:
     st.session_state["pdf_basemap_choice"] = "Automatique (recommandé)"
 pdf_basemap_choice = st.session_state["pdf_basemap_choice"]
-
 if "ne_scale" not in st.session_state:
-    st.session_state["ne_scale"] = "110m"   # "110m" | "50m" | "10m"
+    st.session_state["ne_scale"] = "110m"
 ne_scale = st.session_state["ne_scale"]
 
 # =========================
@@ -803,7 +795,6 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             if not coord1 or not coord2:
                 st.error(f"Segment {idx} : lieu introuvable ou ambigu.")
                 continue
-
             route_coords = None
             if "routier" in _normalize_no_diacritics(seg["mode"]):
                 try:
@@ -844,97 +835,173 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
 
         st.subheader("Carte des segments")
 
+        # -- Préparation des couches (layers) pydeck --
         route_paths = []
         for r in rows:
             if "routier" in _normalize_no_diacritics(r["Mode"]) and r.get("route_coords"):
-                route_paths.append({"path": r["route_coords"], "name": f"Segment {r['Segment']} - {r['Mode']}"})
+                route_paths.append({
+                    "path": r["route_coords"],
+                    "name": f"Segment {r['Segment']} - {r['Mode']}"
+                })
 
         layers = []
-        if route_paths:
-            layers.append(pdk.Layer(
-                "PathLayer", data=route_paths, get_path="path",
-                get_color=[187, 147, 87, 220], width_scale=1, width_min_pixels=4, pickable=True
-            ))
 
+        # Traces OSRM (PathLayer)
+        if route_paths:
+            layers.append(
+                pdk.Layer(
+                    "PathLayer",
+                    data=route_paths,
+                    get_path="path",
+                    get_color=[187, 147, 87, 220],
+                    width_scale=1,
+                    width_min_pixels=4,
+                    pickable=True,
+                )
+            )
+
+        # Lignes droites pour les autres modes
         straight_lines = []
         for r in rows:
             if not ("routier" in _normalize_no_diacritics(r["Mode"]) and r.get("route_coords")):
                 straight_lines.append({
                     "from": [r["lon_o"], r["lat_o"]],
                     "to":   [r["lon_d"], r["lat_d"]],
-                    "name": f"Segment {r['Segment']} - {r['Mode']}"
+                    "name": f"Segment {r['Segment']} - {r['Mode']}",
                 })
         if straight_lines:
-            layers.append(pdk.Layer(
-                "LineLayer", data=straight_lines, get_source_position="from",
-                get_target_position="to", get_width=3, get_color=[120, 120, 120, 160], pickable=True
-            ))
+            layers.append(
+                pdk.Layer(
+                    "LineLayer",
+                    data=straight_lines,
+                    get_source_position="from",
+                    get_target_position="to",
+                    get_width=3,
+                    get_color=[120, 120, 120, 160],
+                    pickable=True,
+                )
+            )
 
+        # Points O/D + étiquettes
         points, labels = [], []
         for r in rows:
-            points.append({"position": [r["lon_o"], r["lat_o"]], "name": f"S{r['Segment']} - Origine", "color": [0, 122, 255, 220]})
-            labels.append({"position": [r["lon_o"], r["lat_o"]], "text": f"S{r['Segment']} O", "color": [0, 122, 255, 255]})
-            points.append({"position": [r["lon_d"], r["lat_d"]], "name": f"S{r['Segment']} - Destination", "color": [220, 66, 66, 220]})
-            labels.append({"position": [r["lon_d"], r["lat_d"]], "text": f"S{r['Segment']} D", "color": [220, 66, 66, 255]})
+            points.append(
+                {"position": [r["lon_o"], r["lat_o"]], "name": f"S{r['Segment']} - Origine", "color": [0, 122, 255, 220]}
+            )
+            labels.append(
+                {"position": [r["lon_o"], r["lat_o"]], "text": f"S{r['Segment']} O", "color": [0, 122, 255, 255]}
+            )
+            points.append(
+                {"position": [r["lon_d"], r["lat_d"]], "name": f"S{r['Segment']} - Destination", "color": [220, 66, 66, 220]}
+            )
+            labels.append(
+                {"position": [r["lon_d"], r["lat_d"]], "text": f"S{r['Segment']} D", "color": [220, 66, 66, 255]}
+            )
 
         if points:
             if dynamic_radius:
-                layers.append(pdk.Layer(
-                    "ScatterplotLayer", data=points, get_position="position",
-                    get_fill_color="color", get_radius=radius_m if radius_m is not None else 20000,
-                    radius_min_pixels=2, radius_max_pixels=60, pickable=True, stroked=True,
-                    get_line_color=[255, 255, 255], line_width_min_pixels=1
-                ))
+                layers.append(
+                    pdk.Layer(
+                        "ScatterplotLayer",
+                        data=points,
+                        get_position="position",
+                        get_fill_color="color",
+                        get_radius=radius_m if radius_m is not None else 20000,
+                        radius_min_pixels=2,
+                        radius_max_pixels=60,
+                        pickable=True,
+                        stroked=True,
+                        get_line_color=[255, 255, 255],
+                        line_width_min_pixels=1,
+                    )
+                )
             else:
-                layers.append(pdk.Layer(
-                    "ScatterplotLayer", data=points, get_position="position",
-                    get_fill_color="color", get_radius=radius_px if radius_px is not None else 8,
-                    radius_units="pixels", pickable=True, stroked=True,
-                    get_line_color=[255, 255, 255], line_width_min_pixels=1
-                ))
+                layers.append(
+                    pdk.Layer(
+                        "ScatterplotLayer",
+                        data=points,
+                        get_position="position",
+                        get_fill_color="color",
+                        get_radius=radius_px if radius_px is not None else 8,
+                        radius_units="pixels",
+                        pickable=True,
+                        stroked=True,
+                        get_line_color=[255, 255, 255],
+                        line_width_min_pixels=1,
+                    )
+                )
 
-        # Labels (optionnels) – gardés pour la lecture O/D
         if labels:
-            layers.append(pdk.Layer(
-                "TextLayer", data=labels, get_position="position", get_text="text",
-                get_color="color", get_size=16, size_units="pixels",
-                get_text_anchor="start", get_alignment_baseline="top", background=False
-            ))
+            layers.append(
+                pdk.Layer(
+                    "TextLayer",
+                    data=labels,
+                    get_position="position",
+                    get_text="text",
+                    get_color="color",
+                    get_size=16,
+                    size_units="pixels",
+                    get_text_anchor="start",
+                    get_alignment_baseline="top",
+                    background=False,
+                )
+            )
 
-        # Logos milieu de segment (web)
+        # Icônes (logos) au milieu de chaque segment
         icons = []
         for r in rows:
-            cat = mode_to_category(r["Mode"]); url = ICON_URLS.get(cat)
-            if not url: continue
+            cat = mode_to_category(r["Mode"])
+            url = ICON_URLS.get(cat)
+            if not url:
+                continue
             if r.get("route_coords"):
-                coords_poly = r["route_coords"]; mid_index = len(coords_poly)//2
+                coords_poly = r["route_coords"]
+                mid_index = len(coords_poly) // 2
                 lon_mid, lat_mid = coords_poly[mid_index][0], coords_poly[mid_index][1]
             else:
                 lon_mid = (r["lon_o"] + r["lon_d"]) / 2.0
                 lat_mid = (r["lat_o"] + r["lat_d"]) / 2.0
-            icons.append({
-                "position": [lon_mid, lat_mid],
-                "name": f"S{r['Segment']} - {cat.capitalize()}",
-                "icon": {"url": url, "width": 64, "height": 64, "anchorY": 64, "anchorX": 32}
-            })
-        if icons:
-            layers.append(pdk.Layer(
-                "IconLayer", data=icons, get_icon="icon", get_position="position",
-                get_size=icon_size_px, size_units="pixels", pickable=True
-            ))
+            icons.append(
+                {
+                    "position": [lon_mid, lat_mid],
+                    "name": f"S{r['Segment']} - {cat.capitalize()}",
+                    "icon": {"url": url, "width": 64, "height": 64, "anchorY": 64, "anchorX": 32},
+                }
+            )
 
+        if icons:
+            layers.append(
+                pdk.Layer(
+                    "IconLayer",
+                    data=icons,
+                    get_icon="icon",
+                    get_position="position",
+                    get_size=icon_size_px,
+                    size_units="pixels",
+                    pickable=True,
+                )
+            )
+
+        # -- Vue auto pour centrer/zoomer --
         all_lats, all_lons = [], []
-        if route_paths and any(d["path"] for d in route_paths]):
+        if route_paths and any(d["path"] for d in route_paths):
             all_lats.extend([pt[1] for d in route_paths for pt in d["path"]])
             all_lons.extend([pt[0] for d in route_paths for pt in d["path"]])
+
         all_lats.extend([r["lat_o"] for r in rows] + [r["lat_d"] for r in rows])
         all_lons.extend([r["lon_o"] for r in rows] + [r["lon_d"] for r in rows])
+
         view = _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80)
 
-        st.pydeck_chart(pdk.Deck(
-            map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
-            initial_view_state=view, layers=layers, tooltip={"text": "{name}"}
-        ))
+        # -- Rendu pydeck --
+        st.pydeck_chart(
+            pdk.Deck(
+                map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+                initial_view_state=view,
+                layers=layers,
+                tooltip={"text": "{name}"},
+            )
+        )
 
         # Exports
         df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
@@ -968,4 +1035,3 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 import traceback; st.code(traceback.format_exc())
     else:
         st.info("Aucun segment valide n'a été calculé. Vérifiez les entrées ou les sélections.")
-``
