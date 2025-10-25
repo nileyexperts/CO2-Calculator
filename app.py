@@ -499,11 +499,6 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
 
         df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
 
-    # 📄 Export PDF
-    import fitz
-    import io
-    from PIL import Image
-
     if st.button("📄 Exporter en PDF"):
         pdf = fitz.open()
         page_width, page_height = fitz.paper_size("a4-landscape")
@@ -514,11 +509,12 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
 
         # Logo NILEY
         try:
-            with open("niley_logo.png", "rb") as f:
-                logo_img = Image.open(f).convert("RGB")
-                logo_bytes = io.BytesIO()
-                logo_img.save(logo_bytes, format="PNG")
-                page.insert_image(fitz.Rect(x_margin, cursor_y, x_margin + 120, cursor_y + 60), stream=logo_bytes.getvalue())
+            logo_url = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png"
+            logo_img = Image.open(io.BytesIO(requests.get(logo_url).content)).convert("RGB")
+            logo_img.thumbnail((120, 60))
+            logo_bytes = io.BytesIO()
+            logo_img.save(logo_bytes, format="PNG")
+            page.insert_image(fitz.Rect(x_margin, cursor_y, x_margin + 120, cursor_y + 60), stream=logo_bytes.getvalue())
         except Exception:
             page.insert_text((x_margin, cursor_y), "NILEY EXPERTS", fontsize=16)
         cursor_y += 70
@@ -542,7 +538,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 page.insert_text((x_margin + i * col_width, cursor_y), str(row[col]), fontsize=9)
             cursor_y += row_height
 
-        # Carte miniature
+        # Carte miniature (optionnelle)
         try:
             with open("mini_map.png", "rb") as f:
                 map_img = Image.open(f).convert("RGB")
@@ -553,12 +549,14 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         except Exception:
             page.insert_text((page_width - x_margin - 300, y_margin), "Carte miniature non disponible", fontsize=10)
 
+        # Sauvegarde et téléchargement
         pdf_path = f"rapport_co2_multimodal_{num_dossier}.pdf"
         pdf.save(pdf_path)
         pdf.close()
 
         with open(pdf_path, "rb") as f:
             st.download_button("📥 Télécharger le rapport PDF", data=f.read(), file_name=pdf_path, mime="application/pdf")
+
         df_export.insert(0, "N° dossier Transport", dossier_val)
         csv = df_export.to_csv(index=False).encode("utf-8")
 
