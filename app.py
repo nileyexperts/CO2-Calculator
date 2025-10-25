@@ -2,7 +2,8 @@
 # Calculateur CO2 multimodal - NILEY EXPERTS
 # Version : Sélecteur de mode par logos (cases exclusives) + Logos sur la carte PDF
 # + Fond WEB #DFEDF5 + Contours #BB9357 + Natural Earth (Cartopy) + Auth + Export CSV/PDF
-# + Paramètres/Apparence/Fond PDF MASQUÉS avec valeurs par défaut
+# + Paramètres/Apparence/Fond PDF MASQUÉS (valeurs par défaut)
+# + Gestion avancée des segments : ajouter/insérer/dupliquer/supprimer
 
 import os
 import time
@@ -146,7 +147,7 @@ DEFAULT_EMISSION_FACTORS = {
     "Maritime": 0.015,
     "Ferroviaire": 0.030,
 }
-MAX_SEGMENTS = 10
+MAX_SEGMENTS = 50
 LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png"
 
 # =========================
@@ -283,12 +284,6 @@ def fit_extent_to_aspect(min_lon, max_lon, min_lat, max_lat, target_aspect_w_ove
 
 # -------- Helper : logos sur carte PDF --------
 def _pdf_add_mode_icon(ax, lon, lat, cat_key, size_px, transform=None):
-    """
-    Place le logo du mode (ICON_URLS[cat_key]) au point (lon, lat) sur la carte PDF.
-    cat_key: 'routier' | 'aerien' | 'maritime' | 'ferroviaire'
-    size_px: largeur cible (px)
-    transform: projection (ex: ccrs.PlateCarree()) ou None pour axes simples
-    """
     try:
         url = ICON_URLS.get(cat_key)
         if not url:
@@ -428,8 +423,6 @@ def generate_pdf_report(
                                transform=ccrs.PlateCarree(), zorder=4)
 
                     mid_lon = (r["lon_o"] + r["lon_d"]) / 2; mid_lat = (r["lat_o"] + r["lat_d"]) / 2
-
-                    # Logo au milieu du segment
                     _pdf_add_mode_icon(ax, mid_lon, mid_lat, cat, pdf_icon_size_px, transform=ccrs.PlateCarree())
 
                 ax.set_title("")
@@ -653,14 +646,56 @@ def _default_segment(origin_raw="", origin_sel="", dest_raw="", dest_sel="", mod
     return {"origin_raw": origin_raw, "origin_sel": origin_sel, "dest_raw": dest_raw, "dest_sel": dest_sel,
             "mode": mode, "weight": weight}
 
+# Initialisation
 if "segments" not in st.session_state or not st.session_state.segments:
     st.session_state.segments = [_default_segment()]
 
-# Pré-remplir origine = dest du segment précédent si vide
+# Auto-lien origine = dest précédent
 for i in range(1, len(st.session_state.segments)):
     prev, cur = st.session_state.segments[i-1], st.session_state.segments[i]
     if prev.get("dest_sel") and not cur.get("origin_raw") and not cur.get("origin_sel"):
         cur["origin_raw"] = prev["dest_sel"]; cur["origin_sel"] = prev["dest_sel"]
+
+# Actions segments
+def add_segment_end():
+    last = st.session_state.segments[-1]
+    st.session_state.segments.append(
+        _default_segment(
+            origin_raw=last.get("dest_sel") or last.get("dest_raw") or "",
+            origin_sel=last.get("dest_sel") or "",
+            mode=last.get("mode", list(DEFAULT_EMISSION_FACTORS.keys())[0]),
+            weight=last.get("weight", 1000.0)
+        )
+    )
+    st.rerun()
+
+def remove_segment_end():
+    if len(st.session_state.segments) > 1:
+        st.session_state.segments.pop()
+        st.rerun()
+
+def insert_after(index: int):
+    base = st.session_state.segments[index]
+    st.session_state.segments.insert(
+        index+1,
+        _default_segment(
+            origin_raw=base.get("dest_sel") or base.get("dest_raw") or "",
+            origin_sel=base.get("dest_sel") or "",
+            mode=base.get("mode"),
+            weight=base.get("weight", 1000.0)
+        )
+    )
+    st.rerun()
+
+def duplicate_segment(index: int):
+    base = st.session_state.segments[index].copy()
+    st.session_state.segments.insert(index+1, base)
+    st.rerun()
+
+def delete_segment(index: int):
+    if len(st.session_state.segments) > 1:
+        st.session_state.segments.pop(index)
+        st.rerun()
 
 # Exclusivité : callback + rendu "logos + cases"
 def _on_mode_check(seg_idx: int, clicked_id: str):
@@ -700,24 +735,37 @@ def select_mode_with_icons(segment_index: int, current_value: str) -> str:
     return selected_id
 
 open_box("Saisie des segments")
+
+# Barre d'actions globale (haut)
+a1, a2, _ = st.columns([2,2,6])
+with a1:
+    st.button("➕ Ajouter un segment (fin)", on_click=add_segment_end, key="btn_add_end_top")
+with a2:
+    st.button("🗑️ Supprimer le dernier", on_click=remove_segment_end, disabled=(len(st.session_state.segments) <= 1), key="btn_del_end_top")
+
 segments_out = []
 for i in range(len(st.session_state.segments)):
     st.markdown(f"##### Segment {i+1}")
-    c1, c2 = st.columns(2)
 
+    # Actions locales pour ce segment
+    b1, b2, b3, _ = st.columns([2,2,2,6])
+    with b1:
+        st.button("➕ Insérer après", key=f"btn_ins_{i}", on_click=insert_after, args=(i,))
+    with b2:
+        st.button("📄 Dupliquer", key=f"btn_dup_{i}", on_click=duplicate_segment, args=(i,))
+    with b3:
+        st.button("🗑️ Supprimer", key=f"btn_del_{i}", on_click=delete_segment, args=(i,), disabled=(len(st.session_state.segments) <= 1))
+
+    c1, c2 = st.columns(2)
     with c1:
-        origin_raw = st.text_input(f"Origine du segment {i+1}",
-                                   value=st.session_state.segments[i]["origin_raw"],
-                                   key=f"origin_input_{i}")
+        origin_raw = st.text_input(f"Origine du segment {i+1}", value=st.session_state.segments[i]["origin_raw"], key=f"origin_input_{i}")
         origin_suggestions = geocode_cached(origin_raw, limit=5) if origin_raw else []
         origin_options = [r['formatted'] for r in origin_suggestions] if origin_suggestions else []
         origin_sel = st.selectbox("Suggestions pour l'origine", origin_options or ["-"], index=0, key=f"origin_select_{i}")
         if origin_sel == "-": origin_sel = ""
 
     with c2:
-        dest_raw = st.text_input(f"Destination du segment {i+1}",
-                                 value=st.session_state.segments[i]["dest_raw"],
-                                 key=f"dest_input_{i}")
+        dest_raw = st.text_input(f"Destination du segment {i+1}", value=st.session_state.segments[i]["dest_raw"], key=f"dest_input_{i}")
         dest_suggestions = geocode_cached(dest_raw, limit=5) if dest_raw else []
         dest_options = [r['formatted'] for r in dest_suggestions] if dest_suggestions else []
         dest_sel = st.selectbox("Suggestions pour la destination", dest_options or ["-"], index=0, key=f"dest_select_{i}")
@@ -726,24 +774,24 @@ for i in range(len(st.session_state.segments)):
     # Sélecteur de mode : logos + cases exclusives
     mode = select_mode_with_icons(segment_index=i, current_value=st.session_state.segments[i]["mode"])
 
+    # Poids
     if weight_mode == "Poids par segment":
         default_weight = st.session_state.segments[i]["weight"]
         weight_val = st.number_input(
-            f"Poids transporté pour le segment {i+1}",
-            min_value=0.001, value=float(default_weight),
+            f"Poids transporté pour le segment {i+1}", min_value=0.001, value=float(default_weight),
             step=100.0 if unit == "kg" else 0.1, key=f"weight_{i}"
         )
     else:
         default_weight = st.session_state.segments[0]["weight"]
         if i == 0:
             weight_val = st.number_input(
-                "Poids transporté (appliqué à tous les segments)",
-                min_value=0.001, value=float(default_weight),
+                "Poids transporté (appliqué à tous les segments)", min_value=0.001, value=float(default_weight),
                 step=100.0 if unit == "kg" else 0.1, key="weight_0"
             )
         else:
             weight_val = st.session_state.get("weight_0", default_weight)
 
+    # Enregistrer
     st.session_state.segments[i] = {
         "origin_raw": origin_raw, "origin_sel": origin_sel,
         "dest_raw": dest_raw,     "dest_sel": dest_sel,
@@ -754,6 +802,14 @@ for i in range(len(st.session_state.segments)):
         "destination": dest_sel or dest_raw or "",
         "mode": mode, "weight": weight_val
     })
+
+# Barre d'actions globale (bas)
+a3, a4, _ = st.columns([2,2,6])
+with a3:
+    st.button("➕ Ajouter un segment (fin)", on_click=add_segment_end, key="btn_add_end_bot")
+with a4:
+    st.button("🗑️ Supprimer le dernier", on_click=remove_segment_end, disabled=(len(st.session_state.segments) <= 1), key="btn_del_end_bot")
+
 close_box()
 
 # =========================
@@ -1035,3 +1091,4 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 import traceback; st.code(traceback.format_exc())
     else:
         st.info("Aucun segment valide n'a été calculé. Vérifiez les entrées ou les sélections.")
+``
