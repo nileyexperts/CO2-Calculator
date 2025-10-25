@@ -38,15 +38,17 @@ st.set_page_config(
 # 🎨 Styles globaux (fond transparent + boutons carrés)
 # =========================
 st.markdown("""
-    <style>
-        .stApp, .stApp > header, .block-container {
-            background: transparent !important;
-        }
-        .stButton > button {
-            border-radius: 0px !important;
-            padding: 8px 12px !important;
-        }
-    </style>
+    
+<style>
+.stApp, .stApp > header, .block-container {
+    background: #DFEDF5 !important;
+}
+.stButton > button {
+    border-radius: 0px !important;
+    padding: 8px 12px !important;
+}
+</style>
+
 """, unsafe_allow_html=True)
 
 # =========================
