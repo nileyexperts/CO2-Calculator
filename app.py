@@ -13,6 +13,26 @@ import unicodedata
 import requests
 import pandas as pd
 import streamlit as st
+
+import streamlit as st
+
+# 🔒 Vérification du mot de passe via st.secrets
+PASSWORD_KEY = "APP_PASSWORD"
+
+if PASSWORD_KEY not in st.secrets:
+    st.error("Mot de passe non configuré. Ajoutez APP_PASSWORD dans .streamlit/secrets.toml.")
+    st.stop()
+
+# Interface de connexion
+st.markdown("## 🔐 Accès sécurisé")
+password_input = st.text_input("Entrez le mot de passe pour accéder à l'application :", type="password")
+
+if password_input != st.secrets[PASSWORD_KEY]:
+    st.warning("Mot de passe incorrect ou vide.")
+    st.stop()
+
+st.success("✅ Accès autorisé. Bienvenue dans l'application !")
+
 import pydeck as pdk
 from opencage.geocoder import OpenCageGeocode
 from geopy.distance import great_circle
@@ -38,17 +58,15 @@ st.set_page_config(
 # 🎨 Styles globaux (fond transparent + boutons carrés)
 # =========================
 st.markdown("""
-    
-<style>
-.stApp, .stApp > header, .block-container {
-    background: #DFEDF5 !important;
-}
-.stButton > button {
-    border-radius: 0px !important;
-    padding: 8px 12px !important;
-}
-</style>
-
+    <style>
+        .stApp, .stApp > header, .block-container {
+            background: transparent !important;
+        }
+        .stButton > button {
+            border-radius: 0px !important;
+            padding: 8px 12px !important;
+        }
+    </style>
 """, unsafe_allow_html=True)
 
 # =========================
