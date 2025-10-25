@@ -483,7 +483,7 @@ def generate_pdf_report(
                 ax.scatter(r["lon_d"], r["lat_d"], s=22, c="#FF3B30", edgecolors='white', linewidths=0.8, zorder=3)
                 mid_lon = (r["lon_o"] + r["lon_d"]) / 2
                 mid_lat = (r["lat_o"] + r["lat_d"]) / 2
-                _pdf_add_mode_icon(ax, mid_lon, mid_lat, cat, pdf_icon_size_px, transform=None), zorder=4)
+                _pdf_add_mode_icon(ax, mid_lon, mid_lat, cat, pdf_icon_size_px, transform=None)
 
             ax.set_xlabel(""); ax.set_ylabel("")
             ax.set_xticks([]); ax.set_yticks([])
