@@ -14,6 +14,8 @@ import unicodedata
 import requests
 import pandas as pd
 import streamlit as st
+
+st.markdown("{css_block}", unsafe_allow_html=True)
 import pydeck as pdk
 from opencage.geocoder import OpenCageGeocode
 from geopy.distance import great_circle
@@ -64,7 +66,7 @@ LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/N
 st.markdown(
     f"""
     <div style="display:flex;align-items:center;gap:8px;">
-      <img src="{LOGO_URL}"></div>
+      <img src="{LOG </div>
     """,
     unsafe_allow_html=True
 )
