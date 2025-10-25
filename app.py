@@ -499,11 +499,12 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
 
         df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
 
-    if st.button("📄 Exporter en PDF"):
-        import fitz
-        from PIL import Image
-        import io
+    # 📄 Export PDF
+    import fitz
+    import io
+    from PIL import Image
 
+    if st.button("📄 Exporter en PDF"):
         pdf = fitz.open()
         page_width, page_height = fitz.paper_size("a4-landscape")
         page = pdf.new_page(width=page_width, height=page_height)
@@ -511,6 +512,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         x_margin, y_margin = 50, 50
         cursor_y = y_margin
 
+        # Logo NILEY
         try:
             with open("niley_logo.png", "rb") as f:
                 logo_img = Image.open(f).convert("RGB")
@@ -521,10 +523,12 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             page.insert_text((x_margin, cursor_y), "NILEY EXPERTS", fontsize=16)
         cursor_y += 70
 
+        # N° dossier
         num_dossier = df_export.iloc[0]["N° dossier Transport"]
         page.insert_text((x_margin, cursor_y), f"N° dossier Transport : {num_dossier}", fontsize=12)
         cursor_y += 30
 
+        # Tableau récapitulatif
         columns = [col for col in df_export.columns if col != "N° dossier Transport"]
         col_width = (page_width - 2 * x_margin) / len(columns)
         row_height = 20
@@ -538,6 +542,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 page.insert_text((x_margin + i * col_width, cursor_y), str(row[col]), fontsize=9)
             cursor_y += row_height
 
+        # Carte miniature
         try:
             with open("mini_map.png", "rb") as f:
                 map_img = Image.open(f).convert("RGB")
