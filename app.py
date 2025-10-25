@@ -64,7 +64,7 @@ LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/N
 st.markdown(
     f"""
     <div style="display:flex;align-items:center;gap:8px;">
-      <img src="{LOG </div>
+      <img src="{LOGO_URL}"></div>
     """,
     unsafe_allow_html=True
 )
