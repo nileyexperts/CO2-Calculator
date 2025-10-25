@@ -498,9 +498,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         ))
 
         df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
-    # Sauvegarde automatique du CSV
-    df_export.to_csv('resultats_co2_multimodal.csv', index=False)
-        df_export.insert(0, "N° dossier Transport", dossier_val)
+    df_export.insert(0, "N° dossier Transport", dossier_val)
         csv = df_export.to_csv(index=False).encode("utf-8")
 
         raw_suffix = dossier_val.strip()
