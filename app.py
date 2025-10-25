@@ -168,6 +168,14 @@ ICON_URLS = {
     "ferroviaire": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/train.png",
 }
 
+
+# Métadonnées UI pour les modes (label + icône)
+MODE_META = [
+    {"id": "Routier",     "label": "Routier",     "emoji": "🚚", "icon": ICON_URLS["routier"]},
+    {"id": "Maritime",    "label": "Maritime",    "emoji": "🚢", "icon": ICON_URLS["maritime"]},
+    {"id": "Ferroviaire", "label": "Ferroviaire", "emoji": "🚆", "icon": ICON_URLS["ferroviaire"]},
+    {"id": "Aerien",      "label": "Aérien",      "emoji": "✈️", "icon": ICON_URLS["aerien"]},
+]
 def midpoint_on_path(route_coords, lon_o, lat_o, lon_d, lat_d):
     # Return a midpoint for placing an icon on the route.
     if route_coords and isinstance(route_coords, list) and len(route_coords) >= 2:
@@ -694,6 +702,49 @@ def _default_segment(origin_raw="", origin_sel="", dest_raw="", dest_sel="", mod
         mode = list(DEFAULT_EMISSION_FACTORS.keys())[0]
     return {"origin_raw": origin_raw, "origin_sel": origin_sel, "dest_raw": dest_raw, "dest_sel": dest_sel, "mode": mode, "weight": weight}
 
+
+
+def select_mode_with_icons(segment_index: int, current_value: str) -> str:
+    """
+    Affiche 4 logos + cases à cocher (mutuellement exclusives) pour choisir un mode.
+    Retourne l'id du mode choisi (ex: 'Routier', 'Maritime', 'Ferroviaire', 'Aerien').
+    """
+    st.markdown("**Mode de transport**")
+    cols = st.columns(len(MODE_META))
+    all_ids = [m["id"] for m in MODE_META]
+    selected_id = current_value if current_value in all_ids else MODE_META[0]["id"]
+
+    checked_index = next((i for i, m in enumerate(MODE_META) if m["id"] == selected_id), 0)
+
+    new_checks = []
+    for i, m in enumerate(MODE_META):
+        with cols[i]:
+            st.image(m["icon"], width=42)
+            st.caption(f"{m['emoji']} {m['label']}")
+            new_checks.append(
+                st.checkbox(
+                    " ",
+                    key=f"mode_chk_{segment_index}_{m['id']}",
+                    value=(i == checked_index),
+                    help=f"Sélectionner {m['label']}",
+                )
+            )
+
+    true_indices = [i for i, v in enumerate(new_checks) if v]
+    if len(true_indices) == 1:
+        selected_id = MODE_META[true_indices[0]]["id"]
+    elif len(true_indices) > 1:
+        keep = true_indices[-1]
+        for i, v in enumerate(new_checks):
+            if i != keep and v:
+                st.session_state[f"mode_chk_{segment_index}_{MODE_META[i]['id']}"] = False
+        selected_id = MODE_META[keep]["id"]
+    else:
+        idx = checked_index
+        st.session_state[f"mode_chk_{segment_index}_{MODE_META[idx]['id']}"] = True
+        selected_id = MODE_META[idx]["id"]
+
+    return selected_id
 if "segments" not in st.session_state or not st.session_state.segments:
     st.session_state.segments = [_default_segment()]
 
@@ -724,10 +775,11 @@ for i in range(len(st.session_state.segments)):
         if dest_sel == "-":
             dest_sel = ""
 
-    mode = st.selectbox(
-        f"Mode de transport du segment {i+1}",
-        list(DEFAULT_EMISSION_FACTORS.keys()),
-        index=list(DEFAULT_EMISSION_FACTORS.keys()).index(st.session_state.segments[i]["mode"]) if st.session_state.segments[i]["mode"] in DEFAULT_EMISSION_FACTORS else 0,
+    mode = select_mode_with_icons(
+    segment_index=i,
+    current_value=st.session_state.segments[i]["mode"]
+)
+if st.session_state.segments[i]["mode"] in DEFAULT_EMISSION_FACTORS else 0,
         key=f"mode_{i}"
     )
 
