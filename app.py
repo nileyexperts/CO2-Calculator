@@ -855,6 +855,8 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 )
             except Exception as e:
                 st.error(f"Erreur lors de la génération du PDF : {e}")
+                import traceback
+                st.code(traceback.format_exc())
                 st.info("Le téléchargement CSV reste disponible ci-dessus.")
     else:
         st.info("Aucun segment valide n'a été calculé. Vérifiez les entrées ou les sélections.")
