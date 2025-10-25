@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 # Calculateur CO2 multimodal - NILEY EXPERTS
-# Version : fond de page WEB (#DFEDF5) + logo fixe en haut à gauche + Natural Earth (Cartopy) dans le PDF
+# Version : fond WEB (#DFEDF5) + logo fixe + login avec bouton + Natural Earth (Cartopy) + ratio carte PDF conservé
 #
 # Dépendances additionnelles (PDF basemap) :
 #   cartopy>=0.22, shapely>=2.0, pyproj>=3.6, matplotlib>=3.7, numpy>=1.24
 #
-# Si Cartopy/NE indisponible, le code repasse automatiquement
-# sur un fond "simple" (graticule léger) pour garantir la génération PDF.
+# Si Cartopy/NE indisponible, fallback automatique sur un fond simple.
 
 import os
 import time
@@ -21,7 +20,7 @@ from geopy.distance import great_circle
 from io import BytesIO
 from datetime import datetime
 
-# Imports pour la génération PDF
+# PDF
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -35,6 +34,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import io
 import tempfile
+import numpy as np
 
 # -- Cache Cartopy (Natural Earth)
 os.environ.setdefault("CARTOPY_CACHE_DIR", os.path.join(tempfile.gettempdir(), "cartopy_cache"))
@@ -76,17 +76,17 @@ st.markdown(
   z-index: 9999;
 }}
 .niley-fixed-logo img {{
-  height: 40px;  /* ajustez si besoin (32–56px) */
+  height: 40px;
   width: auto;
   display: block;
 }}
 
-/* Décale légèrement le contenu pour ne pas chevaucher le logo */
+/* Décale le contenu pour ne pas chevaucher le logo */
 .block-container {{
   padding-top: 60px !important;
 }}
 
-/* Petit ajustement boutons */
+/* Boutons */
 .stButton > button {{
   border-radius: 4px !important;
   padding: 8px 12px !important;
@@ -100,48 +100,7 @@ st.markdown(
 )
 
 # =========================
-# 🔒 Vérification du mot de passe (avec bouton Valider)
-# =========================
-PASSWORD_KEY = "APP_PASSWORD"
-if PASSWORD_KEY not in st.secrets:
-    st.error("Mot de passe non configuré. Ajoutez APP_PASSWORD dans .streamlit/secrets.toml.")
-    st.stop()
-
-# On mémorise dans la session si l'utilisateur est authentifié
-if "auth_ok" not in st.session_state:
-    st.session_state.auth_ok = False
-
-st.markdown("## 🔒 Accès sécurisé")
-
-# Formulaire avec bouton de validation
-with st.form("login_form", clear_on_submit=False):
-    password_input = st.text_input(
-        "Entrez le mot de passe pour accéder à l'application :",
-        type="password",
-        placeholder="Votre mot de passe…"
-    )
-    submitted = st.form_submit_button("Valider")
-
-if not st.session_state.auth_ok:
-    if submitted:
-        if password_input == st.secrets[PASSWORD_KEY]:
-            st.session_state.auth_ok = True
-            st.success("✅ Accès autorisé. Bienvenue dans l'application !")
-            # petit refresh pour masquer le bloc login proprement, si voulu :
-            st.experimental_rerun()
-        else:
-            st.error("❌ Mot de passe incorrect.")
-    else:
-        # Première visite : on affiche une info douce
-        st.info("Veuillez saisir le mot de passe puis cliquer sur **Valider**.")
-    st.stop()
-else:
-    # Déjà connecté
-    st.success("✅ Accès autorisé. Bienvenue dans l'application !")
-
-
-# =========================
-# 🧠 Utilitaires
+# 🧠 Utilitaires communs
 # =========================
 def read_secret(key: str, default: str = "") -> str:
     if "secrets" in dir(st) and key in st.secrets:
@@ -248,8 +207,44 @@ def _compute_extent_and_ratio(all_lats, all_lons, margin_ratio=0.12, min_span_de
 
     return (min_lon, max_lon, min_lat, max_lat)
 
+def fit_extent_to_aspect(min_lon, max_lon, min_lat, max_lat, target_aspect_w_over_h):
+    """
+    Ajuste l’emprise (en degrés) pour correspondre au ratio cible du cadre.
+    Élargit uniquement (ne coupe pas).
+    """
+    # 1) Spans initiaux
+    span_lon = max(1e-6, max_lon - min_lon)
+    span_lat = max(1e-6, max_lat - min_lat)
+    mid_lat = (min_lat + max_lat) / 2.0
+    cos_mid = max(0.05, math.cos(math.radians(mid_lat)))  # plancher pour hautes latitudes
+
+    # 2) Ratio géographique effectif vs ratio cible
+    aspect_geo = (span_lon * cos_mid) / span_lat
+    aspect_target = max(1e-6, float(target_aspect_w_over_h))
+
+    # 3) Ajustement
+    if aspect_geo < aspect_target:
+        # trop étroit -> élargir en longitude
+        needed_lon = (aspect_target * span_lat) / cos_mid
+        extra = (needed_lon - span_lon) / 2.0
+        min_lon -= extra
+        max_lon += extra
+    else:
+        # trop large -> élargir en latitude
+        needed_lat = (span_lon * cos_mid) / aspect_target
+        extra = (needed_lat - span_lat) / 2.0
+        min_lat -= extra
+        max_lat += extra
+
+    # 4) Clamp
+    min_lon = max(-180.0, min_lon)
+    max_lon = min(180.0, max_lon)
+    min_lat = max(-90.0, min_lat)
+    max_lat = min(90.0, max_lat)
+    return (min_lon, max_lon, min_lat, max_lat)
+
 # =========================
-# 📄 Fonction de génération PDF
+# 📄 Génération du PDF
 # =========================
 def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, rows,
                         pdf_basemap_mode='auto',   # 'auto' | 'simple' | 'naturalearth'
@@ -333,6 +328,12 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
         fig_w_in = target_width_cm / 2.54
         fig_h_in = target_height_cm / 2.54
 
+        # 🔒 Conserver les proportions du cadre
+        min_lon, max_lon, min_lat, max_lat = fit_extent_to_aspect(
+            min_lon, max_lon, min_lat, max_lat,
+            target_aspect_w_over_h=(target_width_cm / target_height_cm)
+        )
+
         map_buffer = None
 
         if use_cartopy:
@@ -398,7 +399,7 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
                 plt.close(fig)
                 map_buffer.seek(0)
 
-            except Exception as cartopy_err:
+            except Exception:
                 # Fallback si problème Cartopy/NE
                 use_cartopy = False
 
@@ -412,13 +413,13 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
             ax.set_xlim(min_lon, max_lon)
             ax.set_ylim(min_lat, max_lat)
 
+            # Graticule léger avec pas "intelligent"
             def _nice_step(span_deg):
                 for step in (1, 2, 5, 10, 20, 30, 45, 60):
                     if span_deg / step <= 12:
                         return step
                 return 90
 
-            import numpy as np
             lat_span = max_lat - min_lat
             lon_span = max_lon - min_lon
             lat_step = _nice_step(lat_span)
@@ -564,13 +565,44 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
     return buffer
 
 # =========================
+# 🔒 Vérification du mot de passe (avec bouton Valider)
+# =========================
+PASSWORD_KEY = "APP_PASSWORD"
+if PASSWORD_KEY not in st.secrets:
+    st.error("Mot de passe non configuré. Ajoutez APP_PASSWORD dans .streamlit/secrets.toml.")
+    st.stop()
+
+# État d'authentification
+if "auth_ok" not in st.session_state:
+    st.session_state.auth_ok = False
+
+st.markdown("## 🔒 Accès sécurisé")
+
+with st.form("login_form", clear_on_submit=False):
+    password_input = st.text_input(
+        "Entrez le mot de passe pour accéder à l'application :",
+        type="password",
+        placeholder="Votre mot de passe…"
+    )
+    submitted = st.form_submit_button("Valider")
+
+if not st.session_state.auth_ok:
+    if submitted:
+        if password_input == st.secrets[PASSWORD_KEY]:
+            st.session_state.auth_ok = True
+            st.success("✅ Accès autorisé. Bienvenue dans l'application !")
+            st.rerun()
+        else:
+            st.error("❌ Mot de passe incorrect.")
+    else:
+        st.info("Veuillez saisir le mot de passe puis cliquer sur **Valider**.")
+    st.stop()
+else:
+    st.success("✅ Accès autorisé. Bienvenue dans l'application !")
+
+# =========================
 # 🔑 API OpenCage
 # =========================
-def read_secret(key: str, default: str = "") -> str:
-    if "secrets" in dir(st) and key in st.secrets:
-        return st.secrets[key]
-    return os.getenv(key, default)
-
 API_KEY = read_secret("OPENCAGE_KEY")
 if not API_KEY:
     st.error("Clé API OpenCage absente. Ajoutez OPENCAGE_KEY à st.secrets ou à vos variables d'environnement.")
@@ -774,7 +806,6 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             if not seg["origin"] or not seg["destination"]:
                 st.warning(f"Segment {idx} : origine/destination manquante(s).")
                 continue
-
             coord1 = coords_from_formatted(seg["origin"])
             coord2 = coords_from_formatted(seg["destination"])
             if not coord1 or not coord2:
@@ -793,7 +824,6 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 distance_km = compute_distance_km(coord1, coord2)
 
             weight_tonnes = seg["weight"] if unit == "tonnes" else seg["weight"]/1000.0
-            # Récupère le facteur saisi dans l'UI (factors)
             factor = float(factors.get(seg["mode"], DEFAULT_EMISSION_FACTORS.get(seg["mode"], 0.0)))
             emissions = compute_emissions(distance_km, weight_tonnes, factor)
 
@@ -855,6 +885,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             points.append({"position": [r["lon_d"], r["lat_d"]], "name": f"S{r['Segment']} • Destination", "color": [220, 66, 66, 220]})
             labels.append({"position": [r["lon_d"], r["lat_d"]], "text": f"S{r['Segment']} D", "color": [220, 66, 66, 255]})
 
+        # Points
         if points:
             if dynamic_radius:
                 layers.append(pdk.Layer("ScatterplotLayer", data=points, get_position="position", get_fill_color="color",
@@ -866,11 +897,13 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                                         get_radius=radius_px if radius_px is not None else 8,
                                         radius_units="pixels", pickable=True,
                                         stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=1))
+        # Labels
         if labels:
             layers.append(pdk.Layer("TextLayer", data=labels, get_position="position", get_text="text",
                                     get_color="color", get_size=16, size_units="pixels",
                                     get_text_anchor="start", get_alignment_baseline="top", background=False))
 
+        # Icônes
         icons = []
         for r in rows:
             cat = mode_to_category(r["Mode"])
@@ -883,6 +916,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             layers.append(pdk.Layer("IconLayer", data=icons, get_icon="icon", get_position="position",
                                     get_size=icon_size_px, size_units="pixels", pickable=True))
 
+        # Vue
         all_lats, all_lons = [], []
         if route_paths and any(d["path"] for d in route_paths):
             all_lats.extend([pt[1] for d in route_paths for pt in d["path"]])
@@ -935,3 +969,4 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 st.code(traceback.format_exc())
     else:
         st.info("Aucun segment valide n'a été calculé. Vérifiez les entrées ou les sélections.")
+``
