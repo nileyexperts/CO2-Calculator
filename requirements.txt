@@ -1,26 +1,8 @@
-# Webapp
-streamlit>=1.32
-pydeck>=0.8
-pymupdf
-
-# Data/compute
-pandas>=2.0
-numpy>=1.23
-requests>=2.31
-
-# Géocodage / distances
-opencage>=2.4
-geopy>=2.4
-# Visualisation / PDF / images
-matplotlib>=3.7
-pillow>=10.0
-
-# Carto
-geopandas>=0.14
-shapely>=2.0
-pyogrio>=0.7
-
-# Optionnel : si vous rencontrez des soucis de wheels en local (hors Streamlit Cloud),
-# ajoutez explicitement ces dépendances carto :
-# fiona>=1.9
-# pyproj>=3.6
+streamlit>=1.28.0
+pandas>=2.0.0
+pydeck>=0.8.0
+opencage>=2.0.0
+geopy>=2.3.0
+requests>=2.31.0
+reportlab>=4.0.0
+Pillow>=10.0.0
