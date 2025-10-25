@@ -13,6 +13,26 @@ import unicodedata
 import requests
 import pandas as pd
 import streamlit as st
+
+import streamlit as st
+
+# 🔒 Vérification du mot de passe via st.secrets
+PASSWORD_KEY = "APP_PASSWORD"
+
+if PASSWORD_KEY not in st.secrets:
+    st.error("Mot de passe non configuré. Ajoutez APP_PASSWORD dans .streamlit/secrets.toml.")
+    st.stop()
+
+# Interface de connexion
+st.markdown("## 🔐 Accès sécurisé")
+password_input = st.text_input("Entrez le mot de passe pour accéder à l'application :", type="password")
+
+if password_input != st.secrets[PASSWORD_KEY]:
+    st.warning("Mot de passe incorrect ou vide.")
+    st.stop()
+
+st.success("✅ Accès autorisé. Bienvenue dans l'application !")
+
 import pydeck as pdk
 from opencage.geocoder import OpenCageGeocode
 from geopy.distance import great_circle
@@ -196,6 +216,7 @@ with st.expander("🎯 Apparence de la carte (points & logos)"):
     if dynamic_radius:
         radius_m = st.slider("Rayon des points (mètres)", 1000, 100000, 20000, 1000)
         radius_px = None
+    else:
         radius_px = st.slider("Rayon des points (pixels)", 2, 30, 8, 1)
         radius_m = None
 
@@ -252,6 +273,7 @@ for i in range(len(st.session_state.segments)):
             min_value=0.001, value=float(default_weight),
             step=100.0 if unit == "kg" else 0.1, key=f"weight_{i}"
         )
+    else:
         default_weight = st.session_state.segments[0]["weight"]
         if i == 0:
             weight_val = st.number_input(
@@ -259,6 +281,7 @@ for i in range(len(st.session_state.segments)):
                 min_value=0.001, value=float(default_weight),
                 step=100.0 if unit == "kg" else 0.1, key="weight_0"
             )
+        else:
             weight_val = st.session_state.get("weight_0", default_weight)
 
     st.session_state.segments[i] = {
@@ -386,6 +409,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 except Exception as e:
                     st.warning(f"Segment {idx}: OSRM indisponible ({e}). Distance à vol d'oiseau utilisée.")
                     distance_km = compute_distance_km(coord1, coord2)
+            else:
                 distance_km = compute_distance_km(coord1, coord2)
 
             weight_tonnes = seg["weight"] if unit == "tonnes" else seg["weight"]/1000.0
@@ -448,6 +472,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                                         get_radius=radius_m if radius_m is not None else 20000,
                                         radius_min_pixels=2, radius_max_pixels=60, pickable=True,
                                         stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=1))
+            else:
                 layers.append(pdk.Layer("ScatterplotLayer", data=points, get_position="position", get_fill_color="color",
                                         get_radius=radius_px if radius_px is not None else 8, radius_units="pixels",
                                         pickable=True, stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=1))
@@ -494,7 +519,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
 
         df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
         df_export.insert(0, "N° dossier Transport", dossier_val)
-    csv = df_export.to_csv(index=False).encode("utf-8")
+        csv = df_export.to_csv(index=False).encode("utf-8")
 
         raw_suffix = dossier_val.strip()
         safe_suffix = "".join(c if (c.isalnum() or c in "-_") else "_" for c in raw_suffix)
@@ -502,4 +527,5 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         filename = f"resultats_co2_multimodal{safe_suffix}.csv"
 
         st.download_button("⬇️ Télécharger le détail (CSV)", data=csv, file_name=filename, mime="text/csv")
+    else:
         st.info("Aucun segment valide n’a été calculé. Vérifiez les entrées ou les sélections.")
