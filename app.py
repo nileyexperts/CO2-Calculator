@@ -10,11 +10,9 @@
 # - UI segments: boutons d’ajout/suppression (plus de "Nombre de segments")
 # - Carte: auto-zoom/centrage + balises (points + étiquettes)
 # - Option: rayon des points dynamique (mètres) ou fixe (pixels)
-# - Fond de page transparent (CSS)
-# - Logo PNG transparent
+# - Fond: #DFEDF5
+# - Logo en haut à gauche (depuis GitHub)
 # - Icônes par mode sur le trait (IconLayer au milieu du segment)
-# - Champ "N° dossier Transport" obligatoire (à droite du bouton Réinitialiser)
-# - Bouton Réinitialiser carré (CSS)
 # ------------------------------------------------------------
 
 import os
@@ -32,9 +30,9 @@ from geopy.distance import great_circle
 # 🎯 Paramètres par défaut
 # =========================
 DEFAULT_EMISSION_FACTORS = {
-    "🚛 Routier 🚛": 0.100,  # kg CO2e / t.km
+    "🚛 Routier 🚛": 0.100,   # kg CO2e / t.km
     "✈️ Aérien ✈️": 0.500,
-    "🛢️ Maritime 🛢️": 0.015,
+    "🚢 Maritime 🚢": 0.015,
     "🚂 Ferroviaire 🚂": 0.030,
 }
 MAX_SEGMENTS = 10  # limite haute
@@ -46,37 +44,66 @@ st.set_page_config(
 )
 
 # =========================
-# 🎨 Styles globaux (fond transparent + boutons carrés)
-# =========================
-st.markdown("""
-    <style>
-        /* Fond transparent pour l'app + header + conteneur */
-        .stApp, .stApp > header, .block-container {
-            background: transparent !important;
-        }
-        /* Tous les boutons Streamlit en forme carrée */
-        .stButton > button {
-            border-radius: 0px !important;   /* rend le bouton carré */
-            padding: 8px 12px !important;    /* gabarit confortable */
-        }
-    </style>
-""", unsafe_allow_html=True)
-
-# =========================
-# 🖼️ Logo
+# 🖼️ Logo + fond
 # =========================
 LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png"
 
-st.markdown(
-    f"""
-    <div style="display:flex;align-items:center;gap:10px;margin:4px 0 12px 0">
-        <img src="{LOGO_URL}" alt="NILEY EXPERTS" heightont-size:18px;line-height:1.2">
-            Calculateur d'empreinte carbone multimodal - NILEY EXPERTS
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+st.markdown(f"""
+<style>
+/* Couleur de fond globale */
+:root {{ --app-bg: #DFEDF5; }}
+html, body, [data-testid="stAppViewContainer"], .stApp {{
+  background-color: var(--app-bg) !important;
+}}
+
+/* Sidebar plus lisible (facultatif) */
+[data-testid="stSidebar"] {{
+  background: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(2px);
+}}
+
+/* Cartes/expandeurs */
+div[role="group"] > div, details {{
+  background: #ffffff !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(0,0,0,0.06) !important;
+}}
+
+/* Boutons + inputs */
+.stButton>button {{ border-radius: 8px; }}
+.stButton>button:hover {{ box-shadow: 0 2px 10px rgba(0,0,0,0.08); }}
+.stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stNumberInput input {{
+  border-radius: 8px !important;
+}}
+
+/* Logo fixe en haut à gauche */
+.stApp {{ position: relative; }}
+#niley-logo-top-left {{
+  position: fixed;
+  top: 12px;
+  left: 16px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+}}
+#niley-logo-top-left img {{
+  height: 42px;
+  width: auto;
+  object-fit: contain;
+  image-rendering: -webkit-optimize-contrast;
+}}
+@media (max-width: 768px) {{
+  #niley-logo-top-left img {{ height: 34px; }}
+}}
+</style>
+<div id="niley-logo-top-left">
+  <img src="{LOGO_URL}" alt="NILEY EXPERTS Logo" />
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("<div style='height: 6px'></div>", unsafe_allow_html=True)
 
 # =========================
 # 🧠 Utilitaires
@@ -85,7 +112,6 @@ def read_secret(key: str, default: str = "") -> str:
     if "secrets" in dir(st) and key in st.secrets:
         return st.secrets[key]
     return os.getenv(key, default)
-
 
 @st.cache_data(show_spinner=False, ttl=60*60)
 def geocode_cached(query: str, limit: int = 5):
@@ -96,7 +122,6 @@ def geocode_cached(query: str, limit: int = 5):
         return geocoder.geocode(query, no_annotations=1, limit=limit) or []
     except Exception:
         return []
-
 
 @st.cache_data(show_spinner=False, ttl=24*60*60)
 def coords_from_formatted(formatted: str):
@@ -109,14 +134,11 @@ def coords_from_formatted(formatted: str):
         pass
     return None
 
-
 def compute_distance_km(coord1, coord2) -> float:
     return great_circle(coord1, coord2).km
 
-
 def compute_emissions(distance_km: float, weight_tonnes: float, factor_kg_per_tkm: float) -> float:
     return distance_km * weight_tonnes * factor_kg_per_tkm
-
 
 @st.cache_data(show_spinner=False, ttl=6*60*60)
 def osrm_route(coord1, coord2, base_url: str, overview: str = "full"):
@@ -131,7 +153,7 @@ def osrm_route(coord1, coord2, base_url: str, overview: str = "full"):
     lon2, lat2 = coord2[1], coord2[0]
     url = f"{base_url.rstrip('/')}/route/v1/driving/{lon1},{lat1};{lon2},{lat2}"
     params = {
-        "overview": overview,  # 'simplified' ou 'full'
+        "overview": overview,         # 'simplified' ou 'full'
         "alternatives": "false",
         "annotations": "false",
         "geometries": "geojson"
@@ -149,23 +171,19 @@ def osrm_route(coord1, coord2, base_url: str, overview: str = "full"):
     coords = geom.get("coordinates", [])  # [[lon, lat], ...]
     return {"distance_km": distance_km, "coords": coords}
 
-
 def reset_form(max_segments: int = MAX_SEGMENTS):
     """Vide explicitement tous les champs et l'état et relance l'app."""
     widget_keys = []
     for i in range(max_segments):
         widget_keys.extend([
-            f"origin_input_{i}",
-            f"origin_select_{i}",
-            f"dest_input_{i}",
-            f"dest_select_{i}",
-            f"mode_{i}",
-            f"weight_{i}",
+            f"origin_input_{i}", f"origin_select_{i}",
+            f"dest_input_{i}", f"dest_select_{i}",
+            f"mode_{i}", f"weight_{i}",
         ])
     for k in widget_keys:
         if k in st.session_state:
             del st.session_state[k]
-    for k in ["segments", "osrm_base_url", "weight_0", "dossier_transport"]:
+    for k in ["segments", "osrm_base_url", "weight_0"]:
         if k in st.session_state:
             del st.session_state[k]
     st.cache_data.clear()
@@ -178,11 +196,10 @@ API_KEY = read_secret("OPENCAGE_KEY")
 if not API_KEY:
     st.error("Clé API OpenCage absente. Ajoutez OPENCAGE_KEY à st.secrets ou à vos variables d'environnement.")
     st.stop()
-
 geocoder = OpenCageGeocode(API_KEY)
 
 # =========================
-# 🏷️ En-tête & Texte explicatif
+# 🏷️ En-tête & Texte explicatif (ASCII-safe)
 # =========================
 st.markdown("## Calculateur d'empreinte carbone multimodal - NILEY EXPERTS")
 st.markdown(
@@ -191,24 +208,10 @@ st.markdown(
 )
 
 # =========================
-# 🔄 Reset (gauche) + N° dossier (droite, obligatoire)
+# 🔄 Reset (utilise reset_form)
 # =========================
-col_reset, col_id, _ = st.columns([1, 3, 6])
-with col_reset:
-    # Alignement vertical du bouton avec le champ à droite
-    st.write("")
-    if st.button("🔄 Réinitialiser le formulaire", use_container_width=True):
-        reset_form()
-
-with col_id:
-    dossier_transport = st.text_input(
-        "N° dossier Transport (obligatoire) *",
-        value=st.session_state.get("dossier_transport", ""),
-        placeholder="ex : TR-2025-001",
-        help="Renseignez un identifiant de dossier pour lancer le calcul."
-    )
-    st.session_state["dossier_transport"] = dossier_transport.strip()
-
+col_r, _ = st.columns([1, 4])
+with col_r:
 # =========================
 # ⚙️ Paramètres
 # =========================
@@ -220,10 +223,7 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
     for mode_name, val in DEFAULT_EMISSION_FACTORS.items():
         factors[mode_name] = st.number_input(
             f"Facteur {mode_name} (kg CO₂e / tonne.km)",
-            min_value=0.0,
-            value=float(val),
-            step=0.001,
-            format="%.3f",
+            min_value=0.0, value=float(val), step=0.001, format="%.3f",
             key=f"factor_{mode_name}"
         )
 
@@ -237,8 +237,7 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
 
     osrm_default = st.session_state.get("osrm_base_url", "https://router.project-osrm.org")
     osrm_base_url = st.text_input(
-        "Endpoint OSRM",
-        value=osrm_default,
+        "Endpoint OSRM", value=osrm_default,
         help="Ex: https://router.project-osrm.org ou votre propre serveur OSRM"
     )
     st.session_state["osrm_base_url"] = osrm_base_url
@@ -246,8 +245,7 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
 with st.expander("🎯 Apparence de la carte (points & logos)"):
     # Option de rayon dynamique (mètres) vs fixe (pixels) pour les points
     dynamic_radius = st.checkbox(
-        "Rayon des points dynamique (varie avec le zoom)",
-        value=True,
+        "Rayon des points dynamique (varie avec le zoom)", value=True,
         help="Dynamique: en mètres, varie visuellement au zoom. Fixe: en pixels, constant à l'écran."
     )
     if dynamic_radius:
@@ -261,18 +259,15 @@ with st.expander("🎯 Apparence de la carte (points & logos)"):
     icon_size_px = st.slider("Taille des logos de segment (pixels)", 16, 64, 28, 2)
 
 # =========================
-# 🧭 Saisie des segments (avec boutons d'ajout/suppression)
+# 🧩 Saisie des segments (avec boutons d'ajout/suppression)
 # =========================
 def _default_segment(origin_raw="", origin_sel="", dest_raw="", dest_sel="", mode=None, weight=1000.0):
     if mode is None:
         mode = list(DEFAULT_EMISSION_FACTORS.keys())[0]
     return {
-        "origin_raw": origin_raw,
-        "origin_sel": origin_sel,
-        "dest_raw": dest_raw,
-        "dest_sel": dest_sel,
-        "mode": mode,
-        "weight": weight
+        "origin_raw": origin_raw, "origin_sel": origin_sel,
+        "dest_raw": dest_raw, "dest_sel": dest_sel,
+        "mode": mode, "weight": weight
     }
 
 if "segments" not in st.session_state or not st.session_state.segments:
@@ -287,9 +282,11 @@ for i in range(1, len(st.session_state.segments)):
         cur["origin_sel"] = prev["dest_sel"]
 
 segments_out = []
+
 for i in range(len(st.session_state.segments)):
     st.markdown(f"##### Segment {i+1}")
     c1, c2 = st.columns(2)
+
     with c1:
         origin_raw = st.text_input(
             f"Origine du segment {i+1}",
@@ -298,9 +295,11 @@ for i in range(len(st.session_state.segments)):
         )
         origin_suggestions = geocode_cached(origin_raw, limit=5) if origin_raw else []
         origin_options = [r['formatted'] for r in origin_suggestions] if origin_suggestions else []
-        origin_sel = st.selectbox("Suggestions pour l'origine", origin_options or ["-"], index=0, key=f"origin_select_{i}")
+        origin_sel = st.selectbox("Suggestions pour l'origine",
+                                  origin_options or ["-"], index=0, key=f"origin_select_{i}")
         if origin_sel == "-":
             origin_sel = ""
+
     with c2:
         dest_raw = st.text_input(
             f"Destination du segment {i+1}",
@@ -309,7 +308,8 @@ for i in range(len(st.session_state.segments)):
         )
         dest_suggestions = geocode_cached(dest_raw, limit=5) if dest_raw else []
         dest_options = [r['formatted'] for r in dest_suggestions] if dest_suggestions else []
-        dest_sel = st.selectbox("Suggestions pour la destination", dest_options or ["-"], index=0, key=f"dest_select_{i}")
+        dest_sel = st.selectbox("Suggestions pour la destination",
+                                dest_options or ["-"], index=0, key=f"dest_select_{i}")
         if dest_sel == "-":
             dest_sel = ""
 
@@ -324,33 +324,25 @@ for i in range(len(st.session_state.segments)):
         default_weight = st.session_state.segments[i]["weight"]
         weight_val = st.number_input(
             f"Poids transporté pour le segment {i+1}",
-            min_value=0.001,
-            value=float(default_weight),
-            step=100.0 if unit == "kg" else 0.1,
-            key=f"weight_{i}"
+            min_value=0.001, value=float(default_weight),
+            step=100.0 if unit == "kg" else 0.1, key=f"weight_{i}"
         )
     else:
         default_weight = st.session_state.segments[0]["weight"]
         if i == 0:
             weight_val = st.number_input(
                 "Poids transporté (appliqué à tous les segments)",
-                min_value=0.001,
-                value=float(default_weight),
-                step=100.0 if unit == "kg" else 0.1,
-                key="weight_0"  # clé partagée pour tous les segments
+                min_value=0.001, value=float(default_weight),
+                step=100.0 if unit == "kg" else 0.1, key=f"weight_{i}"
             )
         else:
             weight_val = st.session_state.get("weight_0", default_weight)
 
     st.session_state.segments[i] = {
-        "origin_raw": origin_raw,
-        "origin_sel": origin_sel,
-        "dest_raw": dest_raw,
-        "dest_sel": dest_sel,
-        "mode": mode,
-        "weight": weight_val
+        "origin_raw": origin_raw, "origin_sel": origin_sel,
+        "dest_raw": dest_raw, "dest_sel": dest_sel,
+        "mode": mode, "weight": weight_val
     }
-
     segments_out.append({
         "origin": origin_sel or origin_raw or "",
         "destination": dest_sel or dest_raw or "",
@@ -406,7 +398,7 @@ def _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80
     zoom = max(1.0, min(15.0, min(zoom_x, zoom_y)))
     return pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=float(zoom), bearing=0, pitch=0)
 
-# -- Helpers pour logos --
+# --- Helpers pour logos ---
 def _normalize_no_diacritics(s: str) -> str:
     return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn').lower()
 
@@ -414,7 +406,7 @@ def mode_to_category(mode_str: str) -> str:
     """Mappe un libellé de mode vers {routier,aerien,maritime,ferroviaire}."""
     s = _normalize_no_diacritics(mode_str)
     if "routier" in s: return "routier"
-    if "aerien" in s or "aérien" in s: return "aerien"
+    if "aerien" in s or "aérien" in s:  return "aerien"
     if "maritime" in s or "mer" in s or "bateau" in s: return "maritime"
     if "ferroviaire" in s or "train" in s: return "ferroviaire"
     if "road" in s or "truck" in s: return "routier"
@@ -423,10 +415,11 @@ def mode_to_category(mode_str: str) -> str:
     if "rail" in s: return "ferroviaire"
     return "routier"
 
+# URLs RAW de tes icônes (ajuste si besoin)
 ICON_URLS = {
-    "routier": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/truck.png",
-    "aerien": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/plane.png",
-    "maritime": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/ship.png",
+    "routier":     "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/truck.png",
+    "aerien":      "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/plane.png",
+    "maritime":    "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/ship.png",
     "ferroviaire": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/train.png",
 }
 
@@ -442,17 +435,7 @@ def midpoint_on_path(route_coords, lon_o, lat_o, lon_d, lat_d):
         return [float(pt[0]), float(pt[1])]
     return [(lon_o + lon_d) / 2.0, (lat_o + lat_d) / 2.0]
 
-# --- Bouton Calculer avec validation du N° de dossier obligatoire ---
-can_calculate = bool(st.session_state.get("dossier_transport"))
-if not can_calculate:
-    st.warning("Veuillez renseigner le **N° dossier Transport** avant de lancer le calcul.")
-
-if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
-    # Validation serveur (défense en profondeur)
-    if not st.session_state.get("dossier_transport"):
-        st.error("Le N° dossier Transport est obligatoire pour calculer.")
-        st.stop()
-
+if st.button("Calculer l'empreinte carbone totale"):
     rows = []
     total_emissions = 0.0
     total_distance = 0.0
@@ -497,10 +480,8 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 f"Poids ({unit})": round(seg["weight"], 3 if unit=="tonnes" else 1),
                 "Facteur (kg CO₂e/t.km)": factor,
                 "Émissions (kg CO₂e)": round(emissions, 2),
-                "lat_o": coord1[0],
-                "lon_o": coord1[1],
-                "lat_d": coord2[0],
-                "lon_d": coord2[1],
+                "lat_o": coord1[0], "lon_o": coord1[1],
+                "lat_d": coord2[0], "lon_d": coord2[1],
                 "route_coords": route_coords,
             })
 
@@ -511,17 +492,15 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             f"Émissions totales : {total_emissions:.2f} kg CO₂e"
         )
 
-        # Affiche le N° de dossier saisi
-        dossier_val = st.session_state.get("dossier_transport", "")
-        if dossier_val:
-            st.info(f"**N° dossier Transport :** {dossier_val}")
-
         st.dataframe(
-            df[["Segment", "Origine", "Destination", "Mode", "Distance (km)", f"Poids ({unit})", "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"]],
+            df[["Segment", "Origine", "Destination", "Mode", "Distance (km)",
+                f"Poids ({unit})", "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"]],
             use_container_width=True
         )
 
-        # ---------- 🗺️ Carte : routes + points + étiquettes + icônes de mode ----------
+        # -------------------------
+        # 🗺️ Carte : routes + points + étiquettes + icônes de mode
+        # -------------------------
         st.subheader("Carte des segments")
 
         # 1) Lignes (OSRM ou droites)
@@ -534,12 +513,13 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 })
 
         layers = []
+
         if route_paths:
             layers.append(pdk.Layer(
                 "PathLayer",
                 data=route_paths,
                 get_path="path",
-                get_color=[187, 147, 87, 220],  # #BB9357 avec alpha
+                get_color=[187, 147, 87, 220],   # #BB9357 avec alpha
                 width_scale=1,
                 width_min_pixels=4,
                 pickable=True,
@@ -568,11 +548,19 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         points, labels = [], []
         for r in rows:
             # Origine
-            points.append({"position": [r["lon_o"], r["lat_o"]], "name": f"S{r['Segment']} • Origine", "color": [0, 122, 255, 220]})
-            labels.append({"position": [r["lon_o"], r["lat_o"]], "text": f"S{r['Segment']} O", "color": [0, 122, 255, 255]})
+            points.append({"position": [r["lon_o"], r["lat_o"]],
+                           "name": f"S{r['Segment']} • Origine",
+                           "color": [0, 122, 255, 220]})
+            labels.append({"position": [r["lon_o"], r["lat_o"]],
+                           "text": f"S{r['Segment']} O",
+                           "color": [0, 122, 255, 255]})
             # Destination
-            points.append({"position": [r["lon_d"], r["lat_d"]], "name": f"S{r['Segment']} • Destination", "color": [220, 66, 66, 220]})
-            labels.append({"position": [r["lon_d"], r["lat_d"]], "text": f"S{r['Segment']} D", "color": [220, 66, 66, 255]})
+            points.append({"position": [r["lon_d"], r["lat_d"]],
+                           "name": f"S{r['Segment']} • Destination",
+                           "color": [220, 66, 66, 220]})
+            labels.append({"position": [r["lon_d"], r["lat_d"]],
+                           "text": f"S{r['Segment']} D",
+                           "color": [220, 66, 66, 255]})
 
         if points:
             if dynamic_radius:
@@ -604,7 +592,6 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 ))
 
         if labels:
-            # Retire le fond des étiquettes pour un rendu sans "pavé" blanc
             layers.append(pdk.Layer(
                 "TextLayer",
                 data=labels,
@@ -615,7 +602,8 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 size_units="pixels",
                 get_text_anchor="start",
                 get_alignment_baseline="top",
-                background=False  # pas de fond
+                background=True,
+                get_background_color=[255, 255, 255, 160],
             ))
 
         # 3) Icônes de mode au milieu du trait
@@ -642,6 +630,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                     "anchorX": 32
                 },
             })
+
         if icons:
             layers.append(pdk.Layer(
                 "IconLayer",
@@ -670,17 +659,10 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             tooltip={"text": "{name}"}
         ))
 
-        # ---------- Export CSV : ajoute le N° dossier + suffixe le nom du fichier ----------
-        df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
-        df_export.insert(0, "N° dossier Transport", dossier_val)
-        csv = df_export.to_csv(index=False).encode("utf-8")
+        # Export CSV (sans colonnes techniques)
+        csv = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).to_csv(index=False).encode("utf-8")
+        st.download_button("⬇️ Télécharger le détail (CSV)", data=csv,
+                           file_name="resultats_co2_multimodal.csv", mime="text/csv")
 
-        # Suffixe de nom de fichier "safe" (alphanum + - _)
-        raw_suffix = dossier_val.strip()
-        safe_suffix = "".join(c if (c.isalnum() or c in "-_") else "_" for c in raw_suffix)
-        safe_suffix = f"_{safe_suffix}" if safe_suffix else ""
-        filename = f"resultats_co2_multimodal{safe_suffix}.csv"
-
-        st.download_button("⬇️ Télécharger le détail (CSV)", data=csv, file_name=filename, mime="text/csv")
     else:
         st.info("Aucun segment valide n’a été calculé. Vérifiez les entrées ou les sélections.")
