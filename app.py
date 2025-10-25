@@ -28,6 +28,10 @@ from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
 from reportlab.pdfgen import canvas
 from PIL import Image as PILImage
+import matplotlib
+matplotlib.use('Agg')  # Backend sans interface graphique
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import io
 
 # =========================
@@ -167,13 +171,13 @@ def reset_form(max_segments: int = MAX_SEGMENTS):
 # =========================
 def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, rows):
     """
-    Génère un rapport PDF au format A4 paysage
+    Génère un rapport PDF au format A4 paysage avec carte simplifiée
     
     Args:
         df: DataFrame avec les résultats
         dossier_val: Numéro de dossier transport
         total_distance: Distance totale en km
-        total_emissions: Émissions totales en kg CO2e
+        total_emissions: Émissions totales en kg CO2
         unit: Unité de poids (kg ou tonnes)
         rows: Liste des lignes de calcul avec coordonnées
     
@@ -185,43 +189,43 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
     # Format A4 paysage
     page_width, page_height = landscape(A4)
     
-    # Création du document
+    # Création du document - marges réduites pour tenir sur 1 page
     doc = SimpleDocTemplate(
         buffer,
         pagesize=landscape(A4),
-        rightMargin=1.5*cm,
-        leftMargin=1.5*cm,
-        topMargin=2*cm,
-        bottomMargin=2*cm
+        rightMargin=1*cm,
+        leftMargin=1*cm,
+        topMargin=1*cm,
+        bottomMargin=1*cm
     )
     
-    # Styles
+    # Styles - tailles réduites pour tout tenir sur 1 page
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
         'CustomTitle',
         parent=styles['Heading1'],
-        fontSize=18,
+        fontSize=14,
         textColor=colors.HexColor('#1f4788'),
-        spaceAfter=12,
+        spaceAfter=6,
         alignment=1  # Centré
     )
     
     heading_style = ParagraphStyle(
         'CustomHeading',
         parent=styles['Heading2'],
-        fontSize=14,
+        fontSize=11,
         textColor=colors.HexColor('#2c5aa0'),
-        spaceAfter=10,
-        spaceBefore=10
+        spaceAfter=4,
+        spaceBefore=6
     )
     
     normal_style = styles['Normal']
-    normal_style.fontSize = 10
+    normal_style.fontSize = 8
     
     # Contenu du document
     story = []
     
-    # En-tête avec logo
+    # En-tête avec logo - plus petit
     try:
         logo_url = LOGO_URL
         response = requests.get(logo_url, timeout=5)
@@ -230,78 +234,139 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
             logo_buffer = io.BytesIO()
             logo_img.save(logo_buffer, format='PNG')
             logo_buffer.seek(0)
-            logo = RLImage(logo_buffer, width=4*cm, height=2*cm)
+            logo = RLImage(logo_buffer, width=3*cm, height=1.5*cm)
             story.append(logo)
-            story.append(Spacer(1, 0.3*cm))
     except:
         pass  # Si le logo ne peut pas être chargé, on continue sans
     
     # Titre
     story.append(Paragraph("RAPPORT D'EMPREINTE CARBONE MULTIMODAL", title_style))
-    story.append(Spacer(1, 0.5*cm))
+    story.append(Spacer(1, 0.2*cm))
     
-    # Informations générales
-    story.append(Paragraph("Informations générales", heading_style))
-    
-    info_data = [
-        ["N° dossier Transport:", dossier_val],
-        ["Date du rapport:", datetime.now().strftime("%d/%m/%Y %H:%M")],
-        ["Nombre de segments:", str(len(rows))],
+    # Informations générales et résumé en 2 colonnes
+    info_summary_data = [
+        ["N° dossier Transport:", dossier_val, "Distance totale:", f"{total_distance:.1f} km"],
+        ["Date du rapport:", datetime.now().strftime("%d/%m/%Y %H:%M"), "Emissions totales:", f"{total_emissions:.2f} kg CO2"],
+        ["Nombre de segments:", str(len(rows)), "Emissions moyennes:", f"{total_emissions/total_distance:.3f} kg CO2/km" if total_distance > 0 else "N/A"],
     ]
     
-    info_table = Table(info_data, colWidths=[6*cm, 10*cm])
-    info_table.setStyle(TableStyle([
+    info_summary_table = Table(info_summary_data, colWidths=[4.5*cm, 5.5*cm, 4.5*cm, 5.5*cm])
+    info_summary_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e8f0f7')),
+        ('BACKGROUND', (2, 0), (2, -1), colors.HexColor('#fff4e6')),
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
         ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('FONTNAME', (3, 0), (3, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
     ]))
-    story.append(info_table)
-    story.append(Spacer(1, 0.5*cm))
+    story.append(info_summary_table)
+    story.append(Spacer(1, 0.3*cm))
     
-    # Résumé des émissions
-    story.append(Paragraph("Résumé des émissions", heading_style))
+    # Création de la carte simplifiée avec matplotlib
+    try:
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as mpatches
+        from matplotlib.collections import LineCollection
+        
+        fig, ax = plt.subplots(figsize=(8, 3), facecolor='white')
+        
+        # Calcul des limites
+        all_lats = [r["lat_o"] for r in rows] + [r["lat_d"] for r in rows]
+        all_lons = [r["lon_o"] for r in rows] + [r["lon_d"] for r in rows]
+        
+        min_lat, max_lat = min(all_lats), max(all_lats)
+        min_lon, max_lon = min(all_lons), max(all_lons)
+        
+        # Marges
+        lat_margin = (max_lat - min_lat) * 0.15
+        lon_margin = (max_lon - min_lon) * 0.15
+        
+        ax.set_xlim(min_lon - lon_margin, max_lon + lon_margin)
+        ax.set_ylim(min_lat - lat_margin, max_lat + lat_margin)
+        
+        # Couleurs par mode
+        mode_colors = {
+            "routier": "#0066CC",
+            "aerien": "#CC0000",
+            "maritime": "#009900",
+            "ferroviaire": "#9900CC"
+        }
+        
+        # Dessiner les segments
+        for r in rows:
+            cat = mode_to_category(r["Mode"])
+            color = mode_colors.get(cat, "#666666")
+            
+            # Ligne
+            ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]], 
+                   color=color, linewidth=2, alpha=0.7, zorder=1)
+            
+            # Point origine (bleu)
+            ax.scatter(r["lon_o"], r["lat_o"], c='#0066FF', s=80, 
+                      edgecolors='white', linewidths=1.5, zorder=3, marker='o')
+            
+            # Point destination (rouge)
+            ax.scatter(r["lon_d"], r["lat_d"], c='#FF0000', s=80, 
+                      edgecolors='white', linewidths=1.5, zorder=3, marker='s')
+            
+            # Label segment
+            mid_lon = (r["lon_o"] + r["lon_d"]) / 2
+            mid_lat = (r["lat_o"] + r["lat_d"]) / 2
+            ax.text(mid_lon, mid_lat, f"S{r['Segment']}", 
+                   fontsize=8, ha='center', va='center',
+                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', 
+                            edgecolor=color, alpha=0.9), zorder=4)
+        
+        # Légende
+        legend_elements = [
+            mpatches.Patch(color='#0066CC', label='Routier'),
+            mpatches.Patch(color='#CC0000', label='Aerien'),
+            mpatches.Patch(color='#009900', label='Maritime'),
+            mpatches.Patch(color='#9900CC', label='Ferroviaire'),
+            plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#0066FF', 
+                      markersize=8, label='Origine', markeredgecolor='white', markeredgewidth=1),
+            plt.Line2D([0], [0], marker='s', color='w', markerfacecolor='#FF0000', 
+                      markersize=8, label='Destination', markeredgecolor='white', markeredgewidth=1),
+        ]
+        ax.legend(handles=legend_elements, loc='upper right', fontsize=7, 
+                 framealpha=0.9, ncol=3)
+        
+        ax.set_xlabel('Longitude', fontsize=8)
+        ax.set_ylabel('Latitude', fontsize=8)
+        ax.set_title('Carte des segments de transport', fontsize=10, fontweight='bold', pad=8)
+        ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+        ax.tick_params(labelsize=7)
+        
+        # Sauvegarder en image
+        map_buffer = io.BytesIO()
+        plt.tight_layout()
+        plt.savefig(map_buffer, format='png', dpi=150, bbox_inches='tight', 
+                   facecolor='white', edgecolor='none')
+        plt.close()
+        map_buffer.seek(0)
+        
+        # Ajouter au PDF
+        map_image = RLImage(map_buffer, width=20*cm, height=7.5*cm)
+        story.append(map_image)
+        story.append(Spacer(1, 0.3*cm))
+        
+    except Exception as e:
+        # En cas d'erreur, on affiche juste un message
+        story.append(Paragraph(f"<i>Carte non disponible (erreur: {str(e)[:50]})</i>", normal_style))
+        story.append(Spacer(1, 0.2*cm))
     
-    summary_data = [
-        ["Distance totale:", f"{total_distance:.1f} km"],
-        ["Émissions totales:", f"{total_emissions:.2f} kg CO₂e"],
-        ["Émissions moyennes:", f"{total_emissions/total_distance:.3f} kg CO₂e/km" if total_distance > 0 else "N/A"],
-    ]
-    
-    summary_table = Table(summary_data, colWidths=[6*cm, 10*cm])
-    summary_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#fff4e6')),
-        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTNAME', (1, 0), (1, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 11),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-    ]))
-    story.append(summary_table)
-    story.append(Spacer(1, 0.8*cm))
-    
-    # Carte des trajets - Note simplifiée
-    story.append(Paragraph("Carte des trajets", heading_style))
-    story.append(Paragraph(
-        "<i>Carte interactive disponible dans l'application web. Coordonnées des segments listées ci-dessous.</i>",
-        normal_style
-    ))
-    story.append(Spacer(1, 0.5*cm))
-    
-    # Tableau détaillé des segments
-    story.append(Paragraph("Détail des segments", heading_style))
+    # Tableau détaillé des segments - tailles réduites
+    story.append(Paragraph("Detail des segments", heading_style))
     
     # Préparation des données du tableau
-    table_data = [["Seg.", "Origine", "Destination", "Mode", "Distance\n(km)", 
-                   f"Poids\n({unit})", "Facteur\n(kg CO₂e/t.km)", "Émissions\n(kg CO₂e)"]]
+    table_data = [["Seg.", "Origine", "Destination", "Mode", "Dist.\n(km)", 
+                   f"Poids\n({unit})", "Facteur\n(kg CO2/t.km)", "Emissions\n(kg CO2)"]]
     
     for _, row in df.iterrows():
         # Nettoyer le mode des emojis
@@ -309,13 +374,13 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
         
         table_data.append([
             str(row["Segment"]),
-            row["Origine"][:35] + "..." if len(row["Origine"]) > 35 else row["Origine"],
-            row["Destination"][:35] + "..." if len(row["Destination"]) > 35 else row["Destination"],
+            row["Origine"][:28] + "..." if len(row["Origine"]) > 28 else row["Origine"],
+            row["Destination"][:28] + "..." if len(row["Destination"]) > 28 else row["Destination"],
             mode_clean,
             f"{row['Distance (km)']:.1f}",
             f"{row[f'Poids ({unit})']:.1f}",
-            f"{row['Facteur (kg CO₂e/t.km)']:.3f}",
-            f"{row['Émissions (kg CO₂e)']:.2f}"
+            f"{row['Facteur (kg CO2/t.km)']:.3f}",
+            f"{row['Emissions (kg CO2)']:.2f}"
         ])
     
     # Ligne de total
@@ -330,8 +395,8 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
         f"{total_emissions:.2f}"
     ])
     
-    # Création du tableau
-    col_widths = [1.5*cm, 5*cm, 5*cm, 3.5*cm, 2*cm, 2*cm, 2.5*cm, 2.5*cm]
+    # Création du tableau - colonnes plus étroites
+    col_widths = [1.2*cm, 4.5*cm, 4.5*cm, 3*cm, 1.8*cm, 1.8*cm, 2.2*cm, 2.2*cm]
     
     detail_table = Table(table_data, colWidths=col_widths, repeatRows=1)
     detail_table.setStyle(TableStyle([
@@ -340,9 +405,9 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 9),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-        ('TOPPADDING', (0, 0), (-1, 0), 8),
+        ('FONTSIZE', (0, 0), (-1, 0), 7),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 4),
+        ('TOPPADDING', (0, 0), (-1, 0), 4),
         
         # Corps du tableau
         ('BACKGROUND', (0, 1), (-1, -2), colors.white),
@@ -350,33 +415,33 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
         ('ALIGN', (0, 1), (0, -1), 'CENTER'),
         ('ALIGN', (4, 1), (-1, -1), 'RIGHT'),
         ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
-        ('FONTSIZE', (0, 1), (-1, -2), 8),
+        ('FONTSIZE', (0, 1), (-1, -2), 7),
         ('VALIGN', (0, 1), (-1, -1), 'MIDDLE'),
         
         # Ligne de total
         ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#fff4e6')),
         ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, -1), (-1, -1), 9),
+        ('FONTSIZE', (0, -1), (-1, -1), 8),
         
         # Grille
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
         ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor('#1f4788')),
         ('LINEABOVE', (0, -1), (-1, -1), 2, colors.HexColor('#1f4788')),
         
-        # Padding
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
-        ('TOPPADDING', (0, 1), (-1, -1), 6),
-        ('LEFTPADDING', (0, 0), (-1, -1), 4),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        # Padding réduit
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 3),
+        ('TOPPADDING', (0, 1), (-1, -1), 3),
+        ('LEFTPADDING', (0, 0), (-1, -1), 3),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
     ]))
     
     story.append(detail_table)
-    story.append(Spacer(1, 1*cm))
+    story.append(Spacer(1, 0.3*cm))
     
     # Pied de page
     story.append(Paragraph(
-        f"<i>Document généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')} par le Calculateur CO₂ multimodal - NILEY EXPERTS</i>",
-        ParagraphStyle('Footer', parent=normal_style, fontSize=8, textColor=colors.grey, alignment=1)
+        f"<i>Document genere le {datetime.now().strftime('%d/%m/%Y a %H:%M')} par le Calculateur CO2 multimodal - NILEY EXPERTS</i>",
+        ParagraphStyle('Footer', parent=normal_style, fontSize=7, textColor=colors.grey, alignment=1)
     ))
     
     # Construction du PDF
