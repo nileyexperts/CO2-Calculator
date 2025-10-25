@@ -258,16 +258,63 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
     
     # Carte
     try:
+        fig, ax = plt.subplots(figsize=(8, 3), facecolor='white')
         
-fig, ax = plt.subplots(figsize=(8, 3), facecolor='white')
-ax.set_facecolor('white')
-ax.grid(False)
-ax.set_xticks([])
-ax.set_yticks([])
-ax.set_xlabel('')
-ax.set_ylabel('')
-ax.set_title('Carte des segments de transport', fontsize=10, fontweight='bold', pad=8)
-
+        all_lats = [r["lat_o"] for r in rows] + [r["lat_d"] for r in rows]
+        all_lons = [r["lon_o"] for r in rows] + [r["lon_d"] for r in rows]
+        
+        min_lat, max_lat = min(all_lats), max(all_lats)
+        min_lon, max_lon = min(all_lons), max(all_lons)
+        
+        lat_margin = (max_lat - min_lat) * 0.15
+        lon_margin = (max_lon - min_lon) * 0.15
+        
+        ax.set_xlim(min_lon - lon_margin, max_lon + lon_margin)
+        ax.set_ylim(min_lat - lat_margin, max_lat + lat_margin)
+        
+        mode_colors = {
+            "routier": "#0066CC",
+            "aerien": "#CC0000",
+            "maritime": "#009900",
+            "ferroviaire": "#9900CC"
+        }
+        
+        for r in rows:
+            cat = mode_to_category(r["Mode"])
+            color = mode_colors.get(cat, "#666666")
+            
+            ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]], 
+                   color=color, linewidth=2, alpha=0.7, zorder=1)
+            
+            ax.scatter(r["lon_o"], r["lat_o"], c='#0066FF', s=80, 
+                      edgecolors='white', linewidths=1.5, zorder=3, marker='o')
+            
+            ax.scatter(r["lon_d"], r["lat_d"], c='#FF0000', s=80, 
+                      edgecolors='white', linewidths=1.5, zorder=3, marker='s')
+            
+            mid_lon = (r["lon_o"] + r["lon_d"]) / 2
+            mid_lat = (r["lat_o"] + r["lat_d"]) / 2
+            ax.text(mid_lon, mid_lat, f"S{r['Segment']}", 
+                   fontsize=8, ha='center', va='center',
+                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', 
+                            edgecolor=color, alpha=0.9), zorder=4)
+        
+        legend_elements = [
+            mpatches.Patch(color='#0066CC', label='Routier'),
+            mpatches.Patch(color='#CC0000', label='Aerien'),
+            mpatches.Patch(color='#009900', label='Maritime'),
+            mpatches.Patch(color='#9900CC', label='Ferroviaire'),
+            plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#0066FF', 
+                      markersize=8, label='Origine', markeredgecolor='white', markeredgewidth=1),
+            plt.Line2D([0], [0], marker='s', color='w', markerfacecolor='#FF0000', 
+                      markersize=8, label='Destination', markeredgecolor='white', markeredgewidth=1),
+        ]
+        ax.legend(handles=legend_elements, loc='upper right', fontsize=7, 
+                 framealpha=0.9, ncol=3)
+        
+        ax.set_xlabel('Longitude', fontsize=8)
+        ax.set_ylabel('Latitude', fontsize=8)
+        ax.set_title('Carte des segments de transport', fontsize=10, fontweight='bold', pad=8)
         ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
         ax.tick_params(labelsize=7)
         
@@ -278,10 +325,7 @@ ax.set_title('Carte des segments de transport', fontsize=10, fontweight='bold', 
         plt.close()
         map_buffer.seek(0)
         
-        
-height_cm = max(5, min(10, len(rows) * 1.5))
-map_image = RLImage(map_buffer, width=20*cm, height=height_cm*cm)
-
+        map_image = RLImage(map_buffer, width=20*cm, height=7.5*cm)
         story.append(map_image)
         story.append(Spacer(1, 0.3*cm))
         
