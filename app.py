@@ -498,8 +498,8 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         ))
 
         df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
-    df_export.insert(0, "N° dossier Transport", dossier_val)
-        csv = df_export.to_csv(index=False).encode("utf-8")
+        df_export.insert(0, "N° dossier Transport", dossier_val)
+    csv = df_export.to_csv(index=False).encode("utf-8")
 
         raw_suffix = dossier_val.strip()
         safe_suffix = "".join(c if (c.isalnum() or c in "-_") else "_" for c in raw_suffix)
