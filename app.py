@@ -969,4 +969,3 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 st.code(traceback.format_exc())
     else:
         st.info("Aucun segment valide n'a été calculé. Vérifiez les entrées ou les sélections.")
-``
