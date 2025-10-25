@@ -19,7 +19,6 @@ from opencage.geocoder import OpenCageGeocode
 from geopy.distance import great_circle
 from io import BytesIO
 from datetime import datetime
-
 # PDF
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
@@ -33,7 +32,6 @@ from PIL import Image as PILImage
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches  # (non utilise directement, conserve si besoin d'annotations)
 import io
 import tempfile
 import numpy as np
@@ -42,45 +40,47 @@ import numpy as np
 os.environ.setdefault("CARTOPY_CACHE_DIR", os.path.join(tempfile.gettempdir(), "cartopy_cache"))
 
 # =========================
-# 🎯 Parametres & Config page
+# Parametres & Config page
 # =========================
 st.set_page_config(
-    page_title="Calculateur CO₂ multimodal - NILEY EXPERTS",
+    page_title="Calculateur CO2 multimodal - NILEY EXPERTS",
     page_icon="🌍",
     layout="centered"
 )
 
 DEFAULT_EMISSION_FACTORS = {
-    "🚛 Routier 🚛": 0.100,
-    "✈️ Aérien ✈️": 0.500,
-    "🛠️ Maritime 🛠️": 0.015,
-    "🚂 Ferroviaire 🚂": 0.030,
+    "Routier": 0.100,
+    "Aerien": 0.500,
+    "Maritime": 0.015,
+    "Ferroviaire": 0.030,
 }
 
 MAX_SEGMENTS = 10
 LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png"
 
 # =========================
-# 🎨 Fond global + Logo fixe (Option A)
+# Entete simple avec logo
 # =========================
 st.markdown(
     f"""
     <div style="display:flex;align-items:center;gap:8px;">
-      <img src="{LOGO_URL}" alt="NILEY EXPERTSe_allow_html=True
+      <img src="{LOG </div>
+    """,
+    unsafe_allow_html=True
 )
 
 # =========================
-# 🧠 Utilitaires communs
+# Utilitaires communs
 # =========================
 def read_secret(key: str, default: str = "") -> str:
-    """Read a secret from Streamlit secrets or environment."""
+    # Read a secret from Streamlit secrets or environment.
     if "secrets" in dir(st) and key in st.secrets:
         return st.secrets[key]
     return os.getenv(key, default)
 
 @st.cache_data(show_spinner=False, ttl=60*60)
 def geocode_cached(query: str, limit: int = 5):
-    """Cached geocoding suggestions using OpenCage."""
+    # Cached geocoding suggestions using OpenCage.
     if not query:
         return []
     try:
@@ -91,7 +91,7 @@ def geocode_cached(query: str, limit: int = 5):
 
 @st.cache_data(show_spinner=False, ttl=24*60*60)
 def coords_from_formatted(formatted: str):
-    """Return (lat, lon) from a formatted place string."""
+    # Return (lat, lon) from a formatted place string.
     try:
         res = geocoder.geocode(formatted, no_annotations=1, limit=1)
         if res:
@@ -102,16 +102,16 @@ def coords_from_formatted(formatted: str):
     return None
 
 def compute_distance_km(coord1, coord2) -> float:
-    """Great-circle distance in km."""
+    # Great-circle distance in km.
     return great_circle(coord1, coord2).km
 
 def compute_emissions(distance_km: float, weight_tonnes: float, factor_kg_per_tkm: float) -> float:
-    """Emissions (kg CO2e) = distance_km * weight_tonnes * factor_kg_per_tkm."""
+    # Emissions (kg CO2e) = distance_km * weight_tonnes * factor_kg_per_tkm.
     return distance_km * weight_tonnes * factor_kg_per_tkm
 
 @st.cache_data(show_spinner=False, ttl=6*60*60)
 def osrm_route(coord1, coord2, base_url: str, overview: str = "full"):
-    """Call OSRM to get route distance and geometry."""
+    # Call OSRM to get route distance and geometry.
     lon1, lat1 = coord1[1], coord1[0]
     lon2, lat2 = coord2[1], coord2[0]
     url = f"{base_url.rstrip('/')}/route/v1/driving/{lon1},{lat1};{lon2},{lat2}"
@@ -130,27 +130,19 @@ def osrm_route(coord1, coord2, base_url: str, overview: str = "full"):
     return {"distance_km": distance_km, "coords": coords}
 
 def _normalize_no_diacritics(s: str) -> str:
-    """Lowercase without diacritics for robust comparisons."""
+    # Lowercase without diacritics for robust comparisons.
     return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn').lower()
 
 def mode_to_category(mode_str: str) -> str:
-    """Map UI mode label to a category key used for colors/icons."""
+    # Map UI mode label to a category key used for colors/icons.
     s = _normalize_no_diacritics(mode_str)
-    if "routier" in s:
+    if "routier" in s or "road" in s or "truck" in s:
         return "routier"
-    if "aerien" in s or "aérien" in s:
+    if "aerien" in s or "air" in s or "plane" in s:
         return "aerien"
-    if "maritime" in s or "mer" in s or "bateau" in s:
+    if "maritime" in s or "mer" in s or "bateau" in s or "sea" in s or "ship" in s:
         return "maritime"
-    if "ferroviaire" in s or "train" in s:
-        return "ferroviaire"
-    if "road" in s or "truck" in s:
-        return "routier"
-    if "air" in s or "plane" in s:
-        return "aerien"
-    if "sea" in s or "ship" in s:
-        return "maritime"
-    if "rail" in s:
+    if "ferroviaire" in s or "rail" in s or "train" in s:
         return "ferroviaire"
     return "routier"
 
@@ -162,7 +154,7 @@ ICON_URLS = {
 }
 
 def midpoint_on_path(route_coords, lon_o, lat_o, lon_d, lat_d):
-    """Return a midpoint for placing an icon on the route."""
+    # Return a midpoint for placing an icon on the route.
     if route_coords and isinstance(route_coords, list) and len(route_coords) >= 2:
         idx = len(route_coords) // 2
         pt = route_coords[idx]
@@ -173,7 +165,7 @@ def midpoint_on_path(route_coords, lon_o, lat_o, lon_d, lat_d):
 # Emprise & ratio pour carte PDF
 # -------------------------
 def _compute_extent_and_ratio(all_lats, all_lons, margin_ratio=0.12, min_span_deg=1e-3):
-    """Calcule (min_lon, max_lon, min_lat, max_lat) avec marge, en evitant les emprises degenerees."""
+    # Calcule (min_lon, max_lon, min_lat, max_lat) avec marge, en evitant les emprises degenerees.
     if not all_lats or not all_lons:
         # Europe-Ouest par defaut
         return (-10, 30, 30, 60)
@@ -190,18 +182,17 @@ def _compute_extent_and_ratio(all_lats, all_lons, margin_ratio=0.12, min_span_de
     return (min_lon, max_lon, min_lat, max_lat)
 
 def fit_extent_to_aspect(min_lon, max_lon, min_lat, max_lat, target_aspect_w_over_h):
-    """Ajuste l'emprise (en degres) pour correspondre au ratio cible du cadre. Elargit uniquement (ne coupe pas)."""
-    # 1) Spans initiaux
+    # Ajuste l'emprise (en degres) pour correspondre au ratio cible du cadre.
+    # Elargit uniquement (ne coupe pas). Evite toute docstring multi-lignes.
     span_lon = max(1e-6, max_lon - min_lon)
     span_lat = max(1e-6, max_lat - min_lat)
     mid_lat = (min_lat + max_lat) / 2.0
     cos_mid = max(0.05, math.cos(math.radians(mid_lat)))  # plancher pour hautes latitudes
 
-    # 2) Ratio geographique effectif vs ratio cible
+    # Ratio geographique effectif vs ratio cible
     aspect_geo = (span_lon * cos_mid) / span_lat
     aspect_target = max(1e-6, float(target_aspect_w_over_h))
 
-    # 3) Ajustement
     if aspect_geo < aspect_target:
         # trop etroit -> elargir en longitude
         needed_lon = (aspect_target * span_lat) / cos_mid
@@ -215,7 +206,7 @@ def fit_extent_to_aspect(min_lon, max_lon, min_lat, max_lat, target_aspect_w_ove
         min_lat -= extra
         max_lat += extra
 
-    # 4) Clamp
+    # Clamp
     min_lon = max(-180.0, min_lon)
     max_lon = min(180.0, max_lon)
     min_lat = max(-90.0, min_lat)
@@ -223,7 +214,7 @@ def fit_extent_to_aspect(min_lon, max_lon, min_lat, max_lat, target_aspect_w_ove
     return (min_lon, max_lon, min_lat, max_lat)
 
 # =========================
-# 📄 Generation du PDF
+# Generation du PDF
 # =========================
 def generate_pdf_report(
     df,
@@ -235,7 +226,7 @@ def generate_pdf_report(
     pdf_basemap_mode='auto',   # 'auto' | 'simple' | 'naturalearth'
     ne_scale='110m'            # '110m' | '50m' | '10m'
 ):
-    """Build the PDF report."""
+    # Build the PDF report.
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -263,7 +254,7 @@ def generate_pdf_report(
     normal_style = styles['Normal']
     normal_style.fontSize = 8
 
-    # --- Style compact pour cellules "lieu" + utilitaire 2 lignes max ---
+    # Style compact pour cellules "lieu" + utilitaire 2 lignes max
     cell_style = ParagraphStyle(
         'CellSmall',
         parent=styles['Normal'],
@@ -273,20 +264,17 @@ def generate_pdf_report(
     )
 
     def two_line_place(text: str, max_line=28):
-        """
-        Retourne une chaine prete pour Paragraph avec au plus 2 lignes :
-        - coupe en priorite sur ' - , /' puis espaces,
-        - insere un <br/> entre ligne 1 et 2,
-        - tronque la 2e ligne avec '...' si elle depasse.
-        """
+        # Retourne du contenu pour Paragraph avec au plus 2 lignes :
+        # - coupe en priorite sur ' - , /' puis espaces,
+        # - insere un <br/> entre ligne 1 et 2,
+        # - tronque la 2e ligne avec '...' si elle depasse.
         if not text:
             return ""
         s = text.strip()
         if len(s) <= max_line:
-            # Une seule ligne
             return s
 
-        preferred_seps = [' - ', ' – ', ' — ', ' / ', ', ']
+        preferred_seps = [' - ', ' - ', ' - ', ' / ', ', ']
         cut_idx = -1
         for sep in preferred_seps:
             i = s.rfind(sep, 0, max_line + 1)
@@ -302,6 +290,7 @@ def generate_pdf_report(
         line2 = s[cut_idx:].lstrip()
 
         if len(line2) > max_line:
+            # garder 3 caracteres pour '...'
             line2 = line2[:max_line - 3].rstrip() + '...'
 
         def esc(t):
@@ -351,9 +340,7 @@ def generate_pdf_report(
     story.append(info_summary_table)
     story.append(Spacer(1, 0.3*cm))
 
-    # -----------------------------
     # Carte PDF (Cartopy Natural Earth si possible, sinon fallback simple)
-    # -----------------------------
     try:
         use_cartopy = (pdf_basemap_mode in ('auto', 'naturalearth'))
         if pdf_basemap_mode == 'simple':
@@ -382,6 +369,7 @@ def generate_pdf_report(
             try:
                 import cartopy.crs as ccrs
                 import cartopy.feature as cfeature
+
                 fig = plt.figure(figsize=(fig_w_in, fig_h_in), dpi=dpi)
                 ax = plt.axes(projection=ccrs.PlateCarree())
 
@@ -607,7 +595,7 @@ def generate_pdf_report(
     return buffer
 
 # =========================
-# 🔐 Verification du mot de passe (avec bouton Valider)
+# Verification du mot de passe (avec bouton Valider)
 # =========================
 PASSWORD_KEY = "APP_PASSWORD"
 if PASSWORD_KEY not in st.secrets:
@@ -618,10 +606,10 @@ if PASSWORD_KEY not in st.secrets:
 if "auth_ok" not in st.session_state:
     st.session_state.auth_ok = False
 
-st.markdown("## 🔐 Acces securise")
+st.markdown("## Acces securise")
 with st.form("login_form", clear_on_submit=False):
     password_input = st.text_input(
-        "Entrez le mot de passe pour acceder a l'application :", type="password", placeholder="Votre mot de passe…"
+        "Entrez le mot de passe pour acceder a l'application :", type="password", placeholder="Votre mot de passe"
     )
     submitted = st.form_submit_button("Valider")
 
@@ -629,18 +617,18 @@ if not st.session_state.auth_ok:
     if submitted:
         if password_input == st.secrets[PASSWORD_KEY]:
             st.session_state.auth_ok = True
-            st.success("✅ Acces autorise. Bienvenue dans l'application !")
+            st.success("Acces autorise. Bienvenue dans l'application !")
             st.rerun()
         else:
-            st.error("❌ Mot de passe incorrect.")
+            st.error("Mot de passe incorrect.")
     else:
-        st.info("Veuillez saisir le mot de passe puis cliquer sur **Valider**.")
+        st.info("Veuillez saisir le mot de passe puis cliquer sur Valider.")
     st.stop()
 else:
-    st.success("✅ Acces autorise. Bienvenue dans l'application !")
+    st.success("Acces autorise. Bienvenue dans l'application !")
 
 # =========================
-# 🔑 API OpenCage
+# API OpenCage
 # =========================
 API_KEY = read_secret("OPENCAGE_KEY")
 if not API_KEY:
@@ -649,13 +637,13 @@ if not API_KEY:
 geocoder = OpenCageGeocode(API_KEY)
 
 # =========================
-# 🏷️ En-tete & Texte explicatif
+# En-tete & Texte explicatif
 # =========================
 st.markdown("## Calculateur d'empreinte carbone multimodal - NILEY EXPERTS")
 st.markdown("Ajoutez plusieurs segments (origine -> destination), choisissez le mode et le poids. Le mode Routier utilise OSRM (distance reelle + trace).")
 
 # =========================
-# 📇 N° dossier (obligatoire)
+# N° dossier (obligatoire)
 # =========================
 st.markdown("### Informations generales")
 dossier_transport = st.text_input(
@@ -667,9 +655,9 @@ dossier_transport = st.text_input(
 st.session_state["dossier_transport"] = (dossier_transport or "").strip()
 
 # =========================
-# ⚙️ Parametres
+# Parametres
 # =========================
-with st.expander("⚙️ Parametres, facteurs d'emission & OSRM"):
+with st.expander("Parametres, facteurs d'emission & OSRM"):
     default_mode_label = "Envoi unique (meme poids sur tous les segments)"
     weight_mode = st.radio("Mode de gestion du poids :", [default_mode_label, "Poids par segment"], horizontal=False)
 
@@ -684,7 +672,7 @@ with st.expander("⚙️ Parametres, facteurs d'emission & OSRM"):
     unit = st.radio("Unite de saisie du poids", ["kg", "tonnes"], index=0, horizontal=True)
 
     osrm_help = (
-        "**OSRM** - pour test : https://router.project-osrm.org (serveur demo, non garanti). "
+        "OSRM - pour test : https://router.project-osrm.org (serveur demo, non garanti). "
         "En production, utilisez un serveur auto-heberge ou un provider."
     )
     st.markdown(osrm_help)
@@ -692,7 +680,7 @@ with st.expander("⚙️ Parametres, facteurs d'emission & OSRM"):
     osrm_base_url = st.text_input("Endpoint OSRM", value=osrm_default, help="Ex: https://router.project-osrm.org ou votre propre serveur OSRM")
     st.session_state["osrm_base_url"] = osrm_base_url
 
-with st.expander("🎯 Apparence de la carte (points & logos)"):
+with st.expander("Apparence de la carte (points & logos)"):
     dynamic_radius = st.checkbox(
         "Rayon des points dynamique (varie avec le zoom)",
         value=True,
@@ -707,7 +695,7 @@ with st.expander("🎯 Apparence de la carte (points & logos)"):
 
     icon_size_px = st.slider("Taille des logos de segment (pixels)", 16, 64, 28, 2)
 
-with st.expander("🗺️ Fond de carte du PDF"):
+with st.expander("Fond de carte du PDF"):
     pdf_basemap_choice = st.radio(
         "Fond de carte PDF",
         ["Automatique (recommande)", "Cotes/continents (Natural Earth)", "Simple (sans cotes)"],
@@ -716,10 +704,10 @@ with st.expander("🗺️ Fond de carte du PDF"):
     ne_scale = st.selectbox("Detail Natural Earth", ["110m", "50m", "10m"], index=0)
 
 # =========================
-# 🧾 Saisie des segments
+# Saisie des segments
 # =========================
 def _default_segment(origin_raw="", origin_sel="", dest_raw="", dest_sel="", mode=None, weight=1000.0):
-    """Default segment template."""
+    # Default segment template.
     if mode is None:
         mode = list(DEFAULT_EMISSION_FACTORS.keys())[0]
     return {"origin_raw": origin_raw, "origin_sel": origin_sel, "dest_raw": dest_raw, "dest_sel": dest_sel, "mode": mode, "weight": weight}
@@ -803,7 +791,7 @@ for i in range(len(st.session_state.segments)):
 bc1, bc2, _ = st.columns([2, 2, 6])
 with bc1:
     can_add = len(st.session_state.segments) < MAX_SEGMENTS
-    if st.button("➕ Ajouter un segment apres le dernier", disabled=not can_add):
+    if st.button("Ajouter un segment apres le dernier", disabled=not can_add):
         last = st.session_state.segments[-1]
         new_seg = _default_segment(
             origin_raw=last.get("dest_sel") or last.get("dest_raw") or "",
@@ -815,15 +803,15 @@ with bc1:
         st.rerun()
 
 with bc2:
-    if st.button("🗑️ Supprimer le dernier segment", disabled=len(st.session_state.segments) <= 1):
+    if st.button("Supprimer le dernier segment", disabled=len(st.session_state.segments) <= 1):
         st.session_state.segments.pop()
         st.rerun()
 
 # =========================
-# 🧮 Calcul + Carte
+# Calcul + Carte
 # =========================
 def _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80):
-    """Compute a reasonable view (center/zoom) for deck.gl."""
+    # Compute a reasonable view (center/zoom) for deck.gl.
     if not all_lats or not all_lons:
         return pdk.ViewState(latitude=48.8534, longitude=2.3488, zoom=3)
     min_lat, max_lat = min(all_lats), max(all_lats)
@@ -841,7 +829,7 @@ def _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80
 
 can_calculate = bool(st.session_state.get("dossier_transport"))
 if not can_calculate:
-    st.warning("Veuillez renseigner le **N° dossier Transport** avant de lancer le calcul.")
+    st.warning("Veuillez renseigner le N° dossier Transport avant de lancer le calcul.")
 
 if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
     if not st.session_state.get("dossier_transport"):
@@ -899,11 +887,11 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
 
     if rows:
         df = pd.DataFrame(rows)
-        st.success(f"✅ {len(rows)} segment(s) calcule(s) • Distance totale : {total_distance:.1f} km • Emissions totales : {total_emissions:.2f} kg CO2e")
+        st.success(f"{len(rows)} segment(s) calcule(s) • Distance totale : {total_distance:.1f} km • Emissions totales : {total_emissions:.2f} kg CO2e")
 
         dossier_val = st.session_state.get("dossier_transport", "")
         if dossier_val:
-            st.info(f"**N° dossier Transport :** {dossier_val}")
+            st.info(f"N° dossier Transport : {dossier_val}")
 
         st.dataframe(
             df[["Segment", "Origine", "Destination", "Mode", "Distance (km)", f"Poids ({unit})", "Facteur (kg CO2e/t.km)", "Emissions (kg CO2e)"]],
@@ -942,9 +930,9 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
 
         points, labels = [], []
         for r in rows:
-            points.append({"position": [r["lon_o"], r["lat_o"]], "name": f"S{r['Segment']} • Origine", "color": [0, 122, 255, 220]})
+            points.append({"position": [r["lon_o"], r["lat_o"]], "name": f"S{r['Segment']} - Origine", "color": [0, 122, 255, 220]})
             labels.append({"position": [r["lon_o"], r["lat_o"]], "text": f"S{r['Segment']} O", "color": [0, 122, 255, 255]})
-            points.append({"position": [r["lon_d"], r["lat_d"]], "name": f"S{r['Segment']} • Destination", "color": [220, 66, 66, 220]})
+            points.append({"position": [r["lon_d"], r["lat_d"]], "name": f"S{r['Segment']} - Destination", "color": [220, 66, 66, 220]})
             labels.append({"position": [r["lon_d"], r["lat_d"]], "text": f"S{r['Segment']} D", "color": [220, 66, 66, 255]})
 
         # Points
@@ -983,7 +971,15 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             url = ICON_URLS.get(cat)
             if not url:
                 continue
-            lon_mid, lat_mid = midpoint_on_path(r.get("route_coords"), r["lon_o"], r["lat_o"], r["lon_d"], r["lat_d"])
+            # Point milieu simple (ou milieu de polyline pour routier)
+            if r.get("route_coords"):
+                coords_poly = r["route_coords"]
+                mid_index = len(coords_poly)//2
+                lon_mid, lat_mid = coords_poly[mid_index][0], coords_poly[mid_index][1]
+            else:
+                lon_mid = (r["lon_o"] + r["lon_d"]) / 2.0
+                lat_mid = (r["lat_o"] + r["lat_d"]) / 2.0
+
             icons.append({
                 "position": [lon_mid, lat_mid],
                 "name": f"S{r['Segment']} - {cat.capitalize()}",
@@ -993,7 +989,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             layers.append(pdk.Layer(
                 "IconLayer", data=icons,
                 get_icon="icon", get_position="position",
-                get_size=icon_size_px, size_units="pixels",
+                get_size=28, size_units="pixels",
                 pickable=True
             ))
 
@@ -1014,7 +1010,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         ))
 
         # =========================
-        # ⬇️ Export CSV et PDF
+        # Export CSV et PDF
         # =========================
         df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
         df_export.insert(0, "N° dossier Transport", dossier_val)
@@ -1026,7 +1022,6 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         filename_csv = f"resultats_co2_multimodal{safe_suffix}.csv"
         filename_pdf = f"rapport_co2_multimodal{safe_suffix}.pdf"
 
-        # Mapping UI -> parametres PDF
         mode_map = {
             "Automatique (recommande)": "auto",
             "Cotes/continents (Natural Earth)": "naturalearth",
@@ -1036,7 +1031,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
 
         col1, col2 = st.columns(2)
         with col1:
-            st.download_button("⬇️ Telecharger le detail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
+            st.download_button("Telecharger le detail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
         with col2:
             try:
                 with st.spinner("Generation du PDF en cours..."):
@@ -1050,7 +1045,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                         pdf_basemap_mode=pdf_mode_param,
                         ne_scale=ne_scale
                     )
-                st.download_button("📄 Telecharger le rapport PDF", data=pdf_buffer, file_name=filename_pdf, mime="application/pdf")
+                st.download_button("Telecharger le rapport PDF", data=pdf_buffer, file_name=filename_pdf, mime="application/pdf")
             except Exception as e:
                 st.error(f"Erreur lors de la generation du PDF : {e}")
                 import traceback
