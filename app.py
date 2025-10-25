@@ -146,16 +146,23 @@ st.markdown("## Calculateur d'empreinte carbone multimodal - NILEY EXPERTS")
 st.markdown("Ajoutez plusieurs segments (origine -> destination), choisissez le mode et le poids. Le mode Routier utilise OSRM (distance reelle + trace).")
 
 # =========================
-# 🗂️ N° dossier (obligatoire) — centré
+# 🔄 Réinitialiser (gauche) + 🗂️ N° dossier (droite, obligatoire)
 # =========================
-st.markdown("### Informations générales")
-dossier_transport = st.text_input(
-    "N° dossier Transport (obligatoire) *",
-    value=st.session_state.get("dossier_transport", ""),
-    placeholder="ex : TR-2025-001",
-    help="Renseignez un identifiant de dossier pour lancer le calcul."
-)
-st.session_state["dossier_transport"] = (dossier_transport or "").strip()
+col_reset, col_id, _ = st.columns([1, 3, 6])
+with col_reset:
+    # Bouton de reset (carré grâce au CSS global déjà présent)
+    st.write("")  # aligne verticalement avec le champ
+    if st.button("🔄 Réinitialiser le formulaire", use_container_width=True):
+        reset_form()
+
+with col_id:
+    dossier_transport = st.text_input(
+        "N° dossier Transport (obligatoire) *",
+        value=st.session_state.get("dossier_transport", ""),
+        placeholder="ex : TR-2025-001",
+        help="Renseignez un identifiant de dossier pour lancer le calcul."
+    )
+    st.session_state["dossier_transport"] = (dossier_transport or "").strip()
 
 # =========================
 # ⚙️ Paramètres
