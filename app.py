@@ -100,19 +100,45 @@ st.markdown(
 )
 
 # =========================
-# 🔒 Vérification du mot de passe
+# 🔒 Vérification du mot de passe (avec bouton Valider)
 # =========================
 PASSWORD_KEY = "APP_PASSWORD"
 if PASSWORD_KEY not in st.secrets:
     st.error("Mot de passe non configuré. Ajoutez APP_PASSWORD dans .streamlit/secrets.toml.")
     st.stop()
 
+# On mémorise dans la session si l'utilisateur est authentifié
+if "auth_ok" not in st.session_state:
+    st.session_state.auth_ok = False
+
 st.markdown("## 🔒 Accès sécurisé")
-password_input = st.text_input("Entrez le mot de passe pour accéder à l'application :", type="password")
-if password_input != st.secrets[PASSWORD_KEY]:
-    st.warning("Mot de passe incorrect ou vide.")
+
+# Formulaire avec bouton de validation
+with st.form("login_form", clear_on_submit=False):
+    password_input = st.text_input(
+        "Entrez le mot de passe pour accéder à l'application :",
+        type="password",
+        placeholder="Votre mot de passe…"
+    )
+    submitted = st.form_submit_button("Valider")
+
+if not st.session_state.auth_ok:
+    if submitted:
+        if password_input == st.secrets[PASSWORD_KEY]:
+            st.session_state.auth_ok = True
+            st.success("✅ Accès autorisé. Bienvenue dans l'application !")
+            # petit refresh pour masquer le bloc login proprement, si voulu :
+            st.experimental_rerun()
+        else:
+            st.error("❌ Mot de passe incorrect.")
+    else:
+        # Première visite : on affiche une info douce
+        st.info("Veuillez saisir le mot de passe puis cliquer sur **Valider**.")
     st.stop()
-st.success("✅ Accès autorisé. Bienvenue dans l'application !")
+else:
+    # Déjà connecté
+    st.success("✅ Accès autorisé. Bienvenue dans l'application !")
+
 
 # =========================
 # 🧠 Utilitaires
