@@ -148,12 +148,6 @@ st.markdown("Ajoutez plusieurs segments (origine -> destination), choisissez le 
 # =========================
 # 🗂️ N° dossier (gauche, obligatoire) + 🔄 Réinitialiser (droite) 
 # =========================
-col_reset, col_id, _ = st.columns([1, 3, 6])
-with col_reset:
-    # Bouton de reset (carré grâce au CSS global déjà présent)
-    st.write("")  # aligne verticalement avec le champ
-    if st.button("🔄 Réinitialiser le formulaire", use_container_width=True):
-        reset_form()
 
 with col_id:
     dossier_transport = st.text_input(
@@ -162,6 +156,13 @@ with col_id:
         placeholder="ex : TR-2025-001",
         help="Renseignez un identifiant de dossier pour lancer le calcul."
     )
+    col_reset, col_id, _ = st.columns([1, 3, 6])
+with col_reset:
+    # Bouton de reset (carré grâce au CSS global déjà présent)
+    st.write("")  # aligne verticalement avec le champ
+    if st.button("🔄 Réinitialiser le formulaire", use_container_width=True):
+        reset_form()
+
     st.session_state["dossier_transport"] = (dossier_transport or "").strip()
 
 # =========================
