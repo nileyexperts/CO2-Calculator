@@ -1,10 +1,7 @@
 # -*- coding: utf-8 -*-
-# co2_calculator_app.py
+# co2_calculator_app.py - Version finale avec PDF
 # ------------------------------------------------------------
 # Calculateur CO2 multimodal - NILEY EXPERTS
-# (fond transparent, logo PNG, étiquettes sans fond,
-#  champ N° dossier obligatoire, bouton Réinitialiser supprimé)
-# Version avec génération de rapport PDF
 # ------------------------------------------------------------
 
 import os
@@ -26,16 +23,15 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
-from reportlab.pdfgen import canvas
 from PIL import Image as PILImage
 import matplotlib
-matplotlib.use('Agg')  # Backend sans interface graphique
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import io
 
 # =========================
-# 🔒 Vérification du mot de passe via st.secrets
+# 🔒 Vérification du mot de passe
 # =========================
 PASSWORD_KEY = "APP_PASSWORD"
 
@@ -43,7 +39,6 @@ if PASSWORD_KEY not in st.secrets:
     st.error("Mot de passe non configuré. Ajoutez APP_PASSWORD dans .streamlit/secrets.toml.")
     st.stop()
 
-# Interface de connexion
 st.markdown("## 🔒 Accès sécurisé")
 password_input = st.text_input("Entrez le mot de passe pour accéder à l'application :", type="password")
 
@@ -57,12 +52,12 @@ st.success("✅ Accès autorisé. Bienvenue dans l'application !")
 # 🎯 Paramètres par défaut
 # =========================
 DEFAULT_EMISSION_FACTORS = {
-    "🚛 Routier 🚛": 0.100,  # kg CO2e / t.km
+    "🚛 Routier 🚛": 0.100,
     "✈️ Aérien ✈️": 0.500,
     "🛢️ Maritime 🛢️": 0.015,
     "🚂 Ferroviaire 🚂": 0.030,
 }
-MAX_SEGMENTS = 10  # limite haute
+MAX_SEGMENTS = 10
 
 st.set_page_config(
     page_title="Calculateur CO₂ multimodal - NILEY EXPERTS",
@@ -71,7 +66,7 @@ st.set_page_config(
 )
 
 # =========================
-# 🎨 Styles globaux (fond transparent + boutons carrés)
+# 🎨 Styles globaux
 # =========================
 st.markdown("""
     <style>
@@ -155,41 +150,40 @@ def osrm_route(coord1, coord2, base_url: str, overview: str = "full"):
     coords = geom.get("coordinates", [])
     return {"distance_km": distance_km, "coords": coords}
 
-def reset_form(max_segments: int = MAX_SEGMENTS):
-    # Conservé pour usage futur (non appelé, bouton retiré)
-    widget_keys = []
-    for i in range(max_segments):
-        widget_keys.extend([f"origin_input_{i}", f"origin_select_{i}", f"dest_input_{i}", f"dest_select_{i}", f"mode_{i}", f"weight_{i}"])
-    for k in widget_keys + ["segments", "osrm_base_url", "weight_0", "dossier_transport"]:
-        if k in st.session_state:
-            del st.session_state[k]
-    st.cache_data.clear()
-    st.rerun()
+def _normalize_no_diacritics(s: str) -> str:
+    return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn').lower()
+
+def mode_to_category(mode_str: str) -> str:
+    s = _normalize_no_diacritics(mode_str)
+    if "routier" in s: return "routier"
+    if "aerien" in s or "aérien" in s: return "aerien"
+    if "maritime" in s or "mer" in s or "bateau" in s: return "maritime"
+    if "ferroviaire" in s or "train" in s: return "ferroviaire"
+    if "road" in s or "truck" in s: return "routier"
+    if "air" in s or "plane" in s: return "aerien"
+    if "sea" in s or "ship" in s: return "maritime"
+    if "rail" in s: return "ferroviaire"
+    return "routier"
+
+ICON_URLS = {
+    "routier": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/truck.png",
+    "aerien": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/plane.png",
+    "maritime": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/ship.png",
+    "ferroviaire": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/train.png",
+}
+
+def midpoint_on_path(route_coords, lon_o, lat_o, lon_d, lat_d):
+    if route_coords and isinstance(route_coords, list) and len(route_coords) >= 2:
+        idx = len(route_coords) // 2
+        pt = route_coords[idx]
+        return [float(pt[0]), float(pt[1])]
+    return [(lon_o + lon_d) / 2.0, (lat_o + lat_d) / 2.0]
 
 # =========================
 # 📄 Fonction de génération PDF
 # =========================
 def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, rows):
-    """
-    Génère un rapport PDF au format A4 paysage avec carte simplifiée
-    
-    Args:
-        df: DataFrame avec les résultats
-        dossier_val: Numéro de dossier transport
-        total_distance: Distance totale en km
-        total_emissions: Émissions totales en kg CO2
-        unit: Unité de poids (kg ou tonnes)
-        rows: Liste des lignes de calcul avec coordonnées
-    
-    Returns:
-        BytesIO: Buffer contenant le PDF
-    """
     buffer = BytesIO()
-    
-    # Format A4 paysage
-    page_width, page_height = landscape(A4)
-    
-    # Création du document - marges réduites pour tenir sur 1 page
     doc = SimpleDocTemplate(
         buffer,
         pagesize=landscape(A4),
@@ -199,7 +193,6 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
         bottomMargin=1*cm
     )
     
-    # Styles - tailles réduites pour tout tenir sur 1 page
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
         'CustomTitle',
@@ -207,7 +200,7 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
         fontSize=14,
         textColor=colors.HexColor('#1f4788'),
         spaceAfter=6,
-        alignment=1  # Centré
+        alignment=1
     )
     
     heading_style = ParagraphStyle(
@@ -222,13 +215,11 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
     normal_style = styles['Normal']
     normal_style.fontSize = 8
     
-    # Contenu du document
     story = []
     
-    # En-tête avec logo - plus petit
+    # Logo
     try:
-        logo_url = LOGO_URL
-        response = requests.get(logo_url, timeout=5)
+        response = requests.get(LOGO_URL, timeout=5)
         if response.status_code == 200:
             logo_img = PILImage.open(io.BytesIO(response.content))
             logo_buffer = io.BytesIO()
@@ -237,13 +228,12 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
             logo = RLImage(logo_buffer, width=3*cm, height=1.5*cm)
             story.append(logo)
     except:
-        pass  # Si le logo ne peut pas être chargé, on continue sans
+        pass
     
-    # Titre
     story.append(Paragraph("RAPPORT D'EMPREINTE CARBONE MULTIMODAL", title_style))
     story.append(Spacer(1, 0.2*cm))
     
-    # Informations générales et résumé en 2 colonnes
+    # Informations générales
     info_summary_data = [
         ["N° dossier Transport:", dossier_val, "Distance totale:", f"{total_distance:.1f} km"],
         ["Date du rapport:", datetime.now().strftime("%d/%m/%Y %H:%M"), "Emissions totales:", f"{total_emissions:.2f} kg CO2"],
@@ -258,8 +248,6 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
         ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
-        ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
-        ('FONTNAME', (3, 0), (3, -1), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, -1), 8),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
         ('TOPPADDING', (0, 0), (-1, -1), 4),
@@ -268,29 +256,22 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
     story.append(info_summary_table)
     story.append(Spacer(1, 0.3*cm))
     
-    # Création de la carte simplifiée avec matplotlib
+    # Carte
     try:
-        import matplotlib.pyplot as plt
-        import matplotlib.patches as mpatches
-        from matplotlib.collections import LineCollection
-        
         fig, ax = plt.subplots(figsize=(8, 3), facecolor='white')
         
-        # Calcul des limites
         all_lats = [r["lat_o"] for r in rows] + [r["lat_d"] for r in rows]
         all_lons = [r["lon_o"] for r in rows] + [r["lon_d"] for r in rows]
         
         min_lat, max_lat = min(all_lats), max(all_lats)
         min_lon, max_lon = min(all_lons), max(all_lons)
         
-        # Marges
         lat_margin = (max_lat - min_lat) * 0.15
         lon_margin = (max_lon - min_lon) * 0.15
         
         ax.set_xlim(min_lon - lon_margin, max_lon + lon_margin)
         ax.set_ylim(min_lat - lat_margin, max_lat + lat_margin)
         
-        # Couleurs par mode
         mode_colors = {
             "routier": "#0066CC",
             "aerien": "#CC0000",
@@ -298,24 +279,19 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
             "ferroviaire": "#9900CC"
         }
         
-        # Dessiner les segments
         for r in rows:
             cat = mode_to_category(r["Mode"])
             color = mode_colors.get(cat, "#666666")
             
-            # Ligne
             ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]], 
                    color=color, linewidth=2, alpha=0.7, zorder=1)
             
-            # Point origine (bleu)
             ax.scatter(r["lon_o"], r["lat_o"], c='#0066FF', s=80, 
                       edgecolors='white', linewidths=1.5, zorder=3, marker='o')
             
-            # Point destination (rouge)
             ax.scatter(r["lon_d"], r["lat_d"], c='#FF0000', s=80, 
                       edgecolors='white', linewidths=1.5, zorder=3, marker='s')
             
-            # Label segment
             mid_lon = (r["lon_o"] + r["lon_d"]) / 2
             mid_lat = (r["lat_o"] + r["lat_d"]) / 2
             ax.text(mid_lon, mid_lat, f"S{r['Segment']}", 
@@ -323,7 +299,6 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
                    bbox=dict(boxstyle='round,pad=0.3', facecolor='white', 
                             edgecolor=color, alpha=0.9), zorder=4)
         
-        # Légende
         legend_elements = [
             mpatches.Patch(color='#0066CC', label='Routier'),
             mpatches.Patch(color='#CC0000', label='Aerien'),
@@ -343,7 +318,6 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
         ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
         ax.tick_params(labelsize=7)
         
-        # Sauvegarder en image
         map_buffer = io.BytesIO()
         plt.tight_layout()
         plt.savefig(map_buffer, format='png', dpi=150, bbox_inches='tight', 
@@ -351,26 +325,57 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
         plt.close()
         map_buffer.seek(0)
         
-        # Ajouter au PDF
         map_image = RLImage(map_buffer, width=20*cm, height=7.5*cm)
         story.append(map_image)
         story.append(Spacer(1, 0.3*cm))
         
     except Exception as e:
-        # En cas d'erreur, on affiche juste un message
-        story.append(Paragraph(f"<i>Carte non disponible (erreur: {str(e)[:50]})</i>", normal_style))
+        story.append(Paragraph(f"<i>Carte non disponible</i>", normal_style))
         story.append(Spacer(1, 0.2*cm))
     
-    # Tableau détaillé des segments - tailles réduites
+    # Tableau
     story.append(Paragraph("Detail des segments", heading_style))
     
-    # Préparation des données du tableau
+    # Recherche des colonnes
+    facteur_col = None
+    emissions_col = None
+    poids_col = None
+    
+    for col in df.columns:
+        col_lower = col.lower()
+        if "facteur" in col_lower:
+            facteur_col = col
+        if "mission" in col_lower:
+            emissions_col = col
+        if "poids" in col_lower:
+            poids_col = col
+    
+    if not poids_col:
+        for col in df.columns:
+            if unit in col:
+                poids_col = col
+                break
+    
     table_data = [["Seg.", "Origine", "Destination", "Mode", "Dist.\n(km)", 
                    f"Poids\n({unit})", "Facteur\n(kg CO2/t.km)", "Emissions\n(kg CO2)"]]
     
     for _, row in df.iterrows():
-        # Nettoyer le mode des emojis
         mode_clean = row["Mode"].replace("🚛", "").replace("✈️", "").replace("🛢️", "").replace("🚂", "").strip()
+        
+        try:
+            facteur_val = f"{row[facteur_col]:.3f}" if facteur_col else "N/A"
+        except:
+            facteur_val = "N/A"
+            
+        try:
+            emissions_val = f"{row[emissions_col]:.2f}" if emissions_col else "N/A"
+        except:
+            emissions_val = "N/A"
+            
+        try:
+            poids_val = f"{row[poids_col]:.1f}" if poids_col else "N/A"
+        except:
+            poids_val = "N/A"
         
         table_data.append([
             str(row["Segment"]),
@@ -378,12 +383,11 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
             row["Destination"][:28] + "..." if len(row["Destination"]) > 28 else row["Destination"],
             mode_clean,
             f"{row['Distance (km)']:.1f}",
-            f"{row[f'Poids ({unit})']:.1f}",
-            f"{row['Facteur (kg CO2/t.km)']:.3f}",
-            f"{row['Emissions (kg CO2)']:.2f}"
+            poids_val,
+            facteur_val,
+            emissions_val
         ])
     
-    # Ligne de total
     table_data.append([
         "TOTAL",
         "",
@@ -395,12 +399,10 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
         f"{total_emissions:.2f}"
     ])
     
-    # Création du tableau - colonnes plus étroites
     col_widths = [1.2*cm, 4.5*cm, 4.5*cm, 3*cm, 1.8*cm, 1.8*cm, 2.2*cm, 2.2*cm]
     
     detail_table = Table(table_data, colWidths=col_widths, repeatRows=1)
     detail_table.setStyle(TableStyle([
-        # En-tête
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4788')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
@@ -408,8 +410,6 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
         ('FONTSIZE', (0, 0), (-1, 0), 7),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 4),
         ('TOPPADDING', (0, 0), (-1, 0), 4),
-        
-        # Corps du tableau
         ('BACKGROUND', (0, 1), (-1, -2), colors.white),
         ('TEXTCOLOR', (0, 1), (-1, -2), colors.black),
         ('ALIGN', (0, 1), (0, -1), 'CENTER'),
@@ -417,18 +417,12 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
         ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
         ('FONTSIZE', (0, 1), (-1, -2), 7),
         ('VALIGN', (0, 1), (-1, -1), 'MIDDLE'),
-        
-        # Ligne de total
         ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#fff4e6')),
         ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
         ('FONTSIZE', (0, -1), (-1, -1), 8),
-        
-        # Grille
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
         ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor('#1f4788')),
         ('LINEABOVE', (0, -1), (-1, -1), 2, colors.HexColor('#1f4788')),
-        
-        # Padding réduit
         ('BOTTOMPADDING', (0, 1), (-1, -1), 3),
         ('TOPPADDING', (0, 1), (-1, -1), 3),
         ('LEFTPADDING', (0, 0), (-1, -1), 3),
@@ -438,13 +432,11 @@ def generate_pdf_report(df, dossier_val, total_distance, total_emissions, unit, 
     story.append(detail_table)
     story.append(Spacer(1, 0.3*cm))
     
-    # Pied de page
     story.append(Paragraph(
         f"<i>Document genere le {datetime.now().strftime('%d/%m/%Y a %H:%M')} par le Calculateur CO2 multimodal - NILEY EXPERTS</i>",
         ParagraphStyle('Footer', parent=normal_style, fontSize=7, textColor=colors.grey, alignment=1)
     ))
     
-    # Construction du PDF
     doc.build(story)
     buffer.seek(0)
     
@@ -467,7 +459,7 @@ st.markdown("## Calculateur d'empreinte carbone multimodal - NILEY EXPERTS")
 st.markdown("Ajoutez plusieurs segments (origine -> destination), choisissez le mode et le poids. Le mode Routier utilise OSRM (distance réelle + tracé).")
 
 # =========================
-# 🗂️ N° dossier (obligatoire) – centré
+# 🗂️ N° dossier (obligatoire)
 # =========================
 st.markdown("### Informations générales")
 dossier_transport = st.text_input(
@@ -488,7 +480,7 @@ with st.expander("⚙️ Paramètres, facteurs d'émission & OSRM"):
     factors = {}
     for mode_name, val in DEFAULT_EMISSION_FACTORS.items():
         factors[mode_name] = st.number_input(
-            f"Facteur {mode_name} (kg CO₂e / tonne.km)",
+            f"Facteur {mode_name} (kg CO2e / tonne.km)",
             min_value=0.0,
             value=float(val),
             step=0.001,
@@ -646,36 +638,6 @@ def _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80
     zoom = max(1.0, min(15.0, min(zoom_x, zoom_y)))
     return pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=float(zoom), bearing=0, pitch=0)
 
-def _normalize_no_diacritics(s: str) -> str:
-    return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn').lower()
-
-def mode_to_category(mode_str: str) -> str:
-    s = _normalize_no_diacritics(mode_str)
-    if "routier" in s: return "routier"
-    if "aerien" in s or "aérien" in s: return "aerien"
-    if "maritime" in s or "mer" in s or "bateau" in s: return "maritime"
-    if "ferroviaire" in s or "train" in s: return "ferroviaire"
-    if "road" in s or "truck" in s: return "routier"
-    if "air" in s or "plane" in s: return "aerien"
-    if "sea" in s or "ship" in s: return "maritime"
-    if "rail" in s: return "ferroviaire"
-    return "routier"
-
-ICON_URLS = {
-    "routier": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/truck.png",
-    "aerien": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/plane.png",
-    "maritime": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/ship.png",
-    "ferroviaire": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/train.png",
-}
-
-def midpoint_on_path(route_coords, lon_o, lat_o, lon_d, lat_d):
-    if route_coords and isinstance(route_coords, list) and len(route_coords) >= 2:
-        idx = len(route_coords) // 2
-        pt = route_coords[idx]
-        return [float(pt[0]), float(pt[1])]
-    return [(lon_o + lon_d) / 2.0, (lat_o + lat_d) / 2.0]
-
-# --- Validation d'entrée (N° dossier obligatoire) ---
 can_calculate = bool(st.session_state.get("dossier_transport"))
 if not can_calculate:
     st.warning("Veuillez renseigner le **N° dossier Transport** avant de lancer le calcul.")
@@ -724,21 +686,21 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 "Segment": idx, "Origine": seg["origin"], "Destination": seg["destination"],
                 "Mode": seg["mode"], "Distance (km)": round(distance_km, 1),
                 f"Poids ({unit})": round(seg["weight"], 3 if unit=="tonnes" else 1),
-                "Facteur (kg CO₂e/t.km)": factor, "Émissions (kg CO₂e)": round(emissions, 2),
+                "Facteur (kg CO2e/t.km)": factor, "Emissions (kg CO2e)": round(emissions, 2),
                 "lat_o": coord1[0], "lon_o": coord1[1], "lat_d": coord2[0], "lon_d": coord2[1],
                 "route_coords": route_coords,
             })
 
     if rows:
         df = pd.DataFrame(rows)
-        st.success(f"✅ {len(rows)} segment(s) calculé(s) • Distance totale : {total_distance:.1f} km • Émissions totales : {total_emissions:.2f} kg CO₂e")
+        st.success(f"✅ {len(rows)} segment(s) calculé(s) • Distance totale : {total_distance:.1f} km • Émissions totales : {total_emissions:.2f} kg CO2e")
 
         dossier_val = st.session_state.get("dossier_transport", "")
         if dossier_val:
             st.info(f"**N° dossier Transport :** {dossier_val}")
 
         st.dataframe(
-            df[["Segment", "Origine", "Destination", "Mode", "Distance (km)", f"Poids ({unit})", "Facteur (kg CO₂e/t.km)", "Émissions (kg CO₂e)"]],
+            df[["Segment", "Origine", "Destination", "Mode", "Distance (km)", f"Poids ({unit})", "Facteur (kg CO2e/t.km)", "Emissions (kg CO2e)"]],
             use_container_width=True
         )
 
@@ -835,7 +797,6 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             )
         
         with col2:
-            # Génération du rapport PDF
             try:
                 with st.spinner("Génération du PDF en cours..."):
                     pdf_buffer = generate_pdf_report(
@@ -857,6 +818,5 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 st.error(f"Erreur lors de la génération du PDF : {e}")
                 import traceback
                 st.code(traceback.format_exc())
-                st.info("Le téléchargement CSV reste disponible ci-dessus.")
     else:
         st.info("Aucun segment valide n'a été calculé. Vérifiez les entrées ou les sélections.")
