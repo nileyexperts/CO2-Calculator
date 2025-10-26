@@ -31,6 +31,7 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
+
 # Matplotlib pour rendu carte PDF
 import matplotlib
 matplotlib.use('Agg')
@@ -48,22 +49,6 @@ st.set_page_config(page_title="Calculateur CO2 multimodal - NILEY EXPERTS", page
 # Fond & style
 st.markdown(
     """
-    <style>
-      .stApp {background-color: #DFEDF5;}
-      section[data-testid="stSidebar"] {background-color: #DFEDF5;}
-      /* Cadres segments : bordure #002E49 + arrondi + espacement */
-      div:where([data-testid="stContainer"])[style*="border: 1px"] {
-        border-color: #002E49 !important;
-        border-radius: 12px !important;
-        margin-bottom: 0.6rem;
-      }
-      /* Bouton discret en bas */
-      .add-seg .stButton>button {
-        background-color: white; color: #002E49; border: 1px solid #002E49;
-        padding: .3rem .6rem; border-radius: 999px; font-size: 0.9rem;
-      }
-      .add-seg .stButton>button:hover { background-color: #002E49; color: white; }
-    </style>
     """,
     unsafe_allow_html=True
 )
@@ -73,8 +58,12 @@ LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/N
 # =========================
 # Apparence PDF
 # =========================
-PDF_THEME_DEFAULT = "terrain"  # "voyager" | "minimal" | "terrain"
-NE_SCALE_DEFAULT = "50m"       # "110m" | "50m" | "10m"
+PDF_THEME_DEFAULT = "terrain"  # "voyager" \
+# "minimal" \
+# "terrain"
+NE_SCALE_DEFAULT = "50m"  # "110m" \
+# "50m" \
+# "10m"
 
 # Options de basemap PDF
 PDF_BASEMAP_LABELS = [
@@ -102,7 +91,7 @@ DEFAULT_EMISSION_FACTORS = {
 MAX_SEGMENTS = 50
 ICON_URLS = {
     "routier": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/truck.png",
-    "aerien":  "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/plane.png",
+    "aerien": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/plane.png",
     "maritime":"https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/ship.png",
     "ferroviaire":"https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/train.png",
 }
@@ -173,10 +162,14 @@ def _normalize_no_diacritics(s: str) -> str:
 
 def mode_to_category(mode_str: str) -> str:
     s = _normalize_no_diacritics(mode_str)
-    if "routier" in s or "road" in s or "truck" in s: return "routier"
-    if "aerien" in s or "air" in s or "plane" in s:   return "aerien"
-    if any(k in s for k in ["maritime","mer","bateau","sea","ship"]): return "maritime"
-    if "ferroviaire" in s or "rail" in s or "train" in s: return "ferroviaire"
+    if "routier" in s or "road" in s or "truck" in s:
+        return "routier"
+    if "aerien" in s or "air" in s or "plane" in s:
+        return "aerien"
+    if any(k in s for k in ["maritime","mer","bateau","sea","ship"]):
+        return "maritime"
+    if "ferroviaire" in s or "rail" in s or "train" in s:
+        return "ferroviaire"
     return "routier"
 
 # =========================
@@ -238,23 +231,21 @@ def _pdf_add_mode_icon(ax, lon, lat, cat_key, size_px, transform=None):
 # =========================
 def generate_pdf_report(
     df, dossier_val, total_distance, total_emissions, unit, rows,
-    pdf_basemap_choice_label,
-    ne_scale='50m',
-    pdf_theme='terrain',
-    pdf_icon_size_px=28
+    pdf_basemap_choice_label, ne_scale='50m', pdf_theme='terrain', pdf_icon_size_px=28
 ):
-    """
-    pdf_basemap_choice_label ∈ PDF_BASEMAP_LABELS (auto, stamen, osm, naturalearth)
-    """
+    """ pdf_basemap_choice_label ∈ PDF_BASEMAP_LABELS (auto, stamen, osm, naturalearth) """
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4),
-                            rightMargin=1*cm, leftMargin=1*cm, topMargin=1*cm, bottomMargin=1*cm)
+    doc = SimpleDocTemplate(
+        buffer, pagesize=landscape(A4),
+        rightMargin=1*cm, leftMargin=1*cm, topMargin=1*cm, bottomMargin=1*cm
+    )
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=14,
                                  textColor=colors.HexColor('#1f4788'), spaceAfter=6, alignment=1)
     heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'], fontSize=11,
                                    textColor=colors.HexColor('#2c5aa0'), spaceAfter=4, spaceBefore=6)
     normal_style = styles['Normal']; normal_style.fontSize = 8
+
     story = []
 
     # Logo
@@ -267,7 +258,9 @@ def generate_pdf_report(
             logo = RLImage(lb, width=3*cm, height=1.5*cm)
     except Exception:
         pass
-    if logo: story.append(logo)
+    if logo:
+        story.append(logo)
+
     story.append(Paragraph("RAPPORT D'EMPREINTE CARBONE MULTIMODAL", title_style))
     story.append(Spacer(1, 0.2*cm))
 
@@ -275,7 +268,8 @@ def generate_pdf_report(
     info_summary_data = [
         ["N° dossier Transport:", dossier_val, "Distance totale:", f"{total_distance:.1f} km"],
         ["Date du rapport:", datetime.now().strftime("%d/%m/%Y %H:%M"), "Emissions totales:", f"{total_emissions:.2f} kg CO2e"],
-        ["Nombre de segments:", str(len(rows)), "Emissions moyennes:", f"{(total_emissions/total_distance):.3f} kg CO2e/km" if total_distance>0 else "N/A"],
+        ["Nombre de segments:", str(len(rows)), "Emissions moyennes:",
+         f"{(total_emissions/total_distance):.3f} kg CO2e/km" if total_distance>0 else "N/A"],
     ]
     info_summary_table = Table(info_summary_data, colWidths=[4.5*cm, 5.5*cm, 4.5*cm, 5.5*cm])
     info_summary_table.setStyle(TableStyle([
@@ -288,21 +282,21 @@ def generate_pdf_report(
     story.append(info_summary_table)
     story.append(Spacer(1, 0.3*cm))
 
-    # -----------------
-    # Carte PDF détaillée
-    # -----------------
+    # ----------- Carte PDF détaillée -----------
     try:
         all_lats = [r["lat_o"] for r in rows] + [r["lat_d"] for r in rows]
         all_lons = [r["lon_o"] for r in rows] + [r["lon_d"] for r in rows]
         min_lon, max_lon, min_lat, max_lat = _compute_extent_from_coords(all_lats, all_lons)
+
         target_width_cm, target_height_cm = 20.0, 7.5
         dpi = 150
         fig_w_in = target_width_cm / 2.54
         fig_h_in = target_height_cm / 2.54
-        min_lon, max_lon, min_lat, max_lat = _fit_extent_to_aspect(min_lon, max_lon, min_lat, max_lat,
-                                                                   target_aspect_w_over_h=target_width_cm/target_height_cm)
-        map_buffer = None
+        min_lon, max_lon, min_lat, max_lat = _fit_extent_to_aspect(
+            min_lon, max_lon, min_lat, max_lat, target_aspect_w_over_h=target_width_cm/target_height_cm
+        )
 
+        map_buffer = None
         use_cartopy = True
         try:
             import cartopy.crs as ccrs
@@ -310,7 +304,6 @@ def generate_pdf_report(
             from cartopy.io.img_tiles import Stamen, OSM
         except Exception:
             use_cartopy = False
-
         mode_label = pdf_basemap_choice_label
         mode = PDF_BASEMAP_MODES.get(mode_label, "auto")
 
@@ -318,16 +311,20 @@ def generate_pdf_report(
             # éléments vectoriels supplémentaires (côtes, frontières, rivières) par-dessus un raster
             try:
                 ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), edgecolor='#555', linewidth=0.4, zorder=2)
-            except Exception: pass
+            except Exception:
+                pass
             try:
                 ax.add_feature(cfeature.BORDERS.with_scale(ne_scale), edgecolor='#666', linewidth=0.4, zorder=2)
-            except Exception: pass
+            except Exception:
+                pass
             try:
                 ax.add_feature(cfeature.LAKES.with_scale(ne_scale), facecolor='#87B9FF', edgecolor='#6FA8FF', linewidth=0.2, zorder=1)
-            except Exception: pass
+            except Exception:
+                pass
             try:
                 ax.add_feature(cfeature.RIVERS.with_scale(ne_scale), edgecolor='#6FA8FF', linewidth=0.25, zorder=1)
-            except Exception: pass
+            except Exception:
+                pass
 
         if use_cartopy:
             # Choix fond raster si possible
@@ -339,7 +336,7 @@ def generate_pdf_report(
                     tiler = Stamen('terrain-background')  # détaillé + relief
                     ax = plt.axes(projection=tiler.crs)
                     ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
-                    # niveau de zoom empirique : plus l'emprise est large, plus le zoom est faible
+                    # niveau de zoom empirique
                     zoom = 6 if (max_lon-min_lon < 5 and max_lat-min_lat < 3) else (5 if (max_lon-min_lon < 15) else 4)
                     ax.add_image(tiler, zoom)
                     raster_ok = True
@@ -363,11 +360,9 @@ def generate_pdf_report(
                 }
                 ax.add_feature(cfeature.OCEAN.with_scale(ne_scale), facecolor=colors_cfg['ocean'], edgecolor='none', zorder=0)
                 ax.add_feature(cfeature.LAND.with_scale(ne_scale), facecolor=colors_cfg['land'], edgecolor='none', zorder=0)
-                ax.add_feature(cfeature.LAKES.with_scale(ne_scale), facecolor=colors_cfg['lakes_fc'],
-                               edgecolor=colors_cfg['lakes_ec'], linewidth=0.3, zorder=1)
+                ax.add_feature(cfeature.LAKES.with_scale(ne_scale), facecolor=colors_cfg['lakes_fc'], edgecolor=colors_cfg['lakes_ec'], linewidth=0.3, zorder=1)
                 ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), edgecolor=colors_cfg['coast'], linewidth=0.4, zorder=2)
                 ax.add_feature(cfeature.BORDERS.with_scale(ne_scale), edgecolor=colors_cfg['borders0'], linewidth=0.5, zorder=2)
-
                 ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
             else:
                 _draw_overlays(ax, ccrs)
@@ -377,7 +372,8 @@ def generate_pdf_report(
             for r in rows:
                 cat = mode_to_category(r["Mode"]); color = mode_colors.get(cat, "#666666")
                 ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]],
-                        color=color, linewidth=2.0, alpha=0.9, transform=ccrs.PlateCarree(), zorder=3)
+                        color=color, linewidth=2.0, alpha=0.9,
+                        transform=ccrs.PlateCarree(), zorder=3)
                 ax.scatter([r["lon_o"]], [r["lat_o"]], s=22, c="#0A84FF", edgecolors='white', linewidths=0.8,
                            transform=ccrs.PlateCarree(), zorder=4)
                 ax.scatter([r["lon_d"]], [r["lat_d"]], s=22, c="#FF3B30", edgecolors='white', linewidths=0.8,
@@ -393,15 +389,17 @@ def generate_pdf_report(
             plt.close(fig)
             map_buffer.seek(0)
         else:
-            # Cartopy indisponible → petit fallback simple (grille) pour ne pas casser la génération
+            # Cartopy indisponible → fallback simple (grille)
             fig, ax = plt.subplots(figsize=(fig_w_in, fig_h_in), dpi=dpi)
             ax.set_facecolor('#F7F8FA')
             ax.set_xlim(min_lon, max_lon); ax.set_ylim(min_lat, max_lat)
             # grille soft
             lat_step = (max_lat-min_lat)/6.0 if (max_lat-min_lat)>0 else 1
             lon_step = (max_lon-min_lon)/8.0 if (max_lon-min_lon)>0 else 1
-            for y in np.arange(min_lat, max_lat+1e-9, lat_step): ax.plot([min_lon, max_lon],[y,y], color='#E6E9EF', lw=0.6)
-            for x in np.arange(min_lon, max_lon+1e-9, lon_step): ax.plot([x,x],[min_lat,max_lat], color='#E6E9EF', lw=0.6)
+            for y in np.arange(min_lat, max_lat+1e-9, lat_step):
+                ax.plot([min_lon, max_lon],[y,y], color='#E6E9EF', lw=0.6)
+            for x in np.arange(min_lon, max_lon+1e-9, lon_step):
+                ax.plot([x,x],[min_lat,max_lat], color='#E6E9EF', lw=0.6)
             mode_colors = {"routier":"#0066CC","aerien":"#CC0000","maritime":"#009900","ferroviaire":"#9900CC"}
             for r in rows:
                 cat = mode_to_category(r["Mode"]); color = mode_colors.get(cat, "#666666")
@@ -421,12 +419,18 @@ def generate_pdf_report(
 
     # Détail des segments
     story.append(Paragraph("Détail des segments", heading_style))
-    table_data = [["Seg.", "Origine", "Destination", "Mode", "Dist.\n(km)", f"Poids\n({unit})", "Facteur\n(kg CO2e/t.km)", "Emissions\n(kg CO2e)"]]
+    table_data = [["Seg.", "Origine", "Destination", "Mode", "Dist.\n(km)", f"Poids\n({unit})",
+                   "Facteur\n(kg CO2e/t.km)", "Emissions\n(kg CO2e)"]]
     for _, row in df.iterrows():
         table_data.append([
-            str(row["Segment"]), str(row["Origine"]), str(row["Destination"]), row["Mode"],
-            f"{row['Distance (km)']:.1f}", f"{row[f'Poids ({unit})']}",
-            f"{row['Facteur (kg CO2e/t.km)']:.3f}", f"{row['Emissions (kg CO2e)']:.2f}"
+            str(row["Segment"]),
+            str(row["Origine"]),
+            str(row["Destination"]),
+            row["Mode"],
+            f"{row['Distance (km)']:.1f}",
+            f"{row[f'Poids ({unit})']}",
+            f"{row['Facteur (kg CO2e/t.km)']:.3f}",
+            f"{row['Emissions (kg CO2e)']:.2f}"
         ])
     table_data.append(["TOTAL", "", "", "", f"{total_distance:.1f}", "", "", f"{total_emissions:.2f}"])
     col_widths = [1.2*cm, 4.5*cm, 4.5*cm, 3*cm, 1.8*cm, 1.8*cm, 2.2*cm, 2.2*cm]
@@ -456,17 +460,23 @@ PASSWORD_KEY = "APP_PASSWORD"
 if PASSWORD_KEY not in st.secrets:
     st.error("Mot de passe non configuré. Ajoutez APP_PASSWORD dans .streamlit/secrets.toml.")
     st.stop()
-if "auth_ok" not in st.session_state: st.session_state.auth_ok = False
+
+if "auth_ok" not in st.session_state:
+    st.session_state.auth_ok = False
+
 if not st.session_state.auth_ok:
     st.markdown("## Accès sécurisé")
     with st.form("login_form", clear_on_submit=True):
-        password_input = st.text_input("Entrez le mot de passe pour accéder à l'application :", type="password", placeholder="Votre mot de passe", key="__pwd__")
+        password_input = st.text_input("Entrez le mot de passe pour accéder à l'application :", type="password",
+                                       placeholder="Votre mot de passe", key="__pwd__")
         submitted = st.form_submit_button("Valider")
         if submitted:
             if password_input == st.secrets[PASSWORD_KEY]:
                 st.session_state.auth_ok = True
-                try: del st.session_state["__pwd__"]
-                except KeyError: pass
+                try:
+                    del st.session_state["__pwd__"]
+                except KeyError:
+                    pass
                 st.rerun()
             else:
                 st.error("Mot de passe incorrect.")
@@ -506,12 +516,14 @@ def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
         df = df[df["type"].isin(["large_airport","medium_airport"])].copy()
     coord_series = df["coordinates"].astype(str).str.replace('"','').str.strip()
     parts = coord_series.str.split(",", n=1, expand=True)
-    if parts.shape[1] < 2: parts = pd.DataFrame({0:coord_series, 1:None})
+    if parts.shape[1] < 2:
+        parts = pd.DataFrame({0:coord_series, 1:None})
     df["lat"] = pd.to_numeric(parts[0].astype(str).str.strip(), errors="coerce")
     df["lon"] = pd.to_numeric(parts[1].astype(str).str.strip(), errors="coerce")
     df = df.dropna(subset=["lat","lon"]).copy()
     for col in ["municipality","iso_country","name"]:
-        if col not in df.columns: df[col] = ""
+        if col not in df.columns:
+            df[col] = ""
     for col in ["name","municipality","iso_country"]:
         df[col] = df[col].astype(str).replace({"nan":""}).fillna("").str.strip()
     def _label(r):
@@ -520,30 +532,35 @@ def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
         return f"{base} {extra}" if extra else base
     df["label"] = df.apply(_label, axis=1)
     cols = ["iata_code","name","municipality","iso_country","lat","lon","label"]
-    if "type" in df.columns: cols.append("type")
+    if "type" in df.columns:
+        cols.append("type")
     return df[cols]
 
 @st.cache_data(show_spinner=False, ttl=24*60*60)
 def search_airports(query: str, limit: int = 10) -> pd.DataFrame:
     df = load_airports_iata()
     q = (query or "").strip()
-    if df.empty: return df
-    if not q: return df.head(limit)
+    if df.empty:
+        return df
+    if not q:
+        return df.head(limit)
     if len(q) <= 3:
         res = df[df["iata_code"].str.startswith(q.upper())]
         if res.empty:
-            res = df[df["name"].str.lower().str.contains(q.lower()) | df["municipality"].astype(str).str.lower().str.contains(q.lower())]
+            res = df[
+                df["name"].str.lower().str.contains(q.lower())
+                | df["municipality"].astype(str).str.lower().str.contains(q.lower())
+            ]
     else:
-        res = df[df["name"].str.lower().str.contains(q.lower()) | df["municipality"].astype(str).str.lower().str.contains(q.lower())]
+        res = df[
+            df["name"].str.lower().str.contains(q.lower())
+            | df["municipality"].astype(str).str.lower().str.contains(q.lower())
+        ]
     return res.head(limit)
 
 # =========================
 # Champ unifié (Adresse/Ville/Pays ou IATA)
 # =========================
-# --- AVANT ---
-# def unified_location_input(side_key: str, seg_index: int, label_prefix: str):
-
-# --- APRÈS ---
 def unified_location_input(side_key: str, seg_index: int, label_prefix: str, show_airports: bool = True):
     """
     Text input unique + selectbox de résultats combinés :
@@ -608,6 +625,7 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str, sho
     st.session_state[iata_key] = sel_iata
 
     return {"coord": coord, "display": display, "iata": sel_iata, "query": query_val, "choice": sel}
+
 # =========================
 # Saisie des segments (UI)
 # =========================
@@ -616,7 +634,7 @@ def _default_segment(mode=None, weight=1000.0):
         mode = list(DEFAULT_EMISSION_FACTORS.keys())[0]
     return {
         "origin": {"query":"", "display":"", "iata":"", "coord":None},
-        "dest":   {"query":"", "display":"", "iata":"", "coord":None},
+        "dest": {"query":"", "display":"", "iata":"", "coord":None},
         "mode": mode,
         "weight": weight,
     }
@@ -634,8 +652,8 @@ for i in range(1, len(st.session_state.segments)):
         cur["origin"]["query"] = prev["dest"]["display"]
 
 st.subheader("Saisie des segments")
-
 segments_out = []
+
 for i in range(len(st.session_state.segments)):
     with st.container(border=True):
         # En-tête : Titre + Mode à droite
@@ -652,37 +670,58 @@ for i in range(len(st.session_state.segments)):
             st.session_state.segments[i]["mode"] = mode
 
         c1, c2 = st.columns(2)
+
+        # IMPORTANT : blocs with bien indentés
         with c1:
-    st.markdown("**Origine**")
-    # Proposer les aéroports UNIQUEMENT si mode Aérien pour l'Origine
-    o = unified_location_input("origin", i, "Origine", show_airports=("aerien" in _normalize_no_diacritics(mode)))
-with c2:
-    st.markdown("**Destination**")
-    # Jamais d'aéroports pour la Destination (selon votre demande)
-    d = unified_location_input("dest", i, "Destination", show_airports=False)
+            st.markdown("**Origine**")
+            # Proposer les aéroports UNIQUEMENT si mode Aérien pour l'Origine
+            o = unified_location_input(
+                "origin", i, "Origine",
+                show_airports=("aerien" in _normalize_no_diacritics(mode))
+            )
+
+        with c2:
+            st.markdown("**Destination**")
+            # Jamais d'aéroports pour la Destination (selon la demande)
+            d = unified_location_input(
+                "dest", i, "Destination",
+                show_airports=False
+            )
 
         # Poids (mode global "envoi unique")
         if "weight_0" not in st.session_state:
             st.session_state["weight_0"] = st.session_state.segments[0]["weight"]
         if i == 0:
-            weight_val = st.number_input("Poids transporté (appliqué à tous les segments)",
-                                         min_value=0.001, value=float(st.session_state["weight_0"]),
-                                         step=100.0, key="weight_0")
+            weight_val = st.number_input(
+                "Poids transporté (appliqué à tous les segments)",
+                min_value=0.001,
+                value=float(st.session_state["weight_0"]),
+                step=100.0,
+                key="weight_0"
+            )
         else:
             weight_val = st.session_state["weight_0"]
         st.session_state.segments[i]["weight"] = weight_val
+
         # Persist & sortie
-        st.session_state.segments[i]["origin"] = {"query": o["query"], "display": o["display"], "iata": o["iata"], "coord": o["coord"]}
-        st.session_state.segments[i]["dest"]   = {"query": d["query"], "display": d["display"], "iata": d["iata"], "coord": d["coord"]}
-
+        st.session_state.segments[i]["origin"] = {
+            "query": o["query"], "display": o["display"], "iata": o["iata"], "coord": o["coord"]
+        }
+        st.session_state.segments[i]["dest"] = {
+            "query": d["query"], "display": d["display"], "iata": d["iata"], "coord": d["coord"]
+        }
         segments_out.append({
-            "origin_display": o["display"], "destination_display": d["display"],
-            "origin_iata": o["iata"], "dest_iata": d["iata"],
-            "mode": mode, "weight": weight_val,
-            "coord_o": o["coord"], "coord_d": d["coord"],
-            "origin": o["display"], "destination": d["display"],
+            "origin_display": o["display"],
+            "destination_display": d["display"],
+            "origin_iata": o["iata"],
+            "dest_iata": d["iata"],
+            "mode": mode,
+            "weight": weight_val,
+            "coord_o": o["coord"],
+            "coord_d": d["coord"],
+            "origin": o["display"],
+            "destination": d["display"],
         })
-
 
 # =========================
 # ➕ Bouton discret "Ajouter un segment" (bas)
@@ -698,10 +737,10 @@ def add_segment_end():
     st.session_state.segments.append(new_seg)
 
 with st.container():
-    st.markdown('<div class="add-seg">', unsafe_allow_html=True)
+    st.markdown('\n', unsafe_allow_html=True)
     if st.button("➕ Ajouter un segment", use_container_width=False, key="btn_add_bottom"):
         add_segment_end(); st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('\n', unsafe_allow_html=True)
 
 # =========================
 # Carte interactive — contrôles
@@ -714,11 +753,11 @@ with col_map1:
         options=["Carto Voyager", "Carto Positron (clair)", "Carto Dark Matter (sombre)"],
         index=0
     )
-    MAP_STYLES = {
-        "Carto Voyager": "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
-        "Carto Positron (clair)": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
-        "Carto Dark Matter (sombre)": "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-    }
+MAP_STYLES = {
+    "Carto Voyager": "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+    "Carto Positron (clair)": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+    "Carto Dark Matter (sombre)": "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+}
 with col_map2:
     focus_choices = ["— Tous —"] + [f"Segment {i+1}" for i in range(len(segments_out))]
     focus_sel = st.selectbox("Focus segment", options=focus_choices, index=0)
@@ -734,6 +773,7 @@ dossier_transport = st.text_input("N° dossier Transport (obligatoire) *",
                                   placeholder="ex : TR-2025-001")
 st.session_state["dossier_transport"] = (dossier_transport or "").strip()
 unit = "kg"
+
 factors = {
     "Routier": float(DEFAULT_EMISSION_FACTORS["Routier"]),
     "Aerien": float(DEFAULT_EMISSION_FACTORS["Aerien"]),
@@ -750,10 +790,12 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
     with st.spinner("Calcul en cours..."):
         for idx, seg in enumerate(segments_out, start=1):
             if not seg["origin_display"] or not seg["destination_display"]:
-                st.warning(f"Segment {idx} : origine/destination manquante(s)."); continue
+                st.warning(f"Segment {idx} : origine/destination manquante(s).")
+                continue
             coord1, coord2 = seg["coord_o"], seg["coord_d"]
             if not coord1 or not coord2:
-                st.error(f"Segment {idx} : lieu introuvable ou ambigu."); continue
+                st.error(f"Segment {idx} : lieu introuvable ou ambigu.")
+                continue
 
             route_coords = None
             if "routier" in _normalize_no_diacritics(seg["mode"]):
@@ -773,8 +815,10 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             total_distance += distance_km; total_emissions += emissions
             rows.append({
                 "Segment": idx,
-                "Origine": seg["origin_display"], "Destination": seg["destination_display"],
-                "Mode": seg["mode"], "Distance (km)": round(distance_km, 1),
+                "Origine": seg["origin_display"],
+                "Destination": seg["destination_display"],
+                "Mode": seg["mode"],
+                "Distance (km)": round(distance_km, 1),
                 f"Poids ({unit})": round(seg["weight"], 1),
                 "Facteur (kg CO2e/t.km)": factor,
                 "Emissions (kg CO2e)": round(emissions, 2),
@@ -795,12 +839,23 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
 
         # Carte interactive pydeck
         # - Routes OSRM (PathLayer)
-        route_paths = [{"path": r["route_coords"], "name": f"Segment {r['Segment']} - {r['Mode']}"}
-                       for r in rows if ("routier" in _normalize_no_diacritics(r["Mode"]) and r.get("route_coords"))]
+        route_paths = [
+            {"path": r["route_coords"], "name": f"Segment {r['Segment']} - {r['Mode']}"}
+            for r in rows
+            if ("routier" in _normalize_no_diacritics(r["Mode"]) and r.get("route_coords"))
+        ]
+
         layers = []
         if route_paths:
-            layers.append(pdk.Layer("PathLayer", data=route_paths, get_path="path",
-                                    get_color=[187,147,87,220], width_scale=1, width_min_pixels=4, pickable=True))
+            layers.append(pdk.Layer(
+                "PathLayer",
+                data=route_paths,
+                get_path="path",
+                get_color=[187,147,87,220],
+                width_scale=1,
+                width_min_pixels=4,
+                pickable=True
+            ))
 
         # - Lignes droites autres modes
         straight_lines = []
@@ -812,8 +867,15 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                     "name": f"Segment {r['Segment']} - {r['Mode']}",
                 })
         if straight_lines:
-            layers.append(pdk.Layer("LineLayer", data=straight_lines, get_source_position="from",
-                                    get_target_position="to", get_width=3, get_color=[120,120,120,160], pickable=True))
+            layers.append(pdk.Layer(
+                "LineLayer",
+                data=straight_lines,
+                get_source_position="from",
+                get_target_position="to",
+                get_width=3,
+                get_color=[120,120,120,160],
+                pickable=True
+            ))
 
         # - Points O/D
         points, labels = [], []
@@ -827,39 +889,74 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 {"position":[r["lon_d"], r["lat_d"]], "text":f"S{r['Segment']} D", "color":[220,66,66,255]},
             ]
         if points:
-            layers.append(pdk.Layer("ScatterplotLayer", data=points, get_position="position", get_fill_color="color",
-                                    get_radius=20000, radius_min_pixels=2, radius_max_pixels=60, pickable=True,
-                                    stroked=True, get_line_color=[255,255,255], line_width_min_pixels=1))
+            layers.append(pdk.Layer(
+                "ScatterplotLayer",
+                data=points,
+                get_position="position",
+                get_fill_color="color",
+                get_radius=20000,
+                radius_min_pixels=2,
+                radius_max_pixels=60,
+                pickable=True,
+                stroked=True,
+                get_line_color=[255,255,255],
+                line_width_min_pixels=1
+            ))
         if labels:
-            layers.append(pdk.Layer("TextLayer", data=labels, get_position="position", get_text="text",
-                                    get_color="color", get_size=16, size_units="pixels", get_text_anchor="start",
-                                    get_alignment_baseline="top", background=False))
+            layers.append(pdk.Layer(
+                "TextLayer",
+                data=labels,
+                get_position="position",
+                get_text="text",
+                get_color="color",
+                get_size=16,
+                size_units="pixels",
+                get_text_anchor="start",
+                get_alignment_baseline="top",
+                background=False
+            ))
+
         # - Icônes au milieu
         if show_icons:
             icons = []
             for r in rows:
                 cat = mode_to_category(r["Mode"]); url = ICON_URLS.get(cat)
-                if not url: continue
+                if not url:
+                    continue
                 if r.get("route_coords"):
                     coords_poly = r["route_coords"]; mid_index = len(coords_poly)//2
                     lon_mid, lat_mid = coords_poly[mid_index][0], coords_poly[mid_index][1]
                 else:
-                    lon_mid = (r["lon_o"] + r["lon_d"])/2.0
-                    lat_mid = (r["lat_o"] + r["lat_d"])/2.0
-                icons.append({"position":[lon_mid,lat_mid], "name":f"S{r['Segment']} - {cat.capitalize()}",
-                              "icon":{"url":url, "width":64, "height":64, "anchorY":64, "anchorX":32}})
+                    lon_mid = (r["lon_o"] + r["lon_d"]) / 2.0
+                    lat_mid = (r["lat_o"] + r["lat_d"]) / 2.0
+                icons.append({
+                    "position":[lon_mid,lat_mid],
+                    "name":f"S{r['Segment']} - {cat.capitalize()}",
+                    "icon":{"url":url, "width":64, "height":64, "anchorY":64, "anchorX":32}
+                })
             if icons:
-                layers.append(pdk.Layer("IconLayer", data=icons, get_icon="icon", get_position="position",
-                                        get_size=28, size_units="pixels", pickable=True))
+                layers.append(pdk.Layer(
+                    "IconLayer",
+                    data=icons,
+                    get_icon="icon",
+                    get_position="position",
+                    get_size=28,
+                    size_units="pixels",
+                    pickable=True
+                ))
 
         # Vue : focus sur segment choisi sinon fit global
         def compute_view_for_segment(r):
             mid_lat = (r["lat_o"] + r["lat_d"]) / 2.0
             mid_lon = (r["lon_o"] + r["lon_d"]) / 2.0
             # zoom heuristique
-            span_deg = max(abs(r["lat_d"]-r["lat_o"]), abs(r["lon_d"]-r["lon_o"])*max(0.3, math.cos(math.radians(mid_lat))))
+            span_deg = max(
+                abs(r["lat_d"]-r["lat_o"]),
+                abs(r["lon_d"]-r["lon_o"])*max(0.3, math.cos(math.radians(mid_lat)))
+            )
             zoom = 6 if span_deg < 1.5 else (5 if span_deg < 4 else (4 if span_deg < 10 else 3))
             return pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=zoom)
+
         if focus_sel != "— Tous —":
             idx = int(focus_sel.split()[-1])
             sel_row = next((r for r in rows if r["Segment"]==idx), None)
@@ -910,8 +1007,13 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
 
         # Choix de fond PDF détaillé
         st.subheader("Exporter")
-        pdf_base_choice = st.selectbox("Fond de carte du PDF", options=PDF_BASEMAP_LABELS, index=0,
-                                       help="Stamen/OSM = très détaillé (nécessite internet & Cartopy). Fallback automatique sur Natural Earth.")
+        pdf_base_choice = st.selectbox(
+            "Fond de carte du PDF",
+            options=PDF_BASEMAP_LABELS,
+            index=0,
+            help="Stamen/OSM = très détaillé (nécessite internet & Cartopy). Fallback automatique sur Natural Earth."
+        )
+
         c1, c2 = st.columns(2)
         with c1:
             st.download_button("Télécharger le détail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
@@ -923,7 +1025,8 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                         total_distance=total_distance, total_emissions=total_emissions,
                         unit=unit, rows=rows,
                         pdf_basemap_choice_label=pdf_base_choice,
-                        ne_scale=NE_SCALE_DEFAULT, pdf_theme=PDF_THEME_DEFAULT, pdf_icon_size_px=28
+                        ne_scale=NE_SCALE_DEFAULT, pdf_theme=PDF_THEME_DEFAULT,
+                        pdf_icon_size_px=28
                     )
                 st.download_button("Télécharger le rapport PDF", data=pdf_buffer, file_name=filename_pdf, mime="application/pdf")
             except Exception as e:
