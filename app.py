@@ -3,8 +3,7 @@
 # Version : IATA (autocomplétion corrigée) + Cadres segments arrondis (#002E49)
 # + Sélecteur de mode via liste déroulante en haut à droite du titre de segment
 # + Logos sur carte PDF/Web, Natural Earth (Cartopy), Auth, Export CSV/PDF
-# + Boutons d’ajout/suppression et manipulations de segments RETIRÉS de l’UI
-
+# + Boutons manipulations supprimés, et bouton discret «➕ Ajouter un segment» uniquement en bas
 import os
 import time
 import math
@@ -66,6 +65,14 @@ st.markdown(
         border-color: #002E49 !important;
         border-radius: 12px !important;
       }
+      /* Espacement léger entre cadres */
+      div:where([data-testid="stContainer"])[style*="border: 1px"] { margin-bottom: 0.6rem; }
+      /* Bouton discret en bas (aligné à gauche, look sobre) */
+      .add-seg .stButton>button {
+        background-color: white; color: #002E49; border: 1px solid #002E49;
+        padding: .3rem .6rem; border-radius: 999px; font-size: 0.9rem;
+      }
+      .add-seg .stButton>button:hover { background-color: #002E49; color: white; }
     </style>
     """,
     unsafe_allow_html=True
@@ -278,7 +285,9 @@ def generate_pdf_report(
 
         all_lats = [r["lat_o"] for r in rows] + [r["lat_d"] for r in rows]
         all_lons = [r["lon_o"] for r in rows] + [r["lon_d"] for r in rows]
-        min_lon, max_lon, min_lat, max_lat = _compute_extent_and_ratio(all_lats, all_lons)
+        min_lon, max_lon, min_lat, max_lat = (-10, 30, 30, 60) if not all_lats or not all_lons else (
+            min(all_lons), max(all_lons), min(all_lats), max(all_lats)
+        )
 
         target_width_cm = 20.0; target_height_cm = 7.5; dpi = 150
         fig_w_in = target_width_cm / 2.54; fig_h_in = target_height_cm / 2.54
@@ -566,6 +575,7 @@ if "dynamic_radius" not in st.session_state:
 dynamic_radius = st.session_state["dynamic_radius"]
 radius_m = 20000 if dynamic_radius else None
 radius_px = None if dynamic_radius else 8
+
 if "icon_size_px" not in st.session_state:
     st.session_state["icon_size_px"] = 28
 icon_size_px = st.session_state["icon_size_px"]
@@ -578,24 +588,6 @@ if "ne_scale" not in st.session_state:
     st.session_state["ne_scale"] = NE_SCALE_DEFAULT
 if "pdf_theme" not in st.session_state:
     st.session_state["pdf_theme"] = PDF_THEME_DEFAULT
-
-# =========================
-# Apparence du rapport (PDF) — Sélecteurs (masquables)
-# =========================
-if SHOW_PDF_APPEARANCE_PANEL:
-    open_box("Apparence du rapport (PDF)")
-    st.session_state["pdf_theme"] = st.selectbox(
-        "Thème de la carte PDF", options=["voyager", "minimal", "terrain"],
-        index=["voyager", "minimal", "terrain"].index(st.session_state["pdf_theme"]),
-        help="Style graphique du fond Natural Earth utilisé dans le rapport PDF."
-    )
-    st.session_state["ne_scale"] = st.selectbox(
-        "Niveau de détail Natural Earth", options=["110m", "50m", "10m"],
-        index=["110m", "50m", "10m"].index(st.session_state["ne_scale"]),
-        help="110m = rapide • 50m = équilibré • 10m = très détaillé (plus lent)."
-    )
-    close_box()
-ne_scale = st.session_state["ne_scale"]
 
 # =========================
 # Aéroports IATA : chargement + recherche (CORRIGÉ)
@@ -877,7 +869,6 @@ for i in range(len(st.session_state.segments)):
                     row_d = matches_d.iloc[options_d.index(sel_d)] if sel_d in options_d else matches_d.iloc[0]
                     st.session_state.segments[i]["dest_iata"] = row_d["iata_code"]
                     st.session_state.segments[i]["dest_air_label"] = row_d["label"]
-                    # ✅ Correction f-string ici (pas de parenthèse en trop)
                     st.caption(f"📍 **{row_d['iata_code']}** — {row_d['name']} · {str(row_d['municipality'] or '')} · {str(row_d['iso_country'] or '')}")
                 else:
                     st.session_state.segments[i]["dest_iata"] = ""
@@ -962,6 +953,40 @@ for i in range(len(st.session_state.segments)):
 close_box()
 
 # =========================
+# ➕ Bouton discret "Ajouter un segment" (uniquement en bas)
+# =========================
+def _default_mode():
+    # Conserve le mode du dernier segment si possible
+    if st.session_state.segments:
+        return st.session_state.segments[-1].get("mode", list(DEFAULT_EMISSION_FACTORS.keys())[0])
+    return list(DEFAULT_EMISSION_FACTORS.keys())[0]
+
+def add_segment_end():
+    if len(st.session_state.segments) >= MAX_SEGMENTS:
+        st.warning(f"Nombre maximal de segments atteint ({MAX_SEGMENTS}).")
+        return
+    if not st.session_state.segments:
+        st.session_state.segments.append(_default_segment(mode=_default_mode()))
+    else:
+        last = st.session_state.segments[-1]
+        st.session_state.segments.append(
+            _default_segment(
+                origin_raw=last.get("dest_sel") or last.get("dest_raw") or "",
+                origin_sel=last.get("dest_sel") or "",
+                mode=last.get("mode", _default_mode()),
+                weight=last.get("weight", 1000.0)
+            )
+        )
+
+# Conteneur discret pour le bouton
+with st.container():
+    st.markdown('<div class="add-seg">', unsafe_allow_html=True)
+    if st.button("➕ Ajouter un segment", use_container_width=False, key="btn_add_bottom"):
+        add_segment_end()
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# =========================
 # Calcul + Carte
 # =========================
 def _compute_auto_view(all_lats, all_lons, viewport_px=(900, 600), padding_px=80):
@@ -998,6 +1023,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             if not coord1 or not coord2:
                 st.error(f"Segment {idx} : lieu introuvable ou ambigu.")
                 continue
+
             route_coords = None
             if "routier" in _normalize_no_diacritics(seg["mode"]):
                 try:
