@@ -546,30 +546,47 @@ def generate_pdf_report(
 # Vérification du mot de passe
 # =========================
 PASSWORD_KEY = "APP_PASSWORD"
+
 if PASSWORD_KEY not in st.secrets:
     st.error("Mot de passe non configuré. Ajoutez APP_PASSWORD dans .streamlit/secrets.toml.")
     st.stop()
 
-if "auth_ok" not in st.session_state: st.session_state.auth_ok = False
+if "auth_ok" not in st.session_state:
+    st.session_state.auth_ok = False
 
-st.markdown("## Accès sécurisé")
-with st.form("login_form", clear_on_submit=False):
-    password_input = st.text_input("Entrez le mot de passe pour accéder à l'application :", type="password", placeholder="Votre mot de passe")
-    submitted = st.form_submit_button("Valider")
-
+# 👉 On n'affiche le formulaire QUE si non authentifié
 if not st.session_state.auth_ok:
+    st.markdown("## Accès sécurisé")
+    with st.form("login_form", clear_on_submit=True):
+        # Donnez un key explicite pour pouvoir le nettoyer
+        password_input = st.text_input(
+            "Entrez le mot de passe pour accéder à l'application :",
+            type="password",
+            placeholder="Votre mot de passe",
+            key="__pwd__",
+        )
+        submitted = st.form_submit_button("Valider")
+
     if submitted:
         if password_input == st.secrets[PASSWORD_KEY]:
+            # Marque l'utilisateur comme authentifié
             st.session_state.auth_ok = True
-            st.success("Accès autorisé. Bienvenue dans l'application !")
+            # Nettoie la valeur en mémoire (bonne pratique)
+            try:
+                del st.session_state["__pwd__"]
+            except KeyError:
+                pass
+            # Redémarre le script: au prochain rendu, le formulaire n'est plus affiché
             st.rerun()
         else:
             st.error("Mot de passe incorrect.")
     else:
         st.info("Veuillez saisir le mot de passe puis cliquer sur Valider.")
-    st.stop()
+    st.stop()  # Empêche le reste de la page tant que non authentifié
 else:
+    # 👉 Plus AUCUN formulaire n'est rendu ici
     st.success("Accès autorisé. Bienvenue dans l'application !")
+
 
 # =========================
 # API OpenCage
