@@ -6,6 +6,7 @@
 # + Gestion avancée des segments : ajouter/insérer/dupliquer/supprimer
 # + Fond de carte PDF amélioré (thèmes internes : voyager/minimal/terrain) + sélecteur masquable
 # + IATA (3 lettres) pour Origine/Destination avec autocomplétion et affichage aéroport
+# + Cadres de segment à bords arrondis couleur #002E49
 
 import os
 import time
@@ -54,6 +55,21 @@ st.markdown(
     <style>
       .stApp {background-color: #DFEDF5;}
       section[data-testid="stSidebar"] {background-color: #DFEDF5;}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# --- Style des cadres de segment (bordure arrondie #002E49) ---
+# (On ne modifie aucune autre couleur de l'app)
+st.markdown(
+    """
+    <style>
+      /* Cible les containers auxquels Streamlit applique une bordure (border=True) */
+      div:where([data-testid="stContainer"])[style*="border: 1px"] {
+        border-color: #002E49 !important;
+        border-radius: 12px !important;
+      }
     </style>
     """,
     unsafe_allow_html=True
@@ -678,6 +694,7 @@ if "ne_scale" not in st.session_state:
     st.session_state["ne_scale"] = NE_SCALE_DEFAULT
 if "pdf_theme" not in st.session_state:
     st.session_state["pdf_theme"] = PDF_THEME_DEFAULT
+
 # =========================
 # Apparence du rapport (PDF) — Sélecteurs (masquables)
 # =========================
@@ -753,6 +770,7 @@ def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
         base = f"{code} — {name}"
         extra = " · ".join([p for p in [city, country] if p])
         return f"{base} {extra}" if extra else base
+
     df["label"] = df.apply(_label, axis=1)
     cols = ["iata_code", "name", "municipality", "iso_country", "lat", "lon", "label"]
     if "type" in df.columns:
@@ -845,7 +863,6 @@ def _default_segment(origin_raw="", origin_sel="", dest_raw="", dest_sel="", mod
         "dest_air_q": "",
         "dest_iata": "",
         "dest_air_label": "",
-
         "mode": mode,
         "weight": weight,
     }
@@ -912,6 +929,7 @@ def _on_mode_check(seg_idx: int, clicked_id: str):
         st.session_state[f"mode_chk_{seg_idx}_{m['id']}"] = (m["id"] == clicked_id)
     if "segments" in st.session_state and 0 <= seg_idx < len(st.session_state.segments):
         st.session_state.segments[seg_idx]["mode"] = clicked_id
+
 def select_mode_with_icons(segment_index: int, current_value: str) -> str:
     st.markdown("**Mode de transport**")
     cols = st.columns(len(MODE_META))
@@ -948,189 +966,195 @@ with a2:
 
 segments_out = []
 for i in range(len(st.session_state.segments)):
-    st.markdown(f"##### Segment {i+1}")
-    # Actions locales pour ce segment
-    b1, b2, b3, _ = st.columns([2,2,2,6])
-    with b1:
-        st.button("➕ Insérer après", key=f"btn_ins_{i}", on_click=insert_after, args=(i,))
-    with b2:
-        st.button("📄 Dupliquer", key=f"btn_dup_{i}", on_click=duplicate_segment, args=(i,))
-    with b3:
-        st.button("🗑️ Supprimer", key=f"btn_del_{i}", on_click=delete_segment, args=(i,), disabled=(len(st.session_state.segments) <= 1))
+    # 🔲 Cadre autour de TOUT le contenu du segment
+    with st.container(border=True):
 
-    c1, c2 = st.columns(2)
+        # Titre du segment
+        st.markdown(f"##### Segment {i+1}")
 
-    # ——— ORIGINE ———
-    with c1:
-        st.markdown(f"**Origine du segment {i+1}**")
-        origin_type = st.radio(
-            "Type de lieu (origine)",
-            options=["Adresse/ville/pays", "Aéroport (IATA)"],
-            horizontal=True,
-            key=f"type_origin_{i}",
-            index=0 if st.session_state.segments[i].get("origin_type","place")=="place" else 1
-        )
-        origin_is_airport = origin_type.endswith("(IATA)")
-        if origin_is_airport:
-            st.session_state.segments[i]["origin_type"] = "airport"
-            origin_air_q = st.text_input(
-                "Aéroport (code IATA, nom ou ville)",
-                value=st.session_state.segments[i].get("origin_air_q",""),
-                key=f"origin_air_q_{i}",
-                placeholder="ex : CDG, Orly, 'Paris'…"
+        # Actions locales pour ce segment (dans le cadre)
+        b1, b2, b3, _ = st.columns([2,2,2,6])
+        with b1:
+            st.button("➕ Insérer après", key=f"btn_ins_{i}", on_click=insert_after, args=(i,))
+        with b2:
+            st.button("📄 Dupliquer", key=f"btn_dup_{i}", on_click=duplicate_segment, args=(i,))
+        with b3:
+            st.button("🗑️ Supprimer", key=f"btn_del_{i}", on_click=delete_segment, args=(i,), disabled=(len(st.session_state.segments) <= 1))
+
+        c1, c2 = st.columns(2)
+
+        # ——— ORIGINE ———
+        with c1:
+            st.markdown(f"**Origine du segment {i+1}**")
+            origin_type = st.radio(
+                "Type de lieu (origine)",
+                options=["Adresse/ville/pays", "Aéroport (IATA)"],
+                horizontal=True,
+                key=f"type_origin_{i}",
+                index=0 if st.session_state.segments[i].get("origin_type","place")=="place" else 1
             )
-            matches = search_airports(origin_air_q, limit=10)
-            options = matches["label"].tolist() if not matches.empty else []
-            sel = st.selectbox(
-                "Suggestions d'aéroport",
-                options or ["— Aucun résultat —"],
-                index=0,
-                key=f"origin_air_sel_{i}"
-            )
-            if options:
-                row = matches.iloc[options.index(sel)] if sel in options else matches.iloc[0]
-                st.session_state.segments[i]["origin_iata"] = row["iata_code"]
-                st.session_state.segments[i]["origin_air_label"] = row["label"]
-                st.caption(f"📍 **{row['iata_code']}** — {row['name']} · {str(row['municipality'] or '')} · {str(row['iso_country'] or '')}")
+            origin_is_airport = origin_type.endswith("(IATA)")
+            if origin_is_airport:
+                st.session_state.segments[i]["origin_type"] = "airport"
+                origin_air_q = st.text_input(
+                    "Aéroport (code IATA, nom ou ville)",
+                    value=st.session_state.segments[i].get("origin_air_q",""),
+                    key=f"origin_air_q_{i}",
+                    placeholder="ex : CDG, Orly, 'Paris'…"
+                )
+                matches = search_airports(origin_air_q, limit=10)
+                options = matches["label"].tolist() if not matches.empty else []
+                sel = st.selectbox(
+                    "Suggestions d'aéroport",
+                    options or ["— Aucun résultat —"],
+                    index=0,
+                    key=f"origin_air_sel_{i}"
+                )
+                if options:
+                    row = matches.iloc[options.index(sel)] if sel in options else matches.iloc[0]
+                    st.session_state.segments[i]["origin_iata"] = row["iata_code"]
+                    st.session_state.segments[i]["origin_air_label"] = row["label"]
+                    st.caption(f"📍 **{row['iata_code']}** — {row['name']} · {str(row['municipality'] or '')} · {str(row['iso_country'] or '')}")
+                else:
+                    st.session_state.segments[i]["origin_iata"] = ""
+                    st.session_state.segments[i]["origin_air_label"] = ""
+                st.session_state.segments[i]["origin_air_q"] = origin_air_q
             else:
+                st.session_state.segments[i]["origin_type"] = "place"
+                origin_raw = st.text_input(
+                    f"Adresse/ville/pays (origine {i+1})",
+                    value=st.session_state.segments[i].get("origin_raw",""),
+                    key=f"origin_input_{i}"
+                )
+                origin_suggestions = geocode_cached(origin_raw, limit=5) if origin_raw else []
+                origin_options = [r['formatted'] for r in origin_suggestions] if origin_suggestions else []
+                origin_sel = st.selectbox("Suggestions (OpenCage)", origin_options or ["-"], index=0, key=f"origin_select_{i}")
+                if origin_sel == "-":
+                    origin_sel = ""
+                st.session_state.segments[i]["origin_raw"] = origin_raw
+                st.session_state.segments[i]["origin_sel"] = origin_sel
+                # Reset champs aéro si on repasse en mode "place"
                 st.session_state.segments[i]["origin_iata"] = ""
                 st.session_state.segments[i]["origin_air_label"] = ""
-            st.session_state.segments[i]["origin_air_q"] = origin_air_q
-        else:
-            st.session_state.segments[i]["origin_type"] = "place"
-            origin_raw = st.text_input(
-                f"Adresse/ville/pays (origine {i+1})",
-                value=st.session_state.segments[i].get("origin_raw",""),
-                key=f"origin_input_{i}"
-            )
-            origin_suggestions = geocode_cached(origin_raw, limit=5) if origin_raw else []
-            origin_options = [r['formatted'] for r in origin_suggestions] if origin_suggestions else []
-            origin_sel = st.selectbox("Suggestions (OpenCage)", origin_options or ["-"], index=0, key=f"origin_select_{i}")
-            if origin_sel == "-":
-                origin_sel = ""
-            st.session_state.segments[i]["origin_raw"] = origin_raw
-            st.session_state.segments[i]["origin_sel"] = origin_sel
-            # Reset champs aéro si on repasse en mode "place"
-            st.session_state.segments[i]["origin_iata"] = ""
-            st.session_state.segments[i]["origin_air_label"] = ""
-            st.session_state.segments[i]["origin_air_q"] = ""
+                st.session_state.segments[i]["origin_air_q"] = ""
 
-    # ——— DESTINATION ———
-    with c2:
-        st.markdown(f"**Destination du segment {i+1}**")
-        dest_type = st.radio(
-            "Type de lieu (destination)",
-            options=["Adresse/ville/pays", "Aéroport (IATA)"],
-            horizontal=True,
-            key=f"type_dest_{i}",
-            index=0 if st.session_state.segments[i].get("dest_type","place")=="place" else 1
-        )
-        dest_is_airport = dest_type.endswith("(IATA)")
-        if dest_is_airport:
-            st.session_state.segments[i]["dest_type"] = "airport"
-            dest_air_q = st.text_input(
-                "Aéroport (code IATA, nom ou ville)",
-                value=st.session_state.segments[i].get("dest_air_q",""),
-                key=f"dest_air_q_{i}",
-                placeholder="ex : ORY, 'Lyon', 'Nice'…"
+        # ——— DESTINATION ———
+        with c2:
+            st.markdown(f"**Destination du segment {i+1}**")
+            dest_type = st.radio(
+                "Type de lieu (destination)",
+                options=["Adresse/ville/pays", "Aéroport (IATA)"],
+                horizontal=True,
+                key=f"type_dest_{i}",
+                index=0 if st.session_state.segments[i].get("dest_type","place")=="place" else 1
             )
-            matches_d = search_airports(dest_air_q, limit=10)
-            options_d = matches_d["label"].tolist() if not matches_d.empty else []
-            sel_d = st.selectbox(
-                "Suggestions d'aéroport",
-                options_d or ["— Aucun résultat —"],
-                index=0,
-                key=f"dest_air_sel_{i}"
-            )
-            if options_d:
-                row_d = matches_d.iloc[options_d.index(sel_d)] if sel_d in options_d else matches_d.iloc[0]
-                st.session_state.segments[i]["dest_iata"] = row_d["iata_code"]
-                st.session_state.segments[i]["dest_air_label"] = row_d["label"]
-                st.caption(f"📍 **{row_d['iata_code']}** — {row_d['name']} · {str(row_d['municipality'] or '')} · {str(row_d['iso_country'] or '')}")
+            dest_is_airport = dest_type.endswith("(IATA)")
+            if dest_is_airport:
+                st.session_state.segments[i]["dest_type"] = "airport"
+                dest_air_q = st.text_input(
+                    "Aéroport (code IATA, nom ou ville)",
+                    value=st.session_state.segments[i].get("dest_air_q",""),
+                    key=f"dest_air_q_{i}",
+                    placeholder="ex : ORY, 'Lyon', 'Nice'…"
+                )
+                matches_d = search_airports(dest_air_q, limit=10)
+                options_d = matches_d["label"].tolist() if not matches_d.empty else []
+                sel_d = st.selectbox(
+                    "Suggestions d'aéroport",
+                    options_d or ["— Aucun résultat —"],
+                    index=0,
+                    key=f"dest_air_sel_{i}"
+                )
+                if options_d:
+                    row_d = matches_d.iloc[options_d.index(sel_d)] if sel_d in options_d else matches_d.iloc[0]
+                    st.session_state.segments[i]["dest_iata"] = row_d["iata_code"]
+                    st.session_state.segments[i]["dest_air_label"] = row_d["label"]
+                    st.caption(f"📍 **{row_d['iata_code']}** — {row_d['name']} · {str(row_d['municipality'] or '')} · {str(row_d['iso_country'] or '')}")
+                else:
+                    st.session_state.segments[i]["dest_iata"] = ""
+                    st.session_state.segments[i]["dest_air_label"] = ""
+                st.session_state.segments[i]["dest_air_q"] = dest_air_q
             else:
+                st.session_state.segments[i]["dest_type"] = "place"
+                dest_raw = st.text_input(
+                    f"Adresse/ville/pays (destination {i+1})",
+                    value=st.session_state.segments[i].get("dest_raw",""),
+                    key=f"dest_input_{i}"
+                )
+                dest_suggestions = geocode_cached(dest_raw, limit=5) if dest_raw else []
+                dest_options = [r['formatted'] for r in dest_suggestions] if dest_suggestions else []
+                dest_sel = st.selectbox("Suggestions (OpenCage)", dest_options or ["-"], index=0, key=f"dest_select_{i}")
+                if dest_sel == "-":
+                    dest_sel = ""
+                st.session_state.segments[i]["dest_raw"] = dest_raw
+                st.session_state.segments[i]["dest_sel"] = dest_sel
+                # Reset champs aéro si on repasse en mode "place"
                 st.session_state.segments[i]["dest_iata"] = ""
                 st.session_state.segments[i]["dest_air_label"] = ""
-            st.session_state.segments[i]["dest_air_q"] = dest_air_q
-        else:
-            st.session_state.segments[i]["dest_type"] = "place"
-            dest_raw = st.text_input(
-                f"Adresse/ville/pays (destination {i+1})",
-                value=st.session_state.segments[i].get("dest_raw",""),
-                key=f"dest_input_{i}"
-            )
-            dest_suggestions = geocode_cached(dest_raw, limit=5) if dest_raw else []
-            dest_options = [r['formatted'] for r in dest_suggestions] if dest_suggestions else []
-            dest_sel = st.selectbox("Suggestions (OpenCage)", dest_options or ["-"], index=0, key=f"dest_select_{i}")
-            if dest_sel == "-":
-                dest_sel = ""
-            st.session_state.segments[i]["dest_raw"] = dest_raw
-            st.session_state.segments[i]["dest_sel"] = dest_sel
-            # Reset champs aéro si on repasse en mode "place"
-            st.session_state.segments[i]["dest_iata"] = ""
-            st.session_state.segments[i]["dest_air_label"] = ""
-            st.session_state.segments[i]["dest_air_q"] = ""
+                st.session_state.segments[i]["dest_air_q"] = ""
 
-    # Sélecteur de mode : logos + cases exclusives
-    mode = select_mode_with_icons(segment_index=i, current_value=st.session_state.segments[i]["mode"])
+        # Sélecteur de mode : logos + cases exclusives (dans le cadre)
+        mode = select_mode_with_icons(segment_index=i, current_value=st.session_state.segments[i]["mode"])
 
-    # Poids
-    if weight_mode == "Poids par segment":
-        default_weight = st.session_state.segments[i]["weight"]
-        weight_val = st.number_input(
-            f"Poids transporté pour le segment {i+1}",
-            min_value=0.001, value=float(default_weight),
-            step=100.0 if unit == "kg" else 0.1,
-            key=f"weight_{i}"
-        )
-        st.session_state.segments[i]["weight"] = weight_val
-    else:
-        default_weight = st.session_state.segments[0]["weight"]
-        if i == 0:
+        # Poids
+        if weight_mode == "Poids par segment":
+            default_weight = st.session_state.segments[i]["weight"]
             weight_val = st.number_input(
-                "Poids transporté (appliqué à tous les segments)",
+                f"Poids transporté pour le segment {i+1}",
                 min_value=0.001, value=float(default_weight),
-                step=100.0 if unit == "kg" else 0.1, key="weight_0"
+                step=100.0 if unit == "kg" else 0.1,
+                key=f"weight_{i}"
             )
-            st.session_state.segments[0]["weight"] = weight_val
-        else:
-            weight_val = st.session_state.get("weight_0", default_weight)
             st.session_state.segments[i]["weight"] = weight_val
+        else:
+            default_weight = st.session_state.segments[0]["weight"]
+            if i == 0:
+                weight_val = st.number_input(
+                    "Poids transporté (appliqué à tous les segments)",
+                    min_value=0.001, value=float(default_weight),
+                    step=100.0 if unit == "kg" else 0.1, key="weight_0"
+                )
+                st.session_state.segments[0]["weight"] = weight_val
+            else:
+                weight_val = st.session_state.get("weight_0", default_weight)
+                st.session_state.segments[i]["weight"] = weight_val
 
-    # Déterminer affichage + fallback "place" pour géocodage
-    if st.session_state.segments[i]["origin_type"] == "airport" and st.session_state.segments[i]["origin_iata"]:
-        origin_display = st.session_state.segments[i]["origin_air_label"] or st.session_state.segments[i]["origin_iata"]
-        origin_place = origin_display
-    else:
-        origin_display = st.session_state.segments[i]["origin_sel"] or st.session_state.segments[i]["origin_raw"] or ""
-        origin_place = st.session_state.segments[i]["origin_sel"] or st.session_state.segments[i]["origin_raw"] or ""
+        # Déterminer affichage + fallback "place" pour géocodage
+        if st.session_state.segments[i]["origin_type"] == "airport" and st.session_state.segments[i]["origin_iata"]:
+            origin_display = st.session_state.segments[i]["origin_air_label"] or st.session_state.segments[i]["origin_iata"]
+            origin_place = origin_display
+        else:
+            origin_display = st.session_state.segments[i]["origin_sel"] or st.session_state.segments[i]["origin_raw"] or ""
+            origin_place = st.session_state.segments[i]["origin_sel"] or st.session_state.segments[i]["origin_raw"] or ""
 
-    if st.session_state.segments[i]["dest_type"] == "airport" and st.session_state.segments[i]["dest_iata"]:
-        dest_display = st.session_state.segments[i]["dest_air_label"] or st.session_state.segments[i]["dest_iata"]
-        dest_place = dest_display
-    else:
-        dest_display = st.session_state.segments[i]["dest_sel"] or st.session_state.segments[i]["dest_raw"] or ""
-        dest_place = st.session_state.segments[i]["dest_sel"] or st.session_state.segments[i]["dest_raw"] or ""
+        if st.session_state.segments[i]["dest_type"] == "airport" and st.session_state.segments[i]["dest_iata"]:
+            dest_display = st.session_state.segments[i]["dest_air_label"] or st.session_state.segments[i]["dest_iata"]
+            dest_place = dest_display
+        else:
+            dest_display = st.session_state.segments[i]["dest_sel"] or st.session_state.segments[i]["dest_raw"] or ""
+            dest_place = st.session_state.segments[i]["dest_sel"] or st.session_state.segments[i]["dest_raw"] or ""
 
-    # Persister affichages utiles
-    st.session_state.segments[i]["_origin_display"] = origin_display
-    st.session_state.segments[i]["_dest_display"] = dest_display
-    st.session_state.segments[i]["mode"] = mode
-    # Alimenter segments_out
-    segments_out.append({
-        "origin_display": origin_display,
-        "destination_display": dest_display,
-        "origin_type": st.session_state.segments[i]["origin_type"],
-        "origin_iata": st.session_state.segments[i]["origin_iata"],
-        "origin_place": origin_place,
-        "destination_type": st.session_state.segments[i]["dest_type"],
-        "dest_iata": st.session_state.segments[i]["dest_iata"],
-        "destination_place": dest_place,
-        "mode": mode,
-        "weight": weight_val,
-        # Compat aval
-        "origin": origin_display,
-        "destination": dest_display,
-    })
+        # Persister affichages utiles
+        st.session_state.segments[i]["_origin_display"] = origin_display
+        st.session_state.segments[i]["_dest_display"] = dest_display
+        st.session_state.segments[i]["mode"] = mode
+
+        # Alimenter segments_out
+        segments_out.append({
+            "origin_display": origin_display,
+            "destination_display": dest_display,
+            "origin_type": st.session_state.segments[i]["origin_type"],
+            "origin_iata": st.session_state.segments[i]["origin_iata"],
+            "origin_place": origin_place,
+            "destination_type": st.session_state.segments[i]["dest_type"],
+            "dest_iata": st.session_state.segments[i]["dest_iata"],
+            "destination_place": dest_place,
+            "mode": mode,
+            "weight": weight_val,
+            # Compat aval
+            "origin": origin_display,
+            "destination": dest_display,
+        })
 
 # Barre d'actions globale (bas)
 a3, a4, _ = st.columns([2,2,6])
@@ -1173,12 +1197,12 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             if not seg["origin_display"] or not seg["destination_display"]:
                 st.warning(f"Segment {idx} : origine/destination manquante(s).")
                 continue
+
             coord1 = get_segment_coords(seg, side="origin")
             coord2 = get_segment_coords(seg, side="destination")
             if not coord1 or not coord2:
                 st.error(f"Segment {idx} : lieu introuvable ou ambigu.")
                 continue
-
             route_coords = None
             if "routier" in _normalize_no_diacritics(seg["mode"]):
                 try:
