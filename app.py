@@ -1031,7 +1031,7 @@ for i in range(len(st.session_state.segments)):
                     row_d = matches_d.iloc[options_d.index(sel_d)] if sel_d in options_d else matches_d.iloc[0]
                     st.session_state.segments[i]["dest_iata"] = row_d["iata_code"]
                     st.session_state.segments[i]["dest_air_label"] = row_d["label"]
-                    st.caption(f"📍 **{row_d['iata_code']}** — {row_d['name']} · {str(row_d['municipality'] or '')} · {str[row_d['iso_country'] or '')}")
+                    st.caption(f"📍 **{row_d['iata_code']}** — {row_d['name']} · {str(row_d['municipality'] or '')} · {str(row_d['iso_country'] or '')}")
                 else:
                     st.session_state.segments[i]["dest_iata"] = ""
                     st.session_state.segments[i]["dest_air_label"] = ""
