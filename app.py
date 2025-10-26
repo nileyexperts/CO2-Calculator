@@ -801,7 +801,19 @@ for i in range(1, len(st.session_state.segments)):
         cur["origin"]["iata"] = prev["dest"]["iata"]
         cur["origin"]["query"] = prev["dest"]["display"]
 
-st.subheader("Saisie des segments")
+# Titre avec bouton Réinitialiser à droite
+col_title, col_reset = st.columns([8, 2])
+with col_title:
+    st.subheader("Saisie des segments")
+with col_reset:
+    st.button(
+        "↺ Réinitialiser",
+        type="secondary",
+        use_container_width=True,
+        help="Effacer tous les segments saisis et recommencer",
+        key="btn_reset_segments",
+        on_click=reset_segments
+    )
 segments_out = []
 
 for i in range(len(st.session_state.segments)):
