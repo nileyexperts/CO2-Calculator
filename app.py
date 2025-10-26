@@ -38,6 +38,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+
 # Cache Cartopy
 os.environ.setdefault("CARTOPY_CACHE_DIR", os.path.join(tempfile.gettempdir(), "cartopy_cache"))
 
@@ -209,6 +210,7 @@ def coords_from_formatted(formatted: str):
 
 def compute_distance_km(coord1, coord2) -> float:
     return great_circle(coord1, coord2).km
+
 def compute_emissions(distance_km: float, weight_tonnes: float, factor_kg_per_tkm: float) -> float:
     return distance_km * weight_tonnes * factor_kg_per_tkm
 
@@ -217,7 +219,7 @@ def osrm_route(coord1, coord2, base_url: str = "https://router.project-osrm.org"
     lon1, lat1 = coord1[1], coord1[0]
     lon2, lat2 = coord2[1], coord2[0]
     url = f"{base_url.rstrip('/')}/route/v1/driving/{lon1},{lat1};{lon2},{lat2}"
-    params = {"overview": overview, "alternatives": "false", "annotations": "false", "geometries": "geojson"}
+    params = {"overview": "full", "alternatives": "false", "annotations": "false", "geometries": "geojson"}
     r = requests.get(url, params=params, timeout=12)
     r.raise_for_status()
     data = r.json()
@@ -251,7 +253,7 @@ def mode_to_category(mode_str: str) -> str:
 # =========================
 def _compute_extent_from_coords(all_lats, all_lons, margin_ratio=0.12, min_span_deg=1e-3):
     if not all_lats or not all_lons:
-        return (-10, 30, 30, 60)  # Ouest Europe par défaut
+        return (-10, 30, 30, 60)  # Ouest Europe
     min_lat, max_lat = min(all_lats), max(all_lats)
     min_lon, max_lon = min(all_lons), max(all_lons)
     span_lat = max(max_lat - min_lat, min_span_deg)
@@ -330,7 +332,8 @@ def generate_pdf_report(
     cell_style = ParagraphStyle('CellWrap', parent=normal_style, fontSize=8, leading=10, alignment=0)
 
     y = PAGE_H - M
-    # Logo
+
+    # --- Logo (optionnel) + Titre (anti-chevauchement) ---
     logo_h = 1.5 * cm
     logo_w = 3.0 * cm
     logo_drawn = False
@@ -338,18 +341,29 @@ def generate_pdf_report(
         resp = requests.get(LOGO_URL, timeout=10)
         if resp.ok:
             img = ImageReader(io.BytesIO(resp.content))
-            c.drawImage(img, M, y - logo_h, width=logo_w, height=logo_h, preserveAspectRatio=True, mask='auto')
+            c.drawImage(img, M, y - logo_h, width=logo_w, height=logo_h,
+                        preserveAspectRatio=True, mask='auto')
             logo_drawn = True
     except Exception:
         pass
 
-    # Titre
-    title_para = Paragraph("RAPPORT D'EMPREINTE Co2", title_style)
-    tw, th = title_para.wrap(AVAIL_W - (logo_w + 0.5*cm if logo_drawn else 0), AVAIL_H)
-    title_x = M + (logo_w + 0.5*cm if logo_drawn else 0)
-    title_y = y - th + (logo_h - th)/2.0 if logo_drawn else y - th
+    title_para = Paragraph("RAPPORT D'EMPREINTE CARBONE MULTIMODAL", title_style)
+    title_box_w = AVAIL_W - (logo_w + 0.5*cm if logo_drawn else 0)
+    title_w, title_h = title_para.wrap(title_box_w, AVAIL_H)
+
+    if logo_drawn:
+        # Titre centré verticalement par rapport au logo
+        title_x = M + logo_w + 0.5*cm
+        title_y = y - (logo_h/2.0) - (title_h/2.0)
+    else:
+        title_x = M
+        title_y = y - title_h
+
     title_para.drawOn(c, title_x, title_y)
-    y = (title_y if logo_drawn else y - th) - 0.20*cm
+
+    # Descendre sous le bloc d'entête : on prend la plus grande hauteur (logo/titre) + marge
+    header_block_h = max(logo_h if logo_drawn else 0, title_h)
+    y = y - header_block_h - 0.35*cm
 
     # Résumé
     info_summary_data = [
@@ -392,6 +406,7 @@ def generate_pdf_report(
         dpi = 150
         fig_w_in = AVAIL_W / 72.0   # points -> inches
         fig_h_in = map_h / 72.0
+
         min_lon, max_lon, min_lat, max_lat = _fit_extent_to_aspect(
             min_lon, max_lon, min_lat, max_lat, target_aspect_w_over_h=(AVAIL_W / max(1, map_h))
         )
@@ -538,10 +553,8 @@ def generate_pdf_report(
             notice = Paragraph(f"… {hidden_count} ligne(s) non affichée(s) pour tenir sur 1 page …",
                                ParagraphStyle('Notice', parent=normal_style, fontSize=max(7, font_size-1),
                                               textColor=colors.grey, alignment=1))
-            # ligne notice fusionnée
-            body.append([notice] + [""]*(len(headers)-1))
+            body.append([notice] + [""]*(len(headers)-1))  # ligne notice fusionnée
         tbl = Table(body, colWidths=col_widths, repeatRows=1)
-        # calcul index de la ligne TOTAL (éventuellement décalée si notice)
         total_row_offset = 1 if (show_notice and hidden_count>0) else 0
         style = [
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4788')),
