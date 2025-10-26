@@ -3,7 +3,7 @@
 # Version : IATA (autocomplétion corrigée) + Cadres segments arrondis (#002E49)
 # + Sélecteur de mode via liste déroulante en haut à droite du titre de segment
 # + Logos sur carte PDF/Web, Natural Earth (Cartopy), Auth, Export CSV/PDF
-# + Boutons "ajouter/supprimer segment" (globaux) et "insérer/dupliquer/supprimer" (par segment) SUPPRIMÉS de l'UI
+# + Boutons d’ajout/suppression et manipulations de segments RETIRÉS de l’UI
 
 import os
 import time
@@ -311,58 +311,17 @@ def generate_pdf_report(
             try:
                 import cartopy.crs as ccrs
                 import cartopy.feature as cfeature
-                from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
-
-                # Styles par thème
-                if pdf_theme == 'minimal':
-                    colors_cfg = {
-                        'ocean': '#F5F7FA', 'land': '#FAFAF8',
-                        'lakes_fc': '#F5F7FA', 'lakes_ec': '#D9DEE7',
-                        'coast': '#B5BBC6', 'borders0': '#C3C8D2', 'borders1': '#E0E5EC',
-                        'rivers': '#D0D6E2', 'grid': '#E6EAF0',
-                    }
-                    widths = {'coast':0.3, 'b0':0.3, 'b1':0.25, 'rivers':0.3, 'grid':0.35}
-                    grid_labels = True
-                elif pdf_theme == 'terrain':
-                    colors_cfg = {
-                        'ocean': '#E8F2FF', 'land': '#F2EFE9',
-                        'lakes_fc': '#E8F2FF', 'lakes_ec': '#9FC3EB',
-                        'coast': '#556270', 'borders0': '#6C7A89', 'borders1': '#A0AABA',
-                        'rivers': '#6DA6E2', 'grid': '#CBD5E3',
-                    }
-                    widths = {'coast':0.5, 'b0':0.6, 'b1':0.4, 'rivers':0.6, 'grid':0.5}
-                    grid_labels = True
-                else:  # voyager
-                    colors_cfg = {
-                        'ocean': '#EAF4FF', 'land': '#F7F5F2',
-                        'lakes_fc': '#EAF4FF', 'lakes_ec': '#B3D4F5',
-                        'coast': '#818892', 'borders0': '#8F98A3', 'borders1': '#B3BAC4',
-                        'rivers': '#9ABFEA', 'grid': '#DDE3EA',
-                    }
-                    widths = {'coast':0.4, 'b0':0.5, 'b1':0.35, 'rivers':0.45, 'grid':0.4}
-                    grid_labels = False
 
                 fig = plt.figure(figsize=(fig_w_in, fig_h_in), dpi=dpi)
                 ax = plt.axes(projection=ccrs.PlateCarree())
 
-                # Fonds
-                ax.add_feature(cfeature.OCEAN.with_scale(ne_scale), facecolor=colors_cfg['ocean'], edgecolor='none', zorder=0)
-                ax.add_feature(cfeature.LAND.with_scale(ne_scale), facecolor=colors_cfg['land'], edgecolor='none', zorder=0)
-                ax.add_feature(cfeature.LAKES.with_scale(ne_scale), facecolor=colors_cfg['lakes_fc'],
-                               edgecolor=colors_cfg['lakes_ec'], linewidth=0.3, zorder=1)
-
-                # Côtes & frontières
-                ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), edgecolor=colors_cfg['coast'], linewidth=widths['coast'], zorder=2)
-                ax.add_feature(cfeature.BORDERS.with_scale(ne_scale), edgecolor=colors_cfg['borders0'], linewidth=widths['b0'], zorder=2)
-                try:
-                    admin1 = cfeature.NaturalEarthFeature('cultural', 'admin_1_states_provinces_lines', ne_scale, edgecolor=colors_cfg['borders1'], facecolor='none')
-                    ax.add_feature(admin1, linewidth=widths['b1'], zorder=2)
-                except Exception:
-                    pass
-                try:
-                    ax.add_feature(cfeature.RIVERS.with_scale(ne_scale), edgecolor=colors_cfg['rivers'], facecolor='none', linewidth=widths['rivers'], zorder=2)
-                except Exception:
-                    pass
+                # Palette simple
+                ax.add_feature(cfeature.OCEAN.with_scale(ne_scale), facecolor='#EAF4FF', edgecolor='none', zorder=0)
+                ax.add_feature(cfeature.LAND.with_scale(ne_scale), facecolor='#F7F5F2', edgecolor='none', zorder=0)
+                ax.add_feature(cfeature.LAKES.with_scale(ne_scale), facecolor='#EAF4FF',
+                               edgecolor='#B3D4F5', linewidth=0.3, zorder=1)
+                ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), edgecolor='#818892', linewidth=0.4, zorder=2)
+                ax.add_feature(cfeature.BORDERS.with_scale(ne_scale), edgecolor='#8F98A3', linewidth=0.5, zorder=2)
 
                 ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
 
@@ -607,7 +566,6 @@ if "dynamic_radius" not in st.session_state:
 dynamic_radius = st.session_state["dynamic_radius"]
 radius_m = 20000 if dynamic_radius else None
 radius_px = None if dynamic_radius else 8
-
 if "icon_size_px" not in st.session_state:
     st.session_state["icon_size_px"] = 28
 icon_size_px = st.session_state["icon_size_px"]
@@ -919,7 +877,8 @@ for i in range(len(st.session_state.segments)):
                     row_d = matches_d.iloc[options_d.index(sel_d)] if sel_d in options_d else matches_d.iloc[0]
                     st.session_state.segments[i]["dest_iata"] = row_d["iata_code"]
                     st.session_state.segments[i]["dest_air_label"] = row_d["label"]
-                    st.caption(f"📍 **{row_d['iata_code']}** — {row_d['name']} · {str(row_d['municipality'] or '')} · {str[row_d['iso_country'] or '')}")
+                    # ✅ Correction f-string ici (pas de parenthèse en trop)
+                    st.caption(f"📍 **{row_d['iata_code']}** — {row_d['name']} · {str(row_d['municipality'] or '')} · {str(row_d['iso_country'] or '')}")
                 else:
                     st.session_state.segments[i]["dest_iata"] = ""
                     st.session_state.segments[i]["dest_air_label"] = ""
@@ -1039,7 +998,6 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             if not coord1 or not coord2:
                 st.error(f"Segment {idx} : lieu introuvable ou ambigu.")
                 continue
-
             route_coords = None
             if "routier" in _normalize_no_diacritics(seg["mode"]):
                 try:
