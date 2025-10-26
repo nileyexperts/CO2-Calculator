@@ -15,6 +15,7 @@ import unicodedata
 import tempfile
 from io import BytesIO
 from datetime import datetime
+
 import numpy as np
 import pandas as pd
 import requests
@@ -166,6 +167,7 @@ def coords_from_formatted(formatted: str):
 
 def compute_distance_km(coord1, coord2) -> float:
     return great_circle(coord1, coord2).km
+
 def compute_emissions(distance_km: float, weight_tonnes: float, factor_kg_per_tkm: float) -> float:
     return distance_km * weight_tonnes * factor_kg_per_tkm
 
@@ -501,6 +503,7 @@ if PASSWORD_KEY not in st.secrets:
 
 if "auth_ok" not in st.session_state:
     st.session_state.auth_ok = False
+
 if not st.session_state.auth_ok:
     st.markdown("## Accès sécurisé")
     with st.form("login_form", clear_on_submit=True):
@@ -570,6 +573,7 @@ def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
         lat_old = df.loc[mask_swap, "lat"].copy()
         df.loc[mask_swap, "lat"] = df.loc[mask_swap, "lon"]
         df.loc[mask_swap, "lon"] = lat_old
+
     df = df.dropna(subset=["lat","lon"]).copy()
 
     # colonnes manquantes -> valeurs vides
@@ -855,11 +859,13 @@ def remove_last_segment():
     if "segments" not in st.session_state or not st.session_state.segments:
         st.session_state.segments = [_default_segment()]
         return
+
     if len(st.session_state.segments) <= 1:
         # On remet à zéro plutôt que de supprimer l'unique segment
         st.info("Au moins un segment doit rester. Le segment actuel est réinitialisé.")
         st.session_state.segments = [_default_segment()]
         return
+
     last_idx = len(st.session_state.segments) - 1
     st.session_state.segments.pop()
 
@@ -930,6 +936,7 @@ for i in range(len(st.session_state.segments)):
         else:
             weight_val = st.session_state["weight_0"]
         st.session_state.segments[i]["weight"] = weight_val
+
         # Persist & sortie
         st.session_state.segments[i]["origin"] = {
             "query": o["query"], "display": o["display"], "iata": o["iata"], "coord": o["coord"]
