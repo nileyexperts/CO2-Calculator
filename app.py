@@ -744,7 +744,6 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str,
 
     return {"coord": coord, "display": display, "iata": sel_iata, "unlocode": sel_unlo,
             "query": query_val, "choice": sel}
-``
 
 # =========================
 # Saisie des segments (UI)
