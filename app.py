@@ -97,31 +97,32 @@ ICON_URLS = {
 }
 def reset_segments():
     """
-    Réinitialise la saisie des segments et les champs transitoires associés,
-    puis relance l'application.
+    Réinitialise la saisie des segments, les champs transitoires associés
+    et le N° de dossier, puis relance l'application.
     """
     try:
-        # Réinitialiser la liste de segments à 1 segment par défaut
-        st.session_state.segments = [ _default_segment() ]
+        # 1) Repartir d'un segment vierge
+        st.session_state.segments = [_default_segment()]
 
-        # Nettoyer quelques états de saisie globaux
+        # 2) Nettoyer les états de saisie Origine/Destination (tous les champs)
         for k in list(st.session_state.keys()):
-            # Effacer les champs d'input des lieux (query, choice, coord, display, iata, unlo)
-            if any(pat in k for pat in ["origin_query_", "dest_query_", 
-                                        "origin_choice_", "dest_choice_",
-                                        "origin_coord_", "dest_coord_", 
-                                        "origin_display_", "dest_display_",
-                                        "origin_iata_", "dest_iata_",
-                                        "origin_unlo_", "dest_unlo_"]):
+            if any(pat in k for pat in [
+                "origin_query_", "dest_query_",
+                "origin_choice_", "dest_choice_",
+                "origin_coord_", "dest_coord_",
+                "origin_display_", "dest_display_",
+                "origin_iata_", "dest_iata_",
+                "origin_unlo_", "dest_unlo_",
+            ]):
                 st.session_state.pop(k, None)
 
-        # Réinitialiser le poids global du premier segment s'il existe
+        # 3) Poids global (sera redemandé)
         st.session_state.pop("weight_0", None)
 
-        # (optionnel) garder le n° de dossier; si vous voulez aussi le vider, décommentez :
-        # st.session_state.pop("dossier_transport", None)
+        # 4) Vider aussi le N° dossier (⚠️ demandé)
+        st.session_state.pop("dossier_transport", None)
 
-        # (optionnel) reset du focus carte
+        # (optionnel) Réinitialiser le focus carte
         # st.session_state.pop("Focus segment", None)
 
     finally:
