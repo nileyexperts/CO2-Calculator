@@ -302,7 +302,7 @@ def _pdf_add_mode_icon(ax, lon, lat, cat_key, size_px, transform=None):
         pass
 
 # =========================
-# Rapport PDF MONO-PAGE
+# Rapport PDF MONO-PAGE — carte détaillée (Option A)
 # =========================
 def generate_pdf_report(
     df, dossier_val, total_distance, total_emissions, unit, rows,
@@ -310,7 +310,7 @@ def generate_pdf_report(
 ):
     """
     Génère un PDF A4 paysage en UNE SEULE PAGE : Titre + Résumé + Carte + Tableau + Footer.
-    Le tableau est compacté (police 8→7→6) puis tronqué si nécessaire avec une notice finale.
+    Carte plus détaillée : DPI=220, zoom heuristique (jusqu'à 9) ; fallback NE enrichi (admin-1, routes, urbain).
     """
     from reportlab.pdfgen import canvas as pdfcanvas
 
@@ -329,7 +329,6 @@ def generate_pdf_report(
     heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'], fontSize=10.5,
                                    textColor=colors.HexColor('#2c5aa0'), spaceAfter=0, spaceBefore=0, alignment=0)
     normal_style = styles['Normal']; normal_style.fontSize = 8
-    cell_style = ParagraphStyle('CellWrap', parent=normal_style, fontSize=8, leading=10, alignment=0)
 
     y = PAGE_H - M
 
@@ -358,7 +357,6 @@ def generate_pdf_report(
     else:
         title_x = M
         title_y = y - title_h
-
     title_para.drawOn(c, title_x, title_y)
 
     # Descendre sous le bloc d'entête : on prend la plus grande hauteur (logo/titre) + marge
@@ -385,7 +383,7 @@ def generate_pdf_report(
     info_tbl.drawOn(c, M, y - ih)
     y = y - ih - 0.25*cm
 
-    # Carte (image matplotlib)
+    # === Carte (image matplotlib) — option A : DPI↑ et zoom agressif, NE enrichi ===
     footer_h = 0.6*cm
     min_table_h = 5.5*cm
     max_map_h = 7.5*cm
@@ -397,13 +395,28 @@ def generate_pdf_report(
         map_h = max(4.0*cm, map_h - delta)
         table_h_avail = (y - M) - footer_h - map_h - 0.25*cm
 
+    # DPI élevé pour finesse
+    dpi = 220
+
+    # Heuristique de zoom agressive (0..9)
+    def _choose_zoom(min_lon, max_lon, min_lat, max_lat):
+        span_lon = max_lon - min_lon
+        span_lat = max_lat - min_lat
+        span = max(span_lon, span_lat)
+        if span <= 0.5:   return 9
+        if span <= 1.0:   return 8
+        if span <= 2.0:   return 7
+        if span <= 5.0:   return 6
+        if span <= 12.0:  return 5
+        if span <= 24.0:  return 4
+        return 3
+
     map_buffer = None
     try:
         all_lats = [r["lat_o"] for r in rows] + [r["lat_d"] for r in rows]
         all_lons = [r["lon_o"] for r in rows] + [r["lon_d"] for r in rows]
         min_lon, max_lon, min_lat, max_lat = _compute_extent_from_coords(all_lats, all_lons)
 
-        dpi = 150
         fig_w_in = AVAIL_W / 72.0   # points -> inches
         fig_h_in = map_h / 72.0
 
@@ -422,16 +435,6 @@ def generate_pdf_report(
         mode_label = pdf_basemap_choice_label
         mode = PDF_BASEMAP_MODES.get(mode_label, "auto")
 
-        def _draw_overlays(ax, ccrs):
-            try: ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), edgecolor='#555', linewidth=0.4, zorder=2)
-            except Exception: pass
-            try: ax.add_feature(cfeature.BORDERS.with_scale(ne_scale), edgecolor='#666', linewidth=0.4, zorder=2)
-            except Exception: pass
-            try: ax.add_feature(cfeature.LAKES.with_scale(ne_scale), facecolor='#87B9FF', edgecolor='#6FA8FF', linewidth=0.2, zorder=1)
-            except Exception: pass
-            try: ax.add_feature(cfeature.RIVERS.with_scale(ne_scale), edgecolor='#6FA8FF', linewidth=0.25, zorder=1)
-            except Exception: pass
-
         if use_cartopy:
             fig = plt.figure(figsize=(fig_w_in, fig_h_in), dpi=dpi)
             ax = None
@@ -441,14 +444,14 @@ def generate_pdf_report(
                     tiler = Stamen('terrain-background')
                     ax = plt.axes(projection=tiler.crs)
                     ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
-                    zoom = 6 if (max_lon-min_lon < 5 and max_lat-min_lat < 3) else (5 if (max_lon-min_lon < 15) else 4)
+                    zoom = _choose_zoom(min_lon, max_lon, min_lat, max_lat)
                     ax.add_image(tiler, zoom)
                     raster_ok = True
                 if not raster_ok and mode in ("auto","osm"):
                     tiler = OSM()
                     ax = plt.axes(projection=tiler.crs)
                     ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
-                    zoom = 6 if (max_lon-min_lon < 5 and max_lat-min_lat < 3) else (5 if (max_lon-min_lon < 15) else 4)
+                    zoom = _choose_zoom(min_lon, max_lon, min_lat, max_lat)
                     ax.add_image(tiler, zoom)
                     raster_ok = True
             except Exception:
@@ -462,10 +465,37 @@ def generate_pdf_report(
                 ax.add_feature(cfeature.LAKES.with_scale(ne_scale), facecolor=colors_cfg['lakes_fc'], edgecolor=colors_cfg['lakes_ec'], linewidth=0.3, zorder=1)
                 ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), edgecolor=colors_cfg['coast'], linewidth=0.4, zorder=2)
                 ax.add_feature(cfeature.BORDERS.with_scale(ne_scale), edgecolor=colors_cfg['borders0'], linewidth=0.5, zorder=2)
+                # Enrichissements NE 10m : admin-1, routes, urbain + grille
+                try:
+                    admin1 = cfeature.NaturalEarthFeature('cultural', 'admin_1_states_provinces_lines', '10m',
+                                                          edgecolor='#777777', facecolor='none')
+                    ax.add_feature(admin1, linewidth=0.4, zorder=2)
+                    roads = cfeature.NaturalEarthFeature('cultural', 'roads', '10m',
+                                                         edgecolor='#B07020', facecolor='none')
+                    ax.add_feature(roads, linewidth=0.35, zorder=3)
+                    urban = cfeature.NaturalEarthFeature('cultural', 'urban_areas', '10m',
+                                                         edgecolor='none', facecolor='#E0D5CC')
+                    ax.add_feature(urban, zorder=1)
+                except Exception:
+                    pass
+                try:
+                    gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=False,
+                                      linewidth=0.25, color='#DADDE2', alpha=0.7, linestyle='--')
+                except Exception:
+                    pass
                 ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
             else:
-                _draw_overlays(ax, ccrs)
+                # Overlays par-dessus raster
+                try: ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), edgecolor='#555', linewidth=0.4, zorder=2)
+                except Exception: pass
+                try: ax.add_feature(cfeature.BORDERS.with_scale(ne_scale), edgecolor='#666', linewidth=0.4, zorder=2)
+                except Exception: pass
+                try: ax.add_feature(cfeature.LAKES.with_scale(ne_scale), facecolor='#87B9FF', edgecolor='#6FA8FF', linewidth=0.2, zorder=1)
+                except Exception: pass
+                try: ax.add_feature(cfeature.RIVERS.with_scale(ne_scale), edgecolor='#6FA8FF', linewidth=0.25, zorder=1)
+                except Exception: pass
 
+            # Segments
             mode_colors = {"routier":"#0066CC","aerien":"#CC0000","maritime":"#009900","ferroviaire":"#9900CC"}
             for r in rows:
                 cat = mode_to_category(r["Mode"]); color = mode_colors.get(cat, "#666666")
@@ -485,6 +515,7 @@ def generate_pdf_report(
             plt.close(fig)
             map_buffer.seek(0)
         else:
+            # Fallback simple (sans cartopy)
             fig, ax = plt.subplots(figsize=(fig_w_in, fig_h_in), dpi=dpi)
             ax.set_facecolor('#F7F8FA')
             ax.set_xlim(min_lon, max_lon); ax.set_ylim(min_lat, max_lat)
@@ -512,7 +543,10 @@ def generate_pdf_report(
     y = y - map_h - 0.25*cm
 
     # Heading "Détail des segments"
-    heading_para = Paragraph("Détail des segments", heading_style)
+    heading_para = Paragraph("Détail des segments", ParagraphStyle(
+        'CustomHeading', parent=styles['Heading2'], fontSize=10.5,
+        textColor=colors.HexColor('#2c5aa0'), spaceAfter=0, spaceBefore=0, alignment=0
+    ))
     hw, hh = heading_para.wrap(AVAIL_W, AVAIL_H)
     heading_para.drawOn(c, M, y - hh)
     y = y - hh - 0.10*cm
@@ -523,7 +557,7 @@ def generate_pdf_report(
     col_widths = [1.2*cm, 4.8*cm, 4.8*cm, 3.0*cm, 1.8*cm, 1.8*cm, 2.2*cm, 2.2*cm]
 
     def _p_cell_dyn(s, fs):
-        stl = ParagraphStyle('CellWrapDyn', parent=normal_style, fontSize=fs, leading=max(8, fs+2), alignment=0)
+        stl = ParagraphStyle('CellWrapDyn', parent=styles['Normal'], fontSize=fs, leading=max(8, fs+2), alignment=0)
         try:
             from reportlab.lib.utils import escape
         except Exception:
@@ -551,7 +585,7 @@ def generate_pdf_report(
         body.append(total_row)
         if show_notice and hidden_count > 0:
             notice = Paragraph(f"… {hidden_count} ligne(s) non affichée(s) pour tenir sur 1 page …",
-                               ParagraphStyle('Notice', parent=normal_style, fontSize=max(7, font_size-1),
+                               ParagraphStyle('Notice', parent=styles['Normal'], fontSize=max(7, font_size-1),
                                               textColor=colors.grey, alignment=1))
             body.append([notice] + [""]*(len(headers)-1))  # ligne notice fusionnée
         tbl = Table(body, colWidths=col_widths, repeatRows=1)
@@ -601,7 +635,7 @@ def generate_pdf_report(
     # Footer
     footer_para = Paragraph(
         f"_Document généré le {datetime.now().strftime('%d/%m/%Y %H:%M')} — Calculateur CO2 multimodal - NILEY EXPERTS_",
-        ParagraphStyle('Footer', parent=normal_style, fontSize=7, textColor=colors.grey, alignment=1)
+        ParagraphStyle('Footer', parent=styles['Normal'], fontSize=7, textColor=colors.grey, alignment=1)
     )
     fw, fh = footer_para.wrap(AVAIL_W, 0.8*cm)
     footer_para.drawOn(c, M + (AVAIL_W - fw)/2.0, M - 0.2*cm)
