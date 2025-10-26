@@ -296,7 +296,7 @@ def generate_pdf_report(
     if logo:
         story.append(logo)
 
-    story.append(Paragraph("RAPPORT D'EMPREINTE CARBONE MULTIMODAL", title_style))
+    story.append(Paragraph("RAPPORT D'EMPREINTE Co2 MULTIMODAL", title_style))
     story.append(Spacer(1, 0.2*cm))
 
     info_summary_data = [
