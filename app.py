@@ -314,7 +314,7 @@ def generate_pdf_report(
     if logo:
         story.append(logo)
 
-    story.append(Paragraph("RAPPORT D'EMPREINTE Co2 MULTIMODAL", title_style))
+    story.append(Paragraph("RAPPORT D'EMPREINTE Co2", title_style))
     story.append(Spacer(1, 0.2*cm))
 
     info_summary_data = [
@@ -1185,7 +1185,7 @@ if st.button("Calculer l'empreinte Co2 totale", disabled=not can_calculate):
         safe_suffix = "".join(c if (c.isalnum() or c in "-_") else "_" for c in raw_suffix)
         safe_suffix = f"_{safe_suffix}" if safe_suffix else ""
         filename_csv = f"resultats_co2_multimodal{safe_suffix}.csv"
-        filename_pdf = f"rapport_co2_multimodal{safe_suffix}.pdf"
+        filename_pdf = f"rapport_co2{safe_suffix}.pdf"
 
         mode_map = {
             "Automatique (recommandé)": "auto",
