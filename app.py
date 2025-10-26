@@ -557,7 +557,92 @@ def search_airports(query: str, limit: int = 10) -> pd.DataFrame:
             | df["municipality"].astype(str).str.lower().str.contains(q.lower())
         ]
     return res.head(limit)
+    
+# =========================
+# Ports : chargement + recherche (UN/LOCODE ou équivalent)
+# =========================
+@st.cache_data(show_spinner=False, ttl=7*24*60*60)
+def load_ports_csv(path: str = "ports.csv") -> pd.DataFrame:
+    """
+    Charge un fichier de ports (lat/lon obligatoires).
+    Colonnes tolérées : unlocode|locode|UNLOCODE, name|port_name,
+                        country|iso_country|country_code, lat, lon
+    """
+    try:
+        df = pd.read_csv(path)
+    except Exception as e:
+        st.warning(f"Impossible de charger '{path}': {e}")
+        return pd.DataFrame(columns=["unlocode", "name", "country", "lat", "lon", "label"])
 
+    # Normalisation des colonnes attendues
+    cols = {c.lower(): c for c in df.columns}
+    def pick(*cands):
+        for c in cands:
+            if c in cols: 
+                return cols[c]
+        return None
+
+    col_unlo = pick("unlocode", "locode", "unlocode ")
+    col_name = pick("name", "port_name")
+    col_ctry = pick("country", "iso_country", "country_code")
+    col_lat  = pick("lat", "latitude")
+    col_lon  = pick("lon", "lng", "long", "longitude")
+
+    required_missing = [k for k,v in {
+        "lat": col_lat, "lon": col_lon
+    }.items() if v is None]
+    if required_missing:
+        st.error("Colonnes manquantes dans ports.csv : " + ", ".join(required_missing))
+        return pd.DataFrame(columns=["unlocode", "name", "country", "lat", "lon", "label"])
+
+    # Construire le DataFrame cible
+    out = pd.DataFrame()
+    out["unlocode"] = df[col_unlo] if col_unlo else ""
+    out["name"]     = df[col_name] if col_name else ""
+    out["country"]  = df[col_ctry] if col_ctry else ""
+    out["lat"]      = pd.to_numeric(df[col_lat], errors="coerce")
+    out["lon"]      = pd.to_numeric(df[col_lon], errors="coerce")
+
+    out = out.dropna(subset=["lat","lon"]).copy()
+    out["unlocode"] = out["unlocode"].astype(str).str.upper().str.strip()
+    out["name"]     = out["name"].astype(str).replace({"nan":""}).fillna("").str.strip()
+    out["country"]  = out["country"].astype(str).replace({"nan":""}).fillna("").str.strip()
+
+    # Étiquette pour l’UI
+    def _label_port(r):
+        base = (r["name"] or "Port sans nom").strip()
+        extras = " · ".join([p for p in [r["unlocode"], r["country"]] if p])
+        return f"{base} {extras}" if extras else base
+    out["label"] = out.apply(_label_port, axis=1)
+
+    # Colonnes finales
+    return out[["unlocode","name","country","lat","lon","label"]]
+
+
+@st.cache_data(show_spinner=False, ttl=24*60*60)
+def search_ports(query: str, limit: int = 12) -> pd.DataFrame:
+    df = load_ports_csv()
+    q = (query or "").strip()
+    if df.empty:
+        return df
+    if not q:
+        return df.head(limit)
+
+    # Si l'utilisateur tape un UN/LOCODE
+    if len(q) in (5,6):  # certains jeux contiennent 6 (avec séparateur)
+        res = df[df["unlocode"].str.upper().str.replace(r"[^A-Z0-9]", "", regex=True)
+                  .str.startswith(re.sub(r"[^A-Za-z0-9]", "", q.upper()))]
+        if not res.empty:
+            return res.head(limit)
+
+    # Recherche par nom de port et pays
+    ql = q.lower()
+    res = df[
+        df["name"].str.lower().str.contains(ql, na=False)
+        | df["country"].str.lower().str.contains(ql, na=False)
+        | df["unlocode"].str.lower().str.contains(ql, na=False)
+    ]
+    return res.head(limit)
 # =========================
 # Champ unifié (Adresse/Ville/Pays ou IATA)
 # =========================
