@@ -653,11 +653,13 @@ for i in range(len(st.session_state.segments)):
 
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("**Origine**")
-            o = unified_location_input("origin", i, "Origine")
-        with c2:
-            st.markdown("**Destination**")
-            d = unified_location_input("dest", i, "Destination")
+    st.markdown("**Origine**")
+    # Proposer les aéroports UNIQUEMENT si mode Aérien pour l'Origine
+    o = unified_location_input("origin", i, "Origine", show_airports=("aerien" in _normalize_no_diacritics(mode)))
+with c2:
+    st.markdown("**Destination**")
+    # Jamais d'aéroports pour la Destination (selon votre demande)
+    d = unified_location_input("dest", i, "Destination", show_airports=False)
 
         # Poids (mode global "envoi unique")
         if "weight_0" not in st.session_state:
