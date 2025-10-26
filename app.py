@@ -4,6 +4,7 @@
 # + Fond WEB #DFEDF5 + Contours #BB9357 + Natural Earth (Cartopy) + Auth + Export CSV/PDF
 # + Paramètres/Apparence/Fond PDF MASQUÉS (valeurs par défaut)
 # + Gestion avancée des segments : ajouter/insérer/dupliquer/supprimer
+# + Fond de carte PDF amélioré (thèmes internes : voyager/minimal/terrain, sans sélecteur)
 
 import os
 import time
@@ -41,7 +42,7 @@ import numpy as np
 os.environ.setdefault("CARTOPY_CACHE_DIR", os.path.join(tempfile.gettempdir(), "cartopy_cache"))
 
 # =========================
-# Paramètres & Config page
+# Paramètres globaux & Config page
 # =========================
 st.set_page_config(
     page_title="Calculateur CO2 multimodal - NILEY EXPERTS",
@@ -49,27 +50,21 @@ st.set_page_config(
     layout="centered"
 )
 
-# Fond de l'app WEB : #DFEDF5 (main + sidebar) + Contours #BB9357 + boîte utilitaire
+# Fond de l'app WEB : #DFEDF5 (main + sidebar)
 st.markdown(
     """
     <style>
-    /* Optionnel : styling global (à adapter si souhaité) */
     .stApp { background-color: #DFEDF5; }
-    /* Exemple de contours/boîtes si vous souhaitez pousser le style */
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# Helpers boîtes visuelles
-def open_box(title: str = ""):
-    if title:
-        st.markdown(f"##### {title}\n", unsafe_allow_html=True)
-    else:
-        st.markdown("\n", unsafe_allow_html=True)
+# -- Constantes visuelles/ressources
+LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png"
 
-def close_box():
-    st.markdown("\n", unsafe_allow_html=True)
+# Thème pour la carte PDF (sans sélecteur dans l'UI) : "voyager" | "minimal" | "terrain"
+PDF_THEME = "voyager"
 
 DEFAULT_EMISSION_FACTORS = {
     "Routier": 0.100,
@@ -78,8 +73,6 @@ DEFAULT_EMISSION_FACTORS = {
     "Ferroviaire": 0.030,
 }
 MAX_SEGMENTS = 50
-# URL raw du logo (⚠️ pas l’URL "blob")
-LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png"
 
 # =========================
 # Entête simple avec logo
@@ -118,6 +111,7 @@ def coords_from_formatted(formatted: str):
 
 def compute_distance_km(coord1, coord2) -> float:
     return great_circle(coord1, coord2).km
+
 def compute_emissions(distance_km: float, weight_tonnes: float, factor_kg_per_tkm: float) -> float:
     return distance_km * weight_tonnes * factor_kg_per_tkm
 
@@ -231,12 +225,13 @@ def _pdf_add_mode_icon(ax, lon, lat, cat_key, size_px, transform=None):
         pass
 
 # =========================
-# Génération du PDF
+# Génération du PDF (fond de carte enrichi)
 # =========================
 def generate_pdf_report(
     df, dossier_val, total_distance, total_emissions, unit, rows,
     pdf_basemap_mode='auto',  # 'auto' | 'simple' | 'naturalearth'
     ne_scale='110m',
+    pdf_theme='voyager',       # 'voyager' | 'minimal' | 'terrain'
     pdf_icon_size_px=28
 ):
     buffer = BytesIO()
@@ -349,16 +344,91 @@ def generate_pdf_report(
             try:
                 import cartopy.crs as ccrs
                 import cartopy.feature as cfeature
+                from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+
+                # ---------- Styles par thème (sans sélecteur UI) ----------
+                if pdf_theme == 'minimal':
+                    colors_cfg = {
+                        'ocean':    '#F5F7FA',
+                        'land':     '#FAFAF8',
+                        'lakes_fc': '#F5F7FA',
+                        'lakes_ec': '#D9DEE7',
+                        'coast':    '#B5BBC6',
+                        'borders0': '#C3C8D2',
+                        'borders1': '#E0E5EC',
+                        'rivers':   '#D0D6E2',
+                        'grid':     '#E6EAF0',
+                    }
+                    widths = {'coast':0.3, 'b0':0.3, 'b1':0.25, 'rivers':0.3, 'grid':0.35}
+                    grid_labels = True
+                elif pdf_theme == 'terrain':
+                    colors_cfg = {
+                        'ocean':    '#E8F2FF',
+                        'land':     '#F2EFE9',
+                        'lakes_fc': '#E8F2FF',
+                        'lakes_ec': '#9FC3EB',
+                        'coast':    '#556270',
+                        'borders0': '#6C7A89',
+                        'borders1': '#A0AABA',
+                        'rivers':   '#6DA6E2',
+                        'grid':     '#CBD5E3',
+                    }
+                    widths = {'coast':0.5, 'b0':0.6, 'b1':0.4, 'rivers':0.6, 'grid':0.5}
+                    grid_labels = True
+                else:  # 'voyager' (défaut)
+                    colors_cfg = {
+                        'ocean':    '#EAF4FF',
+                        'land':     '#F7F5F2',
+                        'lakes_fc': '#EAF4FF',
+                        'lakes_ec': '#B3D4F5',
+                        'coast':    '#818892',
+                        'borders0': '#8F98A3',
+                        'borders1': '#B3BAC4',
+                        'rivers':   '#9ABFEA',
+                        'grid':     '#DDE3EA',
+                    }
+                    widths = {'coast':0.4, 'b0':0.5, 'b1':0.35, 'rivers':0.45, 'grid':0.4}
+                    grid_labels = False  # labels discrets (off par défaut)
 
                 fig = plt.figure(figsize=(fig_w_in, fig_h_in), dpi=dpi)
                 ax = plt.axes(projection=ccrs.PlateCarree())
-                ax.add_feature(cfeature.OCEAN.with_scale(ne_scale), facecolor='#EAF4FF', edgecolor='none', zorder=0)
-                ax.add_feature(cfeature.LAND.with_scale(ne_scale), facecolor='#F7F5F2', edgecolor='none', zorder=0)
-                ax.add_feature(cfeature.LAKES.with_scale(ne_scale), facecolor='#EAF4FF', edgecolor='#B3D4F5', linewidth=0.3, zorder=1)
-                ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), edgecolor='#818892', linewidth=0.4, zorder=2)
-                ax.add_feature(cfeature.BORDERS.with_scale(ne_scale), edgecolor='#A6AEB8', linewidth=0.3, zorder=2)
+
+                # Fonds
+                ax.add_feature(cfeature.OCEAN.with_scale(ne_scale), facecolor=colors_cfg['ocean'], edgecolor='none', zorder=0)
+                ax.add_feature(cfeature.LAND.with_scale(ne_scale),  facecolor=colors_cfg['land'],  edgecolor='none', zorder=0)
+                ax.add_feature(cfeature.LAKES.with_scale(ne_scale), facecolor=colors_cfg['lakes_fc'],
+                                edgecolor=colors_cfg['lakes_ec'], linewidth=0.3, zorder=1)
+                # Côtes & frontières
+                ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), edgecolor=colors_cfg['coast'],
+                                linewidth=widths['coast'], zorder=2)
+                ax.add_feature(cfeature.BORDERS.with_scale(ne_scale),   edgecolor=colors_cfg['borders0'],
+                                linewidth=widths['b0'], zorder=2)
+                # Frontières admin-1 (si dispo aux échelles fines)
+                try:
+                    admin1 = cfeature.NaturalEarthFeature('cultural', 'admin_1_states_provinces_lines', ne_scale,
+                                                          edgecolor=colors_cfg['borders1'], facecolor='none')
+                    ax.add_feature(admin1, linewidth=widths['b1'], zorder=2)
+                except Exception:
+                    pass
+                # Rivières
+                try:
+                    ax.add_feature(cfeature.RIVERS.with_scale(ne_scale), edgecolor=colors_cfg['rivers'],
+                                   facecolor='none', linewidth=widths['rivers'], zorder=2)
+                except Exception:
+                    pass
+
                 ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
-                ax.gridlines(draw_labels=False, linewidth=0.4, color='#DDE3EA', alpha=1.0, linestyle='--', zorder=1)
+
+                # Graticule
+                gl = ax.gridlines(draw_labels=grid_labels, linewidth=widths['grid'], color=colors_cfg['grid'],
+                                  alpha=1.0, linestyle='--', zorder=1)
+                if grid_labels:
+                    gl.top_labels = False
+                    gl.right_labels = False
+                    gl.xlabel_style = {'size': 6, 'color': '#7A808A'}
+                    gl.ylabel_style = {'size': 6, 'color': '#7A808A'}
+                    gl.xformatter = LONGITUDE_FORMATTER
+                    gl.yformatter = LATITUDE_FORMATTER
 
                 mode_colors = {"routier": "#0066CC", "aerien": "#CC0000", "maritime": "#009900", "ferroviaire": "#9900CC"}
                 for r in rows:
@@ -583,6 +653,14 @@ st.markdown("Ajoutez plusieurs segments (origine → destination), choisissez le
 # =========================
 # Informations générales
 # =========================
+def open_box(title: str = ""):
+    if title:
+        st.markdown(f"##### {title}\n", unsafe_allow_html=True)
+    else:
+        st.markdown("\n", unsafe_allow_html=True)
+def close_box():
+    st.markdown("\n", unsafe_allow_html=True)
+
 open_box("Informations générales")
 dossier_transport = st.text_input(
     "N° dossier Transport (obligatoire) *",
@@ -879,6 +957,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             emissions = compute_emissions(distance_km, weight_tonnes, factor)
 
             total_distance += distance_km; total_emissions += emissions
+
             rows.append({
                 "Segment": idx,
                 "Origine": seg["origin"],
@@ -1097,6 +1176,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                         rows=rows,
                         pdf_basemap_mode=pdf_basemap_param,
                         ne_scale=ne_scale,
+                        pdf_theme=PDF_THEME,  # <-- Thème appliqué sans sélecteur
                         pdf_icon_size_px=icon_size_px
                     )
                 st.download_button("Télécharger le rapport PDF", data=pdf_buffer, file_name=filename_pdf, mime="application/pdf")
