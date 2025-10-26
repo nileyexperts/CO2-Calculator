@@ -540,9 +540,14 @@ def search_airports(query: str, limit: int = 10) -> pd.DataFrame:
 # =========================
 # Champ unifié (Adresse/Ville/Pays ou IATA)
 # =========================
-def unified_location_input(side_key: str, seg_index: int, label_prefix: str):
+# --- AVANT ---
+# def unified_location_input(side_key: str, seg_index: int, label_prefix: str):
+
+# --- APRÈS ---
+def unified_location_input(side_key: str, seg_index: int, label_prefix: str, show_airports: bool = True):
     """
-    Text input unique + selectbox de résultats combinés : ✈️ aéroports puis 📍 OpenCage
+    Text input unique + selectbox de résultats combinés :
+    ✈️ aéroports (si show_airports=True) puis 📍 OpenCage
     Renvoie dict {coord:(lat,lon)|None, display:str, iata:str, query:str, choice:str}
     """
     q_key = f"{side_key}_query_{seg_index}"
@@ -552,33 +557,42 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str):
     iata_key = f"{side_key}_iata_{seg_index}"
 
     query_val = st.text_input(
-        f"{label_prefix} — Adresse / Ville / Pays ou IATA (3 lettres)",
+        f"{label_prefix} — Adresse / Ville / Pays" + (" ou IATA (3 lettres)" if show_airports else ""),
         value=st.session_state.get(q_key, ""),
         key=q_key
     )
 
     airports = pd.DataFrame()
     oc_opts = []
+
     if query_val:
-        airports = search_airports(query_val, limit=10)
+        # Ne chercher les aéroports que si autorisé
+        if show_airports:
+            airports = search_airports(query_val, limit=10)
         oc = geocode_cached(query_val, limit=5)
         oc_opts = [r['formatted'] for r in oc] if oc else []
 
     options = []
     airport_rows = []
-    if not airports.empty:
+
+    # Injecter les résultats IATA seulement si show_airports=True
+    if show_airports and not airports.empty:
         for _, r in airports.iterrows():
             label = f"✈️ {r['label']} (IATA {r['iata_code']})"
             options.append(label); airport_rows.append(r)
+
     if oc_opts:
         options += [f"📍 {o}" for o in oc_opts]
+
     if not options:
         options = ["— Aucun résultat —"]
 
     sel = st.selectbox("Résultats", options, index=0, key=c_key)
+
     coord = None; display = ""; sel_iata = ""
     if sel != "— Aucun résultat —":
         if sel.startswith("✈️"):
+            # Cas aéroport (n’existe que si show_airports=True)
             idx = options.index(sel)
             r = airport_rows[idx] if idx < len(airport_rows) else airports.iloc[0]
             coord = (float(r["lat"]), float(r["lon"]))
@@ -594,7 +608,6 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str):
     st.session_state[iata_key] = sel_iata
 
     return {"coord": coord, "display": display, "iata": sel_iata, "query": query_val, "choice": sel}
-
 # =========================
 # Saisie des segments (UI)
 # =========================
