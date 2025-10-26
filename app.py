@@ -67,12 +67,14 @@ PDF_THEME_DEFAULT = "terrain"
 NE_SCALE_DEFAULT = "50m"
 
 PDF_BASEMAP_LABELS = [
+    "Identique à la carte Web (Carto)",              # NEW
     "Auto (Stamen → OSM → NaturalEarth)",
     "Stamen Terrain (détaillé, internet)",
     "OSM (détaillé, internet)",
     "Natural Earth (vectoriel, offline possible)"
 ]
 PDF_BASEMAP_MODES = {
+    "Identique à la carte Web (Carto)": "carto_web",  # NEW
     "Auto (Stamen → OSM → NaturalEarth)": "auto",
     "Stamen Terrain (détaillé, internet)": "stamen",
     "OSM (détaillé, internet)": "osm",
@@ -302,15 +304,47 @@ def _pdf_add_mode_icon(ax, lon, lat, cat_key, size_px, transform=None):
         pass
 
 # =========================
-# Rapport PDF MONO-PAGE — carte détaillée (Option A)
+# Tiler Carto XYZ (même style que la carte web)
+# =========================
+def _carto_tiler_from_web_style(web_style_label: str):
+    """
+    Mappe le libellé de la carte web Streamlit -> URL template raster Carto équivalente.
+    Retourne un tiler Cartopy (si cartopy dispo), sinon None.
+    """
+    try:
+        import cartopy.io.img_tiles as cimgt
+    except Exception:
+        return None
+
+    url_by_label = {
+        "Carto Positron (clair)": "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+        "Carto Dark Matter (sombre)": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+        "Carto Voyager": "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+    }
+    subdomains = ["a", "b", "c", "d"]
+    template = url_by_label.get(web_style_label)
+    if not template:
+        template = url_by_label["Carto Positron (clair)"]
+
+    class CartoTiles(cimgt.GoogleTiles):
+        def _image_url(self, tile):
+            z, x, y = tile
+            s = subdomains[(x + y) % len(subdomains)]
+            return template.format(s=s, z=z, x=x, y=y)
+
+    return CartoTiles()
+
+# =========================
+# Rapport PDF MONO-PAGE — carte détaillée + fond identique web
 # =========================
 def generate_pdf_report(
     df, dossier_val, total_distance, total_emissions, unit, rows,
-    pdf_basemap_choice_label, ne_scale='50m', pdf_theme='terrain', pdf_icon_size_px=24
+    pdf_basemap_choice_label, ne_scale='50m', pdf_theme='terrain', pdf_icon_size_px=24,
+    web_map_style_label=None  # NEW: label de la carte web
 ):
     """
     Génère un PDF A4 paysage en UNE SEULE PAGE : Titre + Résumé + Carte + Tableau + Footer.
-    Carte plus détaillée : DPI=220, zoom heuristique (jusqu'à 9) ; fallback NE enrichi (admin-1, routes, urbain).
+    Carte détaillée (DPI=220, zoom agressif). Fond identique à la carte web via tuiles Carto XYZ si choisi.
     """
     from reportlab.pdfgen import canvas as pdfcanvas
 
@@ -383,7 +417,7 @@ def generate_pdf_report(
     info_tbl.drawOn(c, M, y - ih)
     y = y - ih - 0.25*cm
 
-    # === Carte (image matplotlib) — option A : DPI↑ et zoom agressif, NE enrichi ===
+    # === Carte (image matplotlib) — DPI↑ et zoom agressif, fond identique web si choisi ===
     footer_h = 0.6*cm
     min_table_h = 5.5*cm
     max_map_h = 7.5*cm
@@ -440,13 +474,26 @@ def generate_pdf_report(
             ax = None
             raster_ok = False
             try:
-                if mode in ("auto","stamen"):
+                # 1) Fond identique à la carte web (Carto XYZ)
+                if mode == "carto_web" and web_map_style_label:
+                    tiler = _carto_tiler_from_web_style(web_map_style_label)
+                    if tiler is not None:
+                        ax = plt.axes(projection=tiler.crs)
+                        ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
+                        zoom = _choose_zoom(min_lon, max_lon, min_lat, max_lat)
+                        ax.add_image(tiler, zoom)
+                        raster_ok = True
+
+                # 2) Stamen Terrain
+                if not raster_ok and mode in ("auto","stamen"):
                     tiler = Stamen('terrain-background')
                     ax = plt.axes(projection=tiler.crs)
                     ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
                     zoom = _choose_zoom(min_lon, max_lon, min_lat, max_lat)
                     ax.add_image(tiler, zoom)
                     raster_ok = True
+
+                # 3) OSM
                 if not raster_ok and mode in ("auto","osm"):
                     tiler = OSM()
                     ax = plt.axes(projection=tiler.crs)
@@ -454,10 +501,12 @@ def generate_pdf_report(
                     zoom = _choose_zoom(min_lon, max_lon, min_lat, max_lat)
                     ax.add_image(tiler, zoom)
                     raster_ok = True
+
             except Exception:
                 raster_ok = False
 
             if not raster_ok:
+                # Natural Earth vectoriel enrichi
                 ax = plt.axes(projection=ccrs.PlateCarree())
                 colors_cfg = {'ocean':'#EAF4FF','land':'#F7F5F2','lakes_fc':'#EAF4FF','lakes_ec':'#B3D4F5', 'coast':'#818892','borders0':'#8F98A3'}
                 ax.add_feature(cfeature.OCEAN.with_scale(ne_scale), facecolor=colors_cfg['ocean'], edgecolor='none', zorder=0)
@@ -465,7 +514,6 @@ def generate_pdf_report(
                 ax.add_feature(cfeature.LAKES.with_scale(ne_scale), facecolor=colors_cfg['lakes_fc'], edgecolor=colors_cfg['lakes_ec'], linewidth=0.3, zorder=1)
                 ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), edgecolor=colors_cfg['coast'], linewidth=0.4, zorder=2)
                 ax.add_feature(cfeature.BORDERS.with_scale(ne_scale), edgecolor=colors_cfg['borders0'], linewidth=0.5, zorder=2)
-                # Enrichissements NE 10m : admin-1, routes, urbain + grille
                 try:
                     admin1 = cfeature.NaturalEarthFeature('cultural', 'admin_1_states_provinces_lines', '10m',
                                                           edgecolor='#777777', facecolor='none')
@@ -485,7 +533,7 @@ def generate_pdf_report(
                     pass
                 ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
             else:
-                # Overlays par-dessus raster
+                # Overlays légers par-dessus raster
                 try: ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), edgecolor='#555', linewidth=0.4, zorder=2)
                 except Exception: pass
                 try: ax.add_feature(cfeature.BORDERS.with_scale(ne_scale), edgecolor='#666', linewidth=0.4, zorder=2)
@@ -543,10 +591,7 @@ def generate_pdf_report(
     y = y - map_h - 0.25*cm
 
     # Heading "Détail des segments"
-    heading_para = Paragraph("Détail des segments", ParagraphStyle(
-        'CustomHeading', parent=styles['Heading2'], fontSize=10.5,
-        textColor=colors.HexColor('#2c5aa0'), spaceAfter=0, spaceBefore=0, alignment=0
-    ))
+    heading_para = Paragraph("Détail des segments", heading_style)
     hw, hh = heading_para.wrap(AVAIL_W, AVAIL_H)
     heading_para.drawOn(c, M, y - hh)
     y = y - hh - 0.10*cm
@@ -1195,8 +1240,8 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         st.subheader("Exporter")
         pdf_base_choice = st.selectbox(
             "Fond de carte du PDF",
-            options=PDF_BASEMAP_LABELS, index=0,
-            help="Stamen/OSM = très détaillé (nécessite internet & Cartopy). Fallback automatique sur Natural Earth."
+            options=PDF_BASEMAP_LABELS, index=0,  # par défaut: identique à la carte Web
+            help="« Identique à la carte Web » utilise le même style Carto (Voyager/Positron/Dark Matter). Sinon : Stamen/OSM/Natural Earth."
         )
         c1, c2 = st.columns(2)
         with c1:
@@ -1209,7 +1254,8 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                         total_distance=total_distance, total_emissions=total_emissions,
                         unit=unit, rows=rows,
                         pdf_basemap_choice_label=pdf_base_choice,
-                        ne_scale=NE_SCALE_DEFAULT, pdf_theme=PDF_THEME_DEFAULT, pdf_icon_size_px=24
+                        ne_scale=NE_SCALE_DEFAULT, pdf_theme=PDF_THEME_DEFAULT, pdf_icon_size_px=24,
+                        web_map_style_label=map_style_label  # transmet le style web au PDF
                     )
                 st.download_button("Télécharger le rapport PDF", data=pdf_buffer, file_name=filename_pdf, mime="application/pdf")
             except Exception as e:
