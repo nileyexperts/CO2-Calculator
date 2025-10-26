@@ -540,7 +540,7 @@ def search_airports(query: str, limit: int = 10) -> pd.DataFrame:
 # =========================
 # Champ unifié (Adresse/Ville/Pays ou IATA)
 # =========================
-def unified_location_input(side_key: str, seg_index: int, label_prefix: str, mode):
+def unified_location_input(side_key: str, seg_index: int, label_prefix: str):
     """
     Text input unique + selectbox de résultats combinés : ✈️ aéroports puis 📍 OpenCage
     Renvoie dict {coord:(lat,lon)|None, display:str, iata:str, query:str, choice:str}
@@ -559,7 +559,7 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str, mod
 
     airports = pd.DataFrame()
     oc_opts = []
-    if query_val and side_key == 'origin' and mode_to_category(mode) == 'aerien':
+    if query_val:
         airports = search_airports(query_val, limit=10)
         oc = geocode_cached(query_val, limit=5)
         oc_opts = [r['formatted'] for r in oc] if oc else []
@@ -641,7 +641,7 @@ for i in range(len(st.session_state.segments)):
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("**Origine**")
-            o = unified_location_input("origin", i, "Origine", mode)
+            o = unified_location_input("origin", i, "Origine")
         with c2:
             st.markdown("**Destination**")
             d = unified_location_input("dest", i, "Destination")
