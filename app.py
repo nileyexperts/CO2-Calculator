@@ -96,7 +96,7 @@ MAX_SEGMENTS = 50
 # =========================
 # Entête simple avec logo
 # =========================
-st.image(LOGO_URL, width=220)
+st.image(LOGO_URL, width=320)
 st.markdown("### Calculateur d'empreinte carbone multimodal NILEY EXPERTS")
 
 # =========================
