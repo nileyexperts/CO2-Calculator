@@ -67,14 +67,14 @@ PDF_THEME_DEFAULT = "terrain"
 NE_SCALE_DEFAULT = "50m"
 
 PDF_BASEMAP_LABELS = [
-    "Identique à la carte Web (Carto)",              # NEW
+    "Identique à la carte Web (Carto)",
     "Auto (Stamen → OSM → NaturalEarth)",
     "Stamen Terrain (détaillé, internet)",
     "OSM (détaillé, internet)",
     "Natural Earth (vectoriel, offline possible)"
 ]
 PDF_BASEMAP_MODES = {
-    "Identique à la carte Web (Carto)": "carto_web",  # NEW
+    "Identique à la carte Web (Carto)": "carto_web",
     "Auto (Stamen → OSM → NaturalEarth)": "auto",
     "Stamen Terrain (détaillé, internet)": "stamen",
     "OSM (détaillé, internet)": "osm",
@@ -340,13 +340,17 @@ def _carto_tiler_from_web_style(web_style_label: str):
 def generate_pdf_report(
     df, dossier_val, total_distance, total_emissions, unit, rows,
     pdf_basemap_choice_label, ne_scale='50m', pdf_theme='terrain', pdf_icon_size_px=24,
-    web_map_style_label=None  # NEW: label de la carte web
+    web_map_style_label=None,
+    detail_params=None
 ):
     """
     Génère un PDF A4 paysage en UNE SEULE PAGE : Titre + Résumé + Carte + Tableau + Footer.
-    Carte détaillée (DPI=220, zoom agressif). Fond identique à la carte web via tuiles Carto XYZ si choisi.
+    Carte détaillée (DPI et zoom selon 'detail_params'). Fond identique à la carte web via tuiles Carto XYZ si choisi.
     """
     from reportlab.pdfgen import canvas as pdfcanvas
+
+    if detail_params is None:
+        detail_params = {"dpi": 220, "max_zoom": 9}
 
     PAGE_W, PAGE_H = landscape(A4)  # points
     M = 1.0 * cm
@@ -375,12 +379,12 @@ def generate_pdf_report(
         if resp.ok:
             img = ImageReader(io.BytesIO(resp.content))
             c.drawImage(img, M, y - logo_h, width=logo_w, height=logo_h,
-                        preserveAspectRatio=True, mask='auto')
+                    preserveAspectRatio=True, mask='auto')
             logo_drawn = True
     except Exception:
         pass
 
-    title_para = Paragraph("RAPPORT D'EMPREINTE Co2", title_style)
+    title_para = Paragraph("RAPPORT D'EMPREINTE CARBONE MULTIMODAL", title_style)
     title_box_w = AVAIL_W - (logo_w + 0.5*cm if logo_drawn else 0)
     title_w, title_h = title_para.wrap(title_box_w, AVAIL_H)
 
@@ -417,7 +421,7 @@ def generate_pdf_report(
     info_tbl.drawOn(c, M, y - ih)
     y = y - ih - 0.25*cm
 
-    # === Carte (image matplotlib) — DPI↑ et zoom agressif, fond identique web si choisi ===
+    # === Carte (image matplotlib) — DPI & zoom selon qualité, fond identique web si choisi ===
     footer_h = 0.6*cm
     min_table_h = 5.5*cm
     max_map_h = 7.5*cm
@@ -429,21 +433,22 @@ def generate_pdf_report(
         map_h = max(4.0*cm, map_h - delta)
         table_h_avail = (y - M) - footer_h - map_h - 0.25*cm
 
-    # DPI élevé pour finesse
-    dpi = 220
+    # DPI selon qualité
+    dpi = int(detail_params.get("dpi", 220))
 
-    # Heuristique de zoom agressive (0..9)
+    # Heuristique de zoom agressive (0..9) bornée par detail_params.max_zoom
     def _choose_zoom(min_lon, max_lon, min_lat, max_lat):
         span_lon = max_lon - min_lon
         span_lat = max_lat - min_lat
         span = max(span_lon, span_lat)
-        if span <= 0.5:   return 9
-        if span <= 1.0:   return 8
-        if span <= 2.0:   return 7
-        if span <= 5.0:   return 6
-        if span <= 12.0:  return 5
-        if span <= 24.0:  return 4
-        return 3
+        if span <= 0.5:   z = 9
+        elif span <= 1.0: z = 8
+        elif span <= 2.0: z = 7
+        elif span <= 5.0: z = 6
+        elif span <= 12.0:z = 5
+        elif span <= 24.0:z = 4
+        else:             z = 3
+        return min(z, int(detail_params.get("max_zoom", 9)))
 
     map_buffer = None
     try:
@@ -1240,9 +1245,24 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         st.subheader("Exporter")
         pdf_base_choice = st.selectbox(
             "Fond de carte du PDF",
-            options=PDF_BASEMAP_LABELS, index=0,  # par défaut: identique à la carte Web
+            options=PDF_BASEMAP_LABELS, index=0,
             help="« Identique à la carte Web » utilise le même style Carto (Voyager/Positron/Dark Matter). Sinon : Stamen/OSM/Natural Earth."
         )
+
+        # --- Qualité de rendu PDF (nouveau sélecteur) ---
+        detail_levels = {
+            "Standard (léger, rapide)": {"dpi": 180, "max_zoom": 7},
+            "Détaillé (équilibré)": {"dpi": 220, "max_zoom": 9},
+            "Ultra (fin mais plus lent)": {"dpi": 280, "max_zoom": 10},
+        }
+        quality_label = st.selectbox(
+            "Qualité de rendu PDF",
+            options=list(detail_levels.keys()),
+            index=1,  # "Détaillé (équilibré)" par défaut
+            help="Ajuste la finesse du fond de carte : DPI et niveau de zoom des tuiles raster."
+        )
+        detail_params = detail_levels[quality_label]
+
         c1, c2 = st.columns(2)
         with c1:
             st.download_button("Télécharger le détail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
@@ -1255,7 +1275,8 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                         unit=unit, rows=rows,
                         pdf_basemap_choice_label=pdf_base_choice,
                         ne_scale=NE_SCALE_DEFAULT, pdf_theme=PDF_THEME_DEFAULT, pdf_icon_size_px=24,
-                        web_map_style_label=map_style_label  # transmet le style web au PDF
+                        web_map_style_label=map_style_label,
+                        detail_params=detail_params
                     )
                 st.download_button("Télécharger le rapport PDF", data=pdf_buffer, file_name=filename_pdf, mime="application/pdf")
             except Exception as e:
@@ -1263,3 +1284,4 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 import traceback; st.code(traceback.format_exc())
     else:
         st.info("Aucun segment valide n'a été calculé. Vérifiez les entrées ou les sélections.")
+``
