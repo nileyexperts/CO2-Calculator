@@ -540,7 +540,7 @@ def search_airports(query: str, limit: int = 10) -> pd.DataFrame:
 # =========================
 # Champ unifié (Adresse/Ville/Pays ou IATA)
 # =========================
-def unified_location_input(side_key: str, seg_index: int, label_prefix: str):
+def unified_location_input(side_key: str, seg_index: int, label_prefix: str, mode):
     """
     Text input unique + selectbox de résultats combinés : ✈️ aéroports puis 📍 OpenCage
     Renvoie dict {coord:(lat,lon)|None, display:str, iata:str, query:str, choice:str}
@@ -559,7 +559,7 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str):
 
     airports = pd.DataFrame()
     oc_opts = []
-    if query_val:
+    if query_val and mode_to_category(mode) == 'aerien':
         airports = search_airports(query_val, limit=10)
         oc = geocode_cached(query_val, limit=5)
         oc_opts = [r['formatted'] for r in oc] if oc else []
@@ -641,10 +641,10 @@ for i in range(len(st.session_state.segments)):
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("**Origine**")
-            o = unified_location_input("origin", i, "Origine")
+            o = unified_location_input("origin", i, "Origine", mode)
         with c2:
             st.markdown("**Destination**")
-            d = unified_location_input("dest", i, "Destination")
+            d = unified_location_input("dest", i, "Destination", mode)
 
         # Poids (mode global "envoi unique")
         if "weight_0" not in st.session_state:
@@ -672,11 +672,6 @@ for i in range(len(st.session_state.segments)):
 # =========================
 # ➕ Bouton discret "Ajouter un segment" (bas)
 # =========================
-def remove_last_segment():
-    if len(st.session_state.segments) > 1:
-        st.session_state.segments.pop()
-    else:
-        st.warning("Au moins un segment est requis.")
 def add_segment_end():
     if len(st.session_state.segments) >= MAX_SEGMENTS:
         st.warning(f"Nombre maximal de segments atteint ({MAX_SEGMENTS}).")
@@ -688,15 +683,10 @@ def add_segment_end():
     st.session_state.segments.append(new_seg)
 
 with st.container():
-    col_add, col_del = st.columns([1, 1])
-    with col_add:
-        if st.button("➕ Ajouter un segment", use_container_width=True, key="btn_add_bottom"):
-            add_segment_end()
-            st.rerun()
-    with col_del:
-        if st.button("🗑 Supprimer le dernier segment", use_container_width=True, key="btn_del_bottom"):
-            remove_last_segment()
-            st.rerun()
+    st.markdown('<div class="add-seg">', unsafe_allow_html=True)
+    if st.button("➕ Ajouter un segment", use_container_width=False, key="btn_add_bottom"):
+        add_segment_end(); st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================
 # Carte interactive — contrôles
