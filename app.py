@@ -47,7 +47,19 @@ os.environ.setdefault("CARTOPY_CACHE_DIR", os.path.join(tempfile.gettempdir(), "
 st.set_page_config(page_title="Calculateur CO2 multimodal - NILEY EXPERTS", page_icon="🌍", layout="centered")
 
 # (Styles custom si besoin)
-st.markdown(""" """, unsafe_allow_html=True)
+st.markdown(
+    """
+    <style>
+        body {
+            background-color: #DFEDF5;
+        }
+        .stApp {
+            background-color: #DFEDF5;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 st.markdown(""" """, unsafe_allow_html=True)
 
 LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png"
