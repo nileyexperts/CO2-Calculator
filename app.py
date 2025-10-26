@@ -620,7 +620,7 @@ for i in range(1, len(st.session_state.segments)):
         cur["origin"]["iata"] = prev["dest"]["iata"]
         cur["origin"]["query"] = prev["dest"]["display"]
 
-open_box("Saisie des segments")
+st.subheader("Saisie des segments")
 
 segments_out = []
 for i in range(len(st.session_state.segments)):
@@ -668,7 +668,6 @@ for i in range(len(st.session_state.segments)):
             "origin": o["display"], "destination": d["display"],
         })
 
-close_box()
 
 # =========================
 # ➕ Bouton discret "Ajouter un segment" (bas)
