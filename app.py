@@ -559,7 +559,7 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str, mod
 
     airports = pd.DataFrame()
     oc_opts = []
-    if query_val and mode_to_category(mode) == 'aerien':
+    if query_val and side_key == 'origin' and mode_to_category(mode) == 'aerien':
         airports = search_airports(query_val, limit=10)
         oc = geocode_cached(query_val, limit=5)
         oc_opts = [r['formatted'] for r in oc] if oc else []
@@ -644,7 +644,7 @@ for i in range(len(st.session_state.segments)):
             o = unified_location_input("origin", i, "Origine", mode)
         with c2:
             st.markdown("**Destination**")
-            d = unified_location_input("dest", i, "Destination", mode)
+            d = unified_location_input("dest", i, "Destination")
 
         # Poids (mode global "envoi unique")
         if "weight_0" not in st.session_state:
