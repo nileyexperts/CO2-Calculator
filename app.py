@@ -314,7 +314,7 @@ def generate_pdf_report(
     if logo:
         story.append(logo)
 
-    story.append(Paragraph("RAPPORT D'EMPREINTE CARBONE MULTIMODAL", title_style))
+    story.append(Paragraph("RAPPORT D'EMPREINTE Co2 MULTIMODAL", title_style))
     story.append(Spacer(1, 0.2*cm))
 
     info_summary_data = [
@@ -955,7 +955,7 @@ can_calculate = bool(st.session_state.get("dossier_transport"))
 if not can_calculate:
     st.warning("Veuillez renseigner le N° dossier Transport avant de lancer le calcul.")
 
-if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
+if st.button("Calculer l'empreinte Co2 totale", disabled=not can_calculate):
     if not st.session_state.get("dossier_transport"):
         st.error("Le N° dossier Transport est obligatoire pour calculer.")
         st.stop()
