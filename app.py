@@ -646,43 +646,64 @@ def search_ports(query: str, limit: int = 12) -> pd.DataFrame:
 # =========================
 # Champ unifié (Adresse/Ville/Pays ou IATA)
 # =========================
-def unified_location_input(side_key: str, seg_index: int, label_prefix: str, show_airports: bool = True):
+def unified_location_input(side_key: str, seg_index: int, label_prefix: str,
+                           show_airports: bool = True,
+                           show_ports: bool = False):
     """
     Text input unique + selectbox de résultats combinés :
-    ✈️ aéroports (si show_airports=True) puis 📍 OpenCage
-    Renvoie dict {coord:(lat,lon)|None, display:str, iata:str, query:str, choice:str}
+    ✈️ aéroports (si show_airports=True)
+    ⚓ ports (si show_ports=True)
+    puis 📍 OpenCage
+    Renvoie dict {coord:(lat,lon)|None, display:str, iata:str, unlocode:str, query:str, choice:str}
     """
-    q_key = f"{side_key}_query_{seg_index}"
-    c_key = f"{side_key}_choice_{seg_index}"
+    q_key   = f"{side_key}_query_{seg_index}"
+    c_key   = f"{side_key}_choice_{seg_index}"
     crd_key = f"{side_key}_coord_{seg_index}"
-    disp_key = f"{side_key}_display_{seg_index}"
-    iata_key = f"{side_key}_iata_{seg_index}"
+    disp_key= f"{side_key}_display_{seg_index}"
+    iata_key= f"{side_key}_iata_{seg_index}"
+    unlo_key= f"{side_key}_unlo_{seg_index}"
 
     query_val = st.text_input(
-        f"{label_prefix} — Adresse / Ville / Pays" + (" ou IATA (3 lettres)" if show_airports else ""),
+        f"{label_prefix} — Adresse / Ville / Pays"
+        + (" ou IATA (3 lettres)" if show_airports else "")
+        + (" ou UN/LOCODE (5 lettres)" if show_ports else ""),
         value=st.session_state.get(q_key, ""),
         key=q_key
     )
 
     airports = pd.DataFrame()
-    oc_opts = []
+    ports    = pd.DataFrame()
+    oc_opts  = []
 
     if query_val:
-        # Ne chercher les aéroports que si autorisé
+        # AEROPORTS
         if show_airports:
             airports = search_airports(query_val, limit=10)
+        # PORTS
+        if show_ports:
+            ports = search_ports(query_val, limit=12)
+
         oc = geocode_cached(query_val, limit=5)
         oc_opts = [r['formatted'] for r in oc] if oc else []
 
     options = []
     airport_rows = []
+    port_rows = []
 
-    # Injecter les résultats IATA seulement si show_airports=True
+    # Injecter d'abord les aéroports (si activé)
     if show_airports and not airports.empty:
         for _, r in airports.iterrows():
             label = f"✈️ {r['label']} (IATA {r['iata_code']})"
             options.append(label); airport_rows.append(r)
 
+    # Puis les ports (si activé)
+    if show_ports and not ports.empty:
+        for _, r in ports.iterrows():
+            suffix = f" (UN/LOCODE {r['unlocode']})" if r.get("unlocode") else ""
+            label = f"⚓ {r['label']}{suffix}"
+            options.append(label); port_rows.append(r)
+
+    # Enfin OpenCage
     if oc_opts:
         options += [f"📍 {o}" for o in oc_opts]
 
@@ -691,25 +712,39 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str, sho
 
     sel = st.selectbox("Résultats", options, index=0, key=c_key)
 
-    coord = None; display = ""; sel_iata = ""
+    coord = None; display = ""; sel_iata = ""; sel_unlo = ""
     if sel != "— Aucun résultat —":
         if sel.startswith("✈️"):
-            # Cas aéroport (n’existe que si show_airports=True)
             idx = options.index(sel)
             r = airport_rows[idx] if idx < len(airport_rows) else airports.iloc[0]
             coord = (float(r["lat"]), float(r["lon"]))
-            display = r["label"]
-            sel_iata = r["iata_code"]
+            display = r["label"]; sel_iata = r["iata_code"]; sel_unlo = ""
+        elif sel.startswith("⚓"):
+            # PORT
+            # retrouver l'index relatif aux ports
+            # (options = [air..., port..., oc...], on recalcule l'offset)
+            first_port_idx = 0
+            if show_airports and not airports.empty:
+                first_port_idx = len(airport_rows)
+            idx_global = options.index(sel)
+            idx = idx_global - (len(airport_rows))  # position relative dans port_rows
+            r = port_rows[idx] if 0 <= idx < len(port_rows) else ports.iloc[0]
+            coord = (float(r["lat"]), float(r["lon"]))
+            display = r["label"]; sel_unlo = str(r.get("unlocode") or ""); sel_iata = ""
         else:
             formatted = sel[2:].strip() if sel.startswith("📍") else sel
             coord = coords_from_formatted(formatted)
             display = formatted
+            sel_iata = ""; sel_unlo = ""
 
-    st.session_state[crd_key] = coord
+    st.session_state[crd_key]  = coord
     st.session_state[disp_key] = display
     st.session_state[iata_key] = sel_iata
+    st.session_state[unlo_key] = sel_unlo
 
-    return {"coord": coord, "display": display, "iata": sel_iata, "query": query_val, "choice": sel}
+    return {"coord": coord, "display": display, "iata": sel_iata, "unlocode": sel_unlo,
+            "query": query_val, "choice": sel}
+``
 
 # =========================
 # Saisie des segments (UI)
