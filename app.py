@@ -1,12 +1,8 @@
 # -*- coding: utf-8 -*-
 # Calculateur CO2 multimodal - NILEY EXPERTS
-# Version : Sélecteur de mode par logos (cases exclusives) + Logos sur la carte PDF
-# + Fond WEB #DFEDF5 + Contours #BB9357 + Natural Earth (Cartopy) + Auth + Export CSV/PDF
-# + Paramètres/Apparence/Fond PDF MASQUÉS (valeurs par défaut)
-# + Gestion avancée des segments : ajouter/insérer/dupliquer/supprimer
-# + Fond de carte PDF amélioré (thèmes internes : voyager/minimal/terrain) + sélecteur masquable
-# + IATA (3 lettres) pour Origine/Destination avec autocomplétion et affichage aéroport
-# + Cadres de segment à bords arrondis couleur #002E49
+# Version : IATA (autocomplétion corrigée) + Cadres segments arrondis (#002E49)
+# + Sélecteur de mode via liste déroulante en haut à droite du titre de segment
+# + Logos sur carte PDF/Web, Natural Earth (Cartopy), Auth, Export CSV/PDF
 
 import os
 import time
@@ -35,7 +31,7 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import io
 import tempfile
 import numpy as np
-import re  # << IATA
+import re  # IATA
 
 # -- Cache Cartopy (Natural Earth)
 os.environ.setdefault("CARTOPY_CACHE_DIR", os.path.join(tempfile.gettempdir(), "cartopy_cache"))
@@ -61,7 +57,7 @@ st.markdown(
 )
 
 # --- Style des cadres de segment (bordure arrondie #002E49) ---
-# (On ne modifie aucune autre couleur de l'app)
+# (Sans modifier les autres couleurs/espacements)
 st.markdown(
     """
     <style>
@@ -81,15 +77,8 @@ LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/N
 # =========================
 # Apparence PDF (défauts & panneau masquable)
 # =========================
-# Thème par défaut pour la carte PDF : "voyager" | "minimal" | "terrain"
-# 👉 "Beau rendu détaillé" = "terrain"
-PDF_THEME_DEFAULT = "terrain"
-
-# Niveau de détail Natural Earth par défaut : "110m" | "50m" | "10m"
-# 👉 "Beau rendu détaillé" = "50m" (détaillé, bon compromis perf/qualité)
-NE_SCALE_DEFAULT = "50m"
-
-# Afficher/masquer le panneau UI d'apparence PDF (mettez True pour l'afficher)
+PDF_THEME_DEFAULT = "terrain"  # "voyager" | "minimal" | "terrain"
+NE_SCALE_DEFAULT = "50m"       # "110m" | "50m" | "10m"
 SHOW_PDF_APPEARANCE_PANEL = False
 
 # Helpers boîtes visuelles
@@ -192,7 +181,7 @@ ICON_URLS = {
     "ferroviaire": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/train.png",
 }
 
-# Métadonnées UI pour les modes (label + icône)
+# Métadonnées UI pour les modes
 MODE_META = [
     {"id": "Routier", "label": "Routier", "emoji": "🚚", "icon": ICON_URLS["routier"]},
     {"id": "Maritime", "label": "Maritime", "emoji": "🚢", "icon": ICON_URLS["maritime"]},
@@ -494,7 +483,7 @@ def generate_pdf_report(
             plt.savefig(map_buffer, format='png', dpi=dpi, bbox_inches='tight', facecolor='white', edgecolor='none')
             plt.close()
 
-        map_image = RLImage(map_buffer, width=target_width_cm*cm, height=target_height_cm*cm)
+        map_image = RLImage(map_buffer, width=20.0*cm, height=7.5*cm)
         story.append(map_image); story.append(Spacer(1, 0.3*cm))
     except Exception:
         story.append(Paragraph("_Carte non disponible_", normal_style)); story.append(Spacer(1, 0.2*cm))
@@ -575,8 +564,8 @@ def generate_pdf_report(
     story.append(detail_table); story.append(Spacer(1, 0.3*cm))
 
     story.append(Paragraph(
-        f"_Document généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')} par le Calculateur CO2 multimodal - NILEY EXPERTS_",
-        ParagraphStyle('Footer', parent=normal_style, fontSize=7, textColor=colors.grey, alignment=1)
+        f"_Document généré le {datetime.now().strftime('%d/%m/%Y %H:%M')} par le Calculateur CO2 multimodal - NILEY EXPERTS_",
+        ParagraphStyle('Footer', parent=styles['Normal'], fontSize=7, textColor=colors.grey, alignment=1)
     ))
 
     doc.build(story)
@@ -594,11 +583,9 @@ if PASSWORD_KEY not in st.secrets:
 if "auth_ok" not in st.session_state:
     st.session_state.auth_ok = False
 
-# 👉 On n'affiche le formulaire QUE si non authentifié
 if not st.session_state.auth_ok:
     st.markdown("## Accès sécurisé")
     with st.form("login_form", clear_on_submit=True):
-        # key explicite pour pouvoir nettoyer la valeur
         password_input = st.text_input(
             "Entrez le mot de passe pour accéder à l'application :", type="password",
             placeholder="Votre mot de passe", key="__pwd__",
@@ -607,18 +594,15 @@ if not st.session_state.auth_ok:
         if submitted:
             if password_input == st.secrets[PASSWORD_KEY]:
                 st.session_state.auth_ok = True
-                # Nettoyage de la valeur en mémoire de session (bonne pratique)
                 try:
                     del st.session_state["__pwd__"]
                 except KeyError:
                     pass
-                # Nouveau cycle : le formulaire ne sera plus rendu
                 st.rerun()
             else:
                 st.error("Mot de passe incorrect.")
         else:
             st.info("Veuillez saisir le mot de passe puis cliquer sur Valider.")
-    # Empêche l'accès au reste tant que non authentifié
     st.stop()
 else:
     st.success("Accès autorisé. Bienvenue dans l'application !")
@@ -689,7 +673,6 @@ if "pdf_basemap_choice" not in st.session_state:
     st.session_state["pdf_basemap_choice"] = "Automatique (recommandé)"
 pdf_basemap_choice = st.session_state["pdf_basemap_choice"]
 
-# Appliquer défauts "Beau rendu détaillé"
 if "ne_scale" not in st.session_state:
     st.session_state["ne_scale"] = NE_SCALE_DEFAULT
 if "pdf_theme" not in st.session_state:
@@ -746,7 +729,7 @@ def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
     # Extraire lat/lon depuis "coordinates" (format "lat, lon")
     coord_series = df["coordinates"].astype(str).str.replace('"', "").str.strip()
     parts = coord_series.str.split(",", n=1, expand=True)
-    if parts.shape[1] < 2:  # lignes mal formées
+    if parts.shape[1] < 2:
         parts = pd.DataFrame({0: coord_series, 1: None})
     lat_s = parts[0].astype(str).str.strip()
     lon_s = parts[1].astype(str).str.strip()
@@ -835,11 +818,9 @@ def get_segment_coords(seg: dict, side: str):
         c = coords_from_airport_iata(code)
         if c:
             return c
-        # Fallback : on tente un géocodage texte du label si disponible
         place = seg.get(f"{side}_place") or seg.get(f"{side}_display") or ""
         c2 = coords_from_formatted(place)
         return c2
-    # Sinon, mode "place"
     place = seg.get(f"{side}_place") or seg.get(f"{side}_display") or ""
     return coords_from_formatted(place)
 
@@ -863,6 +844,7 @@ def _default_segment(origin_raw="", origin_sel="", dest_raw="", dest_sel="", mod
         "dest_air_q": "",
         "dest_iata": "",
         "dest_air_label": "",
+
         "mode": mode,
         "weight": weight,
     }
@@ -871,12 +853,11 @@ def _default_segment(origin_raw="", origin_sel="", dest_raw="", dest_sel="", mod
 if "segments" not in st.session_state or not st.session_state.segments:
     st.session_state.segments = [_default_segment()]
 
-# Auto-lien origine = dest précédent (mode "place")
+# Auto-lien origine = dest précédent
 for i in range(1, len(st.session_state.segments)):
     prev, cur = st.session_state.segments[i-1], st.session_state.segments[i]
     if prev.get("dest_sel") and not cur.get("origin_raw") and not cur.get("origin_sel") and cur.get("origin_type","place")=="place":
         cur["origin_raw"] = prev["dest_sel"]; cur["origin_sel"] = prev["dest_sel"]
-    # En bonus : chaînage si aéroports
     if prev.get("dest_type") == "airport" and not cur.get("origin_iata"):
         cur["origin_type"] = "airport"
         cur["origin_iata"] = prev.get("dest_iata","")
@@ -923,39 +904,6 @@ def delete_segment(index: int):
         st.session_state.segments.pop(index)
     st.rerun()
 
-# Exclusivité : callback + rendu "logos + cases"
-def _on_mode_check(seg_idx: int, clicked_id: str):
-    for m in MODE_META:
-        st.session_state[f"mode_chk_{seg_idx}_{m['id']}"] = (m["id"] == clicked_id)
-    if "segments" in st.session_state and 0 <= seg_idx < len(st.session_state.segments):
-        st.session_state.segments[seg_idx]["mode"] = clicked_id
-
-def select_mode_with_icons(segment_index: int, current_value: str) -> str:
-    st.markdown("**Mode de transport**")
-    cols = st.columns(len(MODE_META))
-    all_ids = [m["id"] for m in MODE_META]
-    selected_id = current_value if current_value in all_ids else MODE_META[0]["id"]
-    # Init des cases au premier rendu
-    if not any(k.startswith(f"mode_chk_{segment_index}_") for k in st.session_state.keys()):
-        for m in MODE_META:
-            st.session_state[f"mode_chk_{segment_index}_{m['id']}"] = (m["id"] == selected_id)
-    # Affichage
-    for i, m in enumerate(MODE_META):
-        with cols[i]:
-            st.image(m["icon"], width=42)
-            st.caption(f"{m['emoji']} {m['label']}")
-            st.checkbox(
-                " ", key=f"mode_chk_{segment_index}_{m['id']}",
-                help=f"Sélectionner {m['label']}",
-                on_change=_on_mode_check, args=(segment_index, m["id"]),
-            )
-    # Valeur active
-    for m in MODE_META:
-        if st.session_state.get(f"mode_chk_{segment_index}_{m['id']}", False):
-            return m["id"]
-    _on_mode_check(segment_index, selected_id)
-    return selected_id
-
 open_box("Saisie des segments")
 # Barre d'actions globale (haut)
 a1, a2, _ = st.columns([2,2,6])
@@ -966,13 +914,27 @@ with a2:
 
 segments_out = []
 for i in range(len(st.session_state.segments)):
-    # 🔲 Cadre autour de TOUT le contenu du segment
+    # Cadre du segment
     with st.container(border=True):
 
-        # Titre du segment
-        st.markdown(f"##### Segment {i+1}")
+        # Ligne d'en-tête : Titre à gauche, Mode déroulant à droite
+        hl, hr = st.columns([6, 4])
+        with hl:
+            st.markdown(f"##### Segment {i+1}")
+        with hr:
+            mode_options = [m["id"] for m in MODE_META]  # ["Routier","Maritime","Ferroviaire","Aerien"]
+            current_mode = st.session_state.segments[i].get("mode", mode_options[0])
+            if current_mode not in mode_options:
+                current_mode = mode_options[0]
+            mode = st.selectbox(
+                "Mode de transport",
+                options=mode_options,
+                index=mode_options.index(current_mode),
+                key=f"mode_select_{i}"
+            )
+            st.session_state.segments[i]["mode"] = mode
 
-        # Actions locales pour ce segment (dans le cadre)
+        # Actions locales
         b1, b2, b3, _ = st.columns([2,2,2,6])
         with b1:
             st.button("➕ Insérer après", key=f"btn_ins_{i}", on_click=insert_after, args=(i,))
@@ -1033,7 +995,7 @@ for i in range(len(st.session_state.segments)):
                     origin_sel = ""
                 st.session_state.segments[i]["origin_raw"] = origin_raw
                 st.session_state.segments[i]["origin_sel"] = origin_sel
-                # Reset champs aéro si on repasse en mode "place"
+                # Reset champs aéro si retour en mode "place"
                 st.session_state.segments[i]["origin_iata"] = ""
                 st.session_state.segments[i]["origin_air_label"] = ""
                 st.session_state.segments[i]["origin_air_q"] = ""
@@ -1069,7 +1031,7 @@ for i in range(len(st.session_state.segments)):
                     row_d = matches_d.iloc[options_d.index(sel_d)] if sel_d in options_d else matches_d.iloc[0]
                     st.session_state.segments[i]["dest_iata"] = row_d["iata_code"]
                     st.session_state.segments[i]["dest_air_label"] = row_d["label"]
-                    st.caption(f"📍 **{row_d['iata_code']}** — {row_d['name']} · {str(row_d['municipality'] or '')} · {str(row_d['iso_country'] or '')}")
+                    st.caption(f"📍 **{row_d['iata_code']}** — {row_d['name']} · {str(row_d['municipality'] or '')} · {str[row_d['iso_country'] or '')}")
                 else:
                     st.session_state.segments[i]["dest_iata"] = ""
                     st.session_state.segments[i]["dest_air_label"] = ""
@@ -1088,13 +1050,10 @@ for i in range(len(st.session_state.segments)):
                     dest_sel = ""
                 st.session_state.segments[i]["dest_raw"] = dest_raw
                 st.session_state.segments[i]["dest_sel"] = dest_sel
-                # Reset champs aéro si on repasse en mode "place"
+                # Reset champs aéro si retour en mode "place"
                 st.session_state.segments[i]["dest_iata"] = ""
                 st.session_state.segments[i]["dest_air_label"] = ""
                 st.session_state.segments[i]["dest_air_q"] = ""
-
-        # Sélecteur de mode : logos + cases exclusives (dans le cadre)
-        mode = select_mode_with_icons(segment_index=i, current_value=st.session_state.segments[i]["mode"])
 
         # Poids
         if weight_mode == "Poids par segment":
@@ -1134,12 +1093,10 @@ for i in range(len(st.session_state.segments)):
             dest_display = st.session_state.segments[i]["dest_sel"] or st.session_state.segments[i]["dest_raw"] or ""
             dest_place = st.session_state.segments[i]["dest_sel"] or st.session_state.segments[i]["dest_raw"] or ""
 
-        # Persister affichages utiles
+        # Persister et alimenter sortie
         st.session_state.segments[i]["_origin_display"] = origin_display
         st.session_state.segments[i]["_dest_display"] = dest_display
-        st.session_state.segments[i]["mode"] = mode
 
-        # Alimenter segments_out
         segments_out.append({
             "origin_display": origin_display,
             "destination_display": dest_display,
@@ -1149,9 +1106,8 @@ for i in range(len(st.session_state.segments)):
             "destination_type": st.session_state.segments[i]["dest_type"],
             "dest_iata": st.session_state.segments[i]["dest_iata"],
             "destination_place": dest_place,
-            "mode": mode,
+            "mode": st.session_state.segments[i]["mode"],
             "weight": weight_val,
-            # Compat aval
             "origin": origin_display,
             "destination": dest_display,
         })
@@ -1197,12 +1153,12 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             if not seg["origin_display"] or not seg["destination_display"]:
                 st.warning(f"Segment {idx} : origine/destination manquante(s).")
                 continue
-
             coord1 = get_segment_coords(seg, side="origin")
             coord2 = get_segment_coords(seg, side="destination")
             if not coord1 or not coord2:
                 st.error(f"Segment {idx} : lieu introuvable ou ambigu.")
                 continue
+
             route_coords = None
             if "routier" in _normalize_no_diacritics(seg["mode"]):
                 try:
@@ -1236,6 +1192,8 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
 
     if rows:
         df = pd.DataFrame(rows)
+        total_distance = float(total_distance)
+        total_emissions = float(total_emissions)
         st.success(f"{len(rows)} segment(s) calculé(s) • Distance totale : {total_distance:.1f} km • Emissions totales : {total_emissions:.2f} kg CO2e")
 
         dossier_val = st.session_state.get("dossier_transport", "")
@@ -1249,7 +1207,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
 
         st.subheader("Carte des segments")
 
-        # -- Préparation des couches (layers) pydeck --
+        # -- Préparation des couches pydeck --
         route_paths = []
         for r in rows:
             if "routier" in _normalize_no_diacritics(r["Mode"]) and r.get("route_coords"):
@@ -1381,7 +1339,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 )
             )
 
-        # -- Vue auto --
+        # Vue auto
         all_lats, all_lons = [], []
         if route_paths and any(d["path"] for d in route_paths):
             all_lats.extend([pt[1] for d in route_paths for pt in d["path"]])
