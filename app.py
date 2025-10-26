@@ -45,7 +45,17 @@ os.environ.setdefault("CARTOPY_CACHE_DIR", os.path.join(tempfile.gettempdir(), "
 # Paramètres globaux & Config page
 # =========================
 st.set_page_config(page_title="Calculateur CO2 multimodal - NILEY EXPERTS", page_icon="🌍", layout="centered")
-
+# Style global : fond #DFEDF5
+st.markdown(
+    """
+    <style>
+        body {
+            background-color: #DFEDF5;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 # Fond & style
 st.markdown(
     """
