@@ -3,6 +3,7 @@
 # Version : IATA (autocomplétion corrigée) + Cadres segments arrondis (#002E49)
 # + Sélecteur de mode via liste déroulante en haut à droite du titre de segment
 # + Logos sur carte PDF/Web, Natural Earth (Cartopy), Auth, Export CSV/PDF
+# + Boutons "ajouter/supprimer segment" (globaux) et "insérer/dupliquer/supprimer" (par segment) SUPPRIMÉS de l'UI
 
 import os
 import time
@@ -57,7 +58,6 @@ st.markdown(
 )
 
 # --- Style des cadres de segment (bordure arrondie #002E49) ---
-# (Sans modifier les autres couleurs/espacements)
 st.markdown(
     """
     <style>
@@ -181,74 +181,6 @@ ICON_URLS = {
     "ferroviaire": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/train.png",
 }
 
-# Métadonnées UI pour les modes
-MODE_META = [
-    {"id": "Routier", "label": "Routier", "emoji": "🚚", "icon": ICON_URLS["routier"]},
-    {"id": "Maritime", "label": "Maritime", "emoji": "🚢", "icon": ICON_URLS["maritime"]},
-    {"id": "Ferroviaire", "label": "Ferroviaire", "emoji": "🚆", "icon": ICON_URLS["ferroviaire"]},
-    {"id": "Aerien", "label": "Aérien", "emoji": "✈️", "icon": ICON_URLS["aerien"]},
-]
-
-def midpoint_on_path(route_coords, lon_o, lat_o, lon_d, lat_d):
-    if route_coords and isinstance(route_coords, list) and len(route_coords) >= 2:
-        idx = len(route_coords) // 2
-        pt = route_coords[idx]
-        return [float(pt[0]), float(pt[1])]
-    return [(lon_o + lon_d) / 2.0, (lat_o + lat_d) / 2.0]
-
-# -------- Emprise & ratio pour carte PDF --------
-def _compute_extent_and_ratio(all_lats, all_lons, margin_ratio=0.12, min_span_deg=1e-3):
-    if not all_lats or not all_lons:
-        return (-10, 30, 30, 60)  # Europe Ouest par défaut
-    min_lat, max_lat = min(all_lats), max(all_lats)
-    min_lon, max_lon = min(all_lons), max(all_lons)
-    span_lat = max(max_lat - min_lat, min_span_deg)
-    span_lon = max(max_lon - min_lon, min_span_deg)
-    min_lat -= span_lat * margin_ratio; max_lat += span_lat * margin_ratio
-    min_lon -= span_lon * margin_ratio; max_lon += span_lon * margin_ratio
-    return (min_lon, max_lon, min_lat, max_lat)
-
-def fit_extent_to_aspect(min_lon, max_lon, min_lat, max_lat, target_aspect_w_over_h):
-    span_lon = max(1e-6, max_lon - min_lon)
-    span_lat = max(1e-6, max_lat - min_lat)
-    mid_lat = (min_lat + max_lat) / 2.0
-    cos_mid = max(0.05, math.cos(math.radians(mid_lat)))
-    aspect_geo = (span_lon * cos_mid) / span_lat
-    aspect_target = max(1e-6, float(target_aspect_w_over_h))
-    if aspect_geo < aspect_target:
-        needed_lon = (aspect_target * span_lat) / cos_mid
-        extra = (needed_lon - span_lon) / 2.0
-        min_lon -= extra; max_lon += extra
-    else:
-        needed_lat = (span_lon * cos_mid) / aspect_target
-        extra = (needed_lat - span_lat) / 2.0
-        min_lat -= extra; max_lat += extra
-    # clamp
-    min_lon = max(-180.0, min_lon); max_lon = min(180.0, max_lon)
-    min_lat = max(-90.0, min_lat); max_lat = min(90.0, max_lat)
-    return (min_lon, max_lon, min_lat, max_lat)
-
-# ----- Helper : logos sur carte PDF -----
-def _pdf_add_mode_icon(ax, lon, lat, cat_key, size_px, transform=None):
-    try:
-        url = ICON_URLS.get(cat_key)
-        if not url:
-            return
-        resp = requests.get(url, timeout=6)
-        if resp.status_code != 200:
-            return
-        pil = PILImage.open(io.BytesIO(resp.content)).convert('RGBA')
-        w = max(1, pil.width)
-        zoom = max(0.1, float(size_px) / float(w))
-        imgbox = OffsetImage(pil, zoom=zoom)
-        ab = AnnotationBbox(imgbox, (lon, lat), frameon=False)
-        if transform is not None:
-            ab.set_transform(transform)
-        ab.set_zorder(5)
-        ax.add_artist(ab)
-    except Exception:
-        pass
-
 # =========================
 # Génération du PDF (fond de carte enrichi)
 # =========================
@@ -278,7 +210,7 @@ def generate_pdf_report(
         s = text.strip()
         if len(s) <= max_line:
             return s
-        preferred_seps = [' - ', ' - ', ' - ', ' / ', ', ']
+        preferred_seps = [' - ', ' / ', ', ']
         cut_idx = -1
         for sep in preferred_seps:
             i = s.rfind(sep, 0, max_line + 1)
@@ -291,9 +223,7 @@ def generate_pdf_report(
         line1 = s[:cut_idx].rstrip(); line2 = s[cut_idx:].lstrip()
         if len(line2) > max_line:
             line2 = line2[:max_line - 3].rstrip() + '...'
-        def esc(t):  # rudimentaire
-            return (t.replace('&', '&').replace('<', '<').replace('>', '>'))
-        return f"{esc(line1)}\n{esc(line2)}"
+        return f"{line1}\n{line2}"
 
     story = []
 
@@ -308,7 +238,6 @@ def generate_pdf_report(
             logo_buffer.seek(0)
             logo = RLImage(logo_buffer, width=3*cm, height=1.5*cm)
     except Exception:
-        # Fallback local si dispo
         try:
             with open("assets/NILEY-EXPERTS-logo-removebg-preview.png", "rb") as f:
                 logo = RLImage(io.BytesIO(f.read()), width=3*cm, height=1.5*cm)
@@ -354,6 +283,25 @@ def generate_pdf_report(
         target_width_cm = 20.0; target_height_cm = 7.5; dpi = 150
         fig_w_in = target_width_cm / 2.54; fig_h_in = target_height_cm / 2.54
 
+        def fit_extent_to_aspect(min_lon, max_lon, min_lat, max_lat, target_aspect_w_over_h):
+            span_lon = max(1e-6, max_lon - min_lon)
+            span_lat = max(1e-6, max_lat - min_lat)
+            mid_lat = (min_lat + max_lat) / 2.0
+            cos_mid = max(0.05, math.cos(math.radians(mid_lat)))
+            aspect_geo = (span_lon * cos_mid) / span_lat
+            aspect_target = max(1e-6, float(target_aspect_w_over_h))
+            if aspect_geo < aspect_target:
+                needed_lon = (aspect_target * span_lat) / cos_mid
+                extra = (needed_lon - span_lon) / 2.0
+                min_lon -= extra; max_lon += extra
+            else:
+                needed_lat = (span_lon * cos_mid) / aspect_target
+                extra = (needed_lat - span_lat) / 2.0
+                min_lat -= extra; max_lat += extra
+            min_lon = max(-180.0, min_lon); max_lon = min(180.0, max_lon)
+            min_lat = max(-90.0, min_lat); max_lat = min(90.0, max_lat)
+            return (min_lon, max_lon, min_lat, max_lat)
+
         min_lon, max_lon, min_lat, max_lat = fit_extent_to_aspect(
             min_lon, max_lon, min_lat, max_lat, target_aspect_w_over_h=(target_width_cm / target_height_cm)
         )
@@ -392,7 +340,7 @@ def generate_pdf_report(
                         'rivers': '#9ABFEA', 'grid': '#DDE3EA',
                     }
                     widths = {'coast':0.4, 'b0':0.5, 'b1':0.35, 'rivers':0.45, 'grid':0.4}
-                    grid_labels = False  # labels discrets
+                    grid_labels = False
 
                 fig = plt.figure(figsize=(fig_w_in, fig_h_in), dpi=dpi)
                 ax = plt.axes(projection=ccrs.PlateCarree())
@@ -417,12 +365,6 @@ def generate_pdf_report(
                     pass
 
                 ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
-                gl = ax.gridlines(draw_labels=grid_labels, linewidth=widths['grid'], color=colors_cfg['grid'], alpha=1.0, linestyle='--', zorder=1)
-                if grid_labels:
-                    gl.top_labels = False; gl.right_labels = False
-                    gl.xlabel_style = {'size': 6, 'color': '#7A808A'}
-                    gl.ylabel_style = {'size': 6, 'color': '#7A808A'}
-                    gl.xformatter = LONGITUDE_FORMATTER; gl.yformatter = LATITUDE_FORMATTER
 
                 mode_colors = {"routier": "#0066CC", "aerien": "#CC0000", "maritime": "#009900", "ferroviaire": "#9900CC"}
                 for r in rows:
@@ -452,6 +394,7 @@ def generate_pdf_report(
                 spine.set_edgecolor('#D0D4DA'); spine.set_linewidth(0.8)
             ax.set_xlim(min_lon, max_lon); ax.set_ylim(min_lat, max_lat)
 
+            # grille simple
             def _nice_step(span_deg):
                 for step in (1, 2, 5, 10, 20, 30, 45, 60):
                     if span_deg / step <= 12:
@@ -863,66 +806,19 @@ for i in range(1, len(st.session_state.segments)):
         cur["origin_iata"] = prev.get("dest_iata","")
         cur["origin_air_label"] = prev.get("dest_air_label","")
 
-# Actions segments
-def add_segment_end():
-    last = st.session_state.segments[-1]
-    st.session_state.segments.append(
-        _default_segment(
-            origin_raw=last.get("dest_sel") or last.get("dest_raw") or "",
-            origin_sel=last.get("dest_sel") or "",
-            mode=last.get("mode", list(DEFAULT_EMISSION_FACTORS.keys())[0]),
-            weight=last.get("weight", 1000.0)
-        )
-    )
-    st.rerun()
-
-def remove_segment_end():
-    if len(st.session_state.segments) > 1:
-        st.session_state.segments.pop()
-    st.rerun()
-
-def insert_after(index: int):
-    base = st.session_state.segments[index]
-    st.session_state.segments.insert(
-        index+1,
-        _default_segment(
-            origin_raw=base.get("dest_sel") or base.get("dest_raw") or "",
-            origin_sel=base.get("dest_sel") or "",
-            mode=base.get("mode"),
-            weight=base.get("weight", 1000.0)
-        )
-    )
-    st.rerun()
-
-def duplicate_segment(index: int):
-    base = st.session_state.segments[index].copy()
-    st.session_state.segments.insert(index+1, base)
-    st.rerun()
-
-def delete_segment(index: int):
-    if len(st.session_state.segments) > 1:
-        st.session_state.segments.pop(index)
-    st.rerun()
-
 open_box("Saisie des segments")
-# Barre d'actions globale (haut)
-a1, a2, _ = st.columns([2,2,6])
-with a1:
-    st.button("➕ Ajouter un segment (fin)", on_click=add_segment_end, key="btn_add_end_top")
-with a2:
-    st.button("🗑️ Supprimer le dernier", on_click=remove_segment_end, disabled=(len(st.session_state.segments) <= 1), key="btn_del_end_top")
 
 segments_out = []
 for i in range(len(st.session_state.segments)):
     # Cadre du segment
     with st.container(border=True):
 
-        # Ligne d'en-tête : Titre à gauche, Mode déroulant à droite
+        # En-tête : Titre à gauche, Mode déroulant à droite
         hl, hr = st.columns([6, 4])
         with hl:
             st.markdown(f"##### Segment {i+1}")
         with hr:
-            mode_options = [m["id"] for m in MODE_META]  # ["Routier","Maritime","Ferroviaire","Aerien"]
+            mode_options = ["Routier", "Maritime", "Ferroviaire", "Aerien"]
             current_mode = st.session_state.segments[i].get("mode", mode_options[0])
             if current_mode not in mode_options:
                 current_mode = mode_options[0]
@@ -934,15 +830,7 @@ for i in range(len(st.session_state.segments)):
             )
             st.session_state.segments[i]["mode"] = mode
 
-        # Actions locales
-        b1, b2, b3, _ = st.columns([2,2,2,6])
-        with b1:
-            st.button("➕ Insérer après", key=f"btn_ins_{i}", on_click=insert_after, args=(i,))
-        with b2:
-            st.button("📄 Dupliquer", key=f"btn_dup_{i}", on_click=duplicate_segment, args=(i,))
-        with b3:
-            st.button("🗑️ Supprimer", key=f"btn_del_{i}", on_click=delete_segment, args=(i,), disabled=(len(st.session_state.segments) <= 1))
-
+        # Colonnes Origine / Destination
         c1, c2 = st.columns(2)
 
         # ——— ORIGINE ———
@@ -995,7 +883,7 @@ for i in range(len(st.session_state.segments)):
                     origin_sel = ""
                 st.session_state.segments[i]["origin_raw"] = origin_raw
                 st.session_state.segments[i]["origin_sel"] = origin_sel
-                # Reset champs aéro si retour en mode "place"
+                # Reset champs aéro si retour "place"
                 st.session_state.segments[i]["origin_iata"] = ""
                 st.session_state.segments[i]["origin_air_label"] = ""
                 st.session_state.segments[i]["origin_air_q"] = ""
@@ -1031,7 +919,7 @@ for i in range(len(st.session_state.segments)):
                     row_d = matches_d.iloc[options_d.index(sel_d)] if sel_d in options_d else matches_d.iloc[0]
                     st.session_state.segments[i]["dest_iata"] = row_d["iata_code"]
                     st.session_state.segments[i]["dest_air_label"] = row_d["label"]
-                    st.caption(f"📍 **{row_d['iata_code']}** — {row_d['name']} · {str(row_d['municipality'] or '')} · {str(row_d['iso_country'] or '')}")
+                    st.caption(f"📍 **{row_d['iata_code']}** — {row_d['name']} · {str(row_d['municipality'] or '')} · {str[row_d['iso_country'] or '')}")
                 else:
                     st.session_state.segments[i]["dest_iata"] = ""
                     st.session_state.segments[i]["dest_air_label"] = ""
@@ -1050,7 +938,7 @@ for i in range(len(st.session_state.segments)):
                     dest_sel = ""
                 st.session_state.segments[i]["dest_raw"] = dest_raw
                 st.session_state.segments[i]["dest_sel"] = dest_sel
-                # Reset champs aéro si retour en mode "place"
+                # Reset champs aéro si retour "place"
                 st.session_state.segments[i]["dest_iata"] = ""
                 st.session_state.segments[i]["dest_air_label"] = ""
                 st.session_state.segments[i]["dest_air_q"] = ""
@@ -1078,7 +966,7 @@ for i in range(len(st.session_state.segments)):
                 weight_val = st.session_state.get("weight_0", default_weight)
                 st.session_state.segments[i]["weight"] = weight_val
 
-        # Déterminer affichage + fallback "place" pour géocodage
+        # Déterminer affichage + fallback "place"
         if st.session_state.segments[i]["origin_type"] == "airport" and st.session_state.segments[i]["origin_iata"]:
             origin_display = st.session_state.segments[i]["origin_air_label"] or st.session_state.segments[i]["origin_iata"]
             origin_place = origin_display
@@ -1111,13 +999,6 @@ for i in range(len(st.session_state.segments)):
             "origin": origin_display,
             "destination": dest_display,
         })
-
-# Barre d'actions globale (bas)
-a3, a4, _ = st.columns([2,2,6])
-with a3:
-    st.button("➕ Ajouter un segment (fin)", on_click=add_segment_end, key="btn_add_end_bot")
-with a4:
-    st.button("🗑️ Supprimer le dernier", on_click=remove_segment_end, disabled=(len(st.session_state.segments) <= 1), key="btn_del_end_bot")
 
 close_box()
 
