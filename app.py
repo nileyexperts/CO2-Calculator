@@ -4,7 +4,7 @@
 # + Fond WEB #DFEDF5 + Contours #BB9357 + Natural Earth (Cartopy) + Auth + Export CSV/PDF
 # + Paramètres/Apparence/Fond PDF MASQUÉS (valeurs par défaut)
 # + Gestion avancée des segments : ajouter/insérer/dupliquer/supprimer
-# + Fond de carte PDF amélioré (thèmes internes : voyager/minimal/terrain, sans sélecteur)
+# + Fond de carte PDF amélioré (thèmes internes : voyager/minimal/terrain) + sélecteur masquable
 
 import os
 import time
@@ -63,8 +63,27 @@ st.markdown(
 # -- Constantes visuelles/ressources
 LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png"
 
-# Thème pour la carte PDF (sans sélecteur dans l'UI) : "voyager" | "minimal" | "terrain"
-PDF_THEME = "voyager"
+# =========================
+# Apparence PDF (défauts & panneau masquable)
+# =========================
+# Thème par défaut pour la carte PDF : "voyager" | "minimal" | "terrain"
+# 👉 "Beau rendu détaillé" = "terrain"
+PDF_THEME_DEFAULT = "terrain"
+# Niveau de détail Natural Earth par défaut : "110m" | "50m" | "10m"
+# 👉 "Beau rendu détaillé" = "50m" (détaillé, bon compromis perf/qualité)
+NE_SCALE_DEFAULT = "50m"
+# Afficher/masquer le panneau UI d'apparence PDF (mettez True pour l'afficher)
+SHOW_PDF_APPEARANCE_PANEL = False
+
+# Helpers boîtes visuelles
+def open_box(title: str = ""):
+    if title:
+        st.markdown(f"##### {title}\n", unsafe_allow_html=True)
+    else:
+        st.markdown("\n", unsafe_allow_html=True)
+
+def close_box():
+    st.markdown("\n", unsafe_allow_html=True)
 
 DEFAULT_EMISSION_FACTORS = {
     "Routier": 0.100,
@@ -223,7 +242,6 @@ def _pdf_add_mode_icon(ax, lon, lat, cat_key, size_px, transform=None):
         ax.add_artist(ab)
     except Exception:
         pass
-
 # =========================
 # Génération du PDF (fond de carte enrichi)
 # =========================
@@ -296,7 +314,7 @@ def generate_pdf_report(
     if logo:
         story.append(logo)
 
-    story.append(Paragraph("RAPPORT D'EMPREINTE Co2 MULTIMODAL", title_style))
+    story.append(Paragraph("RAPPORT D'EMPREINTE CARBONE MULTIMODAL", title_style))
     story.append(Spacer(1, 0.2*cm))
 
     info_summary_data = [
@@ -346,7 +364,7 @@ def generate_pdf_report(
                 import cartopy.feature as cfeature
                 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 
-                # ---------- Styles par thème (sans sélecteur UI) ----------
+                # ---------- Styles par thème ----------
                 if pdf_theme == 'minimal':
                     colors_cfg = {
                         'ocean':    '#F5F7FA',
@@ -653,14 +671,6 @@ st.markdown("Ajoutez plusieurs segments (origine → destination), choisissez le
 # =========================
 # Informations générales
 # =========================
-def open_box(title: str = ""):
-    if title:
-        st.markdown(f"##### {title}\n", unsafe_allow_html=True)
-    else:
-        st.markdown("\n", unsafe_allow_html=True)
-def close_box():
-    st.markdown("\n", unsafe_allow_html=True)
-
 open_box("Informations générales")
 dossier_transport = st.text_input(
     "N° dossier Transport (obligatoire) *",
@@ -708,8 +718,31 @@ if "pdf_basemap_choice" not in st.session_state:
     st.session_state["pdf_basemap_choice"] = "Automatique (recommandé)"
 pdf_basemap_choice = st.session_state["pdf_basemap_choice"]
 
+# Appliquer défauts "Beau rendu détaillé"
 if "ne_scale" not in st.session_state:
-    st.session_state["ne_scale"] = "110m"
+    st.session_state["ne_scale"] = NE_SCALE_DEFAULT
+if "pdf_theme" not in st.session_state:
+    st.session_state["pdf_theme"] = PDF_THEME_DEFAULT
+
+# =========================
+# Apparence du rapport (PDF) — Sélecteurs (masquables)
+# =========================
+if SHOW_PDF_APPEARANCE_PANEL:
+    open_box("Apparence du rapport (PDF)")
+    st.session_state["pdf_theme"] = st.selectbox(
+        "Thème de la carte PDF",
+        options=["voyager", "minimal", "terrain"],
+        index=["voyager", "minimal", "terrain"].index(st.session_state["pdf_theme"]),
+        help="Style graphique du fond Natural Earth utilisé dans le rapport PDF."
+    )
+    st.session_state["ne_scale"] = st.selectbox(
+        "Niveau de détail Natural Earth",
+        options=["110m", "50m", "10m"],
+        index=["110m", "50m", "10m"].index(st.session_state["ne_scale"]),
+        help="110m = rapide • 50m = équilibré • 10m = très détaillé (plus lent)."
+    )
+    close_box()
+
 ne_scale = st.session_state["ne_scale"]
 
 # =========================
@@ -1175,8 +1208,8 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                         unit=unit,
                         rows=rows,
                         pdf_basemap_mode=pdf_basemap_param,
-                        ne_scale=ne_scale,
-                        pdf_theme=PDF_THEME,  # <-- Thème appliqué sans sélecteur
+                        ne_scale=st.session_state.get("ne_scale", NE_SCALE_DEFAULT),
+                        pdf_theme=st.session_state.get("pdf_theme", PDF_THEME_DEFAULT),
                         pdf_icon_size_px=icon_size_px
                     )
                 st.download_button("Télécharger le rapport PDF", data=pdf_buffer, file_name=filename_pdf, mime="application/pdf")
