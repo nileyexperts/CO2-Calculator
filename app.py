@@ -955,7 +955,7 @@ st.markdown("### Calculateur d'empreinte Co2 multimodal")
 if "segments" not in st.session_state or not st.session_state.segments:
     st.session_state.segments = [_default_segment()]
 
-# Auto-chaînage O = D précédent
+# Auto-chaînage O = D précédent si Origine vide (au chargement)
 for i in range(1, len(st.session_state.segments)):
     prev, cur = st.session_state.segments[i-1], st.session_state.segments[i]
     if prev.get("dest",{}).get("display") and not cur.get("origin",{}).get("display"):
@@ -1007,8 +1007,32 @@ for i in range(len(st.session_state.segments)):
             weight_val = st.session_state["weight_0"]
         st.session_state.segments[i]["weight"] = weight_val
 
+        # Persistance du segment i
         st.session_state.segments[i]["origin"] = {"query": o["query"], "display": o["display"], "iata": o["iata"], "coord": o["coord"]}
-        st.session_state.segments[i]["dest"] = {"query": d["query"], "display": d["display"], "iata": d["iata"], "coord": d["coord"]}
+        st.session_state.segments[i]["dest"]   = {"query": d["query"], "display": d["display"], "iata": d["iata"], "coord": d["coord"]}
+
+        # === Chaînage live : D(i) -> O(i+1) (patch intégré) ===
+        # Si la destination du segment i est définie, on reporte automatiquement dans l'origine du segment i+1
+        # - uniquement si l'origine du i+1 est vide, ou bien si elle correspondait déjà à l'ancien chaînage.
+        if i + 1 < len(st.session_state.segments):
+            next_seg = st.session_state.segments[i + 1]
+            new_dest_display = d["display"]
+            new_dest_coord   = d["coord"]
+            new_dest_iata    = d["iata"] or ""
+            origin_empty = not next_seg["origin"].get("display") or not next_seg["origin"].get("coord")
+            old_chain_display = next_seg["origin"].get("display", "")
+            if new_dest_display and new_dest_coord and (origin_empty or old_chain_display == st.session_state.segments[i]["dest"].get("display")):
+                next_seg["origin"]["display"] = new_dest_display
+                next_seg["origin"]["coord"]   = new_dest_coord
+                next_seg["origin"]["iata"]    = new_dest_iata
+                next_seg["origin"]["query"]   = new_dest_display
+                # Répliquer aussi dans les clés UI pour affichage immédiat
+                j = i + 1
+                st.session_state[f"origin_query_{j}"]   = new_dest_display
+                st.session_state[f"origin_display_{j}"] = new_dest_display
+                st.session_state[f"origin_coord_{j}"]   = new_dest_coord
+                st.session_state[f"origin_iata_{j}"]    = new_dest_iata
+                st.session_state.segments[i + 1] = next_seg
 
         segments_out.append({
             "origin_display": o["display"], "destination_display": d["display"],
@@ -1284,4 +1308,3 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 import traceback; st.code(traceback.format_exc())
     else:
         st.info("Aucun segment valide n'a été calculé. Vérifiez les entrées ou les sélections.")
-``
