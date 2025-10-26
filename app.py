@@ -348,6 +348,7 @@ def generate_pdf_report(
 
         target_width_cm = 20.0; target_height_cm = 7.5; dpi = 150
         fig_w_in = target_width_cm / 2.54; fig_h_in = target_height_cm / 2.54
+
         min_lon, max_lon, min_lat, max_lat = fit_extent_to_aspect(
             min_lon, max_lon, min_lat, max_lat, target_aspect_w_over_h=(target_width_cm / target_height_cm)
         )
@@ -497,6 +498,16 @@ def generate_pdf_report(
                 poids_col = col; break
 
     table_data = [["Seg.", "Origine", "Destination", "Mode", "Dist.\n(km)", f"Poids\n({unit})", "Facteur\n(kg CO2/t.km)", "Emissions\n(kg CO2)"]]
+    def two_line_place_local(text: str, max_line=28):
+        if not text: return ""
+        s = text.strip()
+        if len(s) <= max_line: return s
+        cut = s.rfind(' ', 0, max_line+1)
+        if cut <= 0: cut = max_line
+        l1, l2 = s[:cut].rstrip(), s[cut:].lstrip()
+        if len(l2) > max_line: l2 = l2[:max_line-3] + '...'
+        return f"{l1}\n{l2}"
+
     for _, row in df.iterrows():
         mode_clean = row["Mode"]
         try:    facteur_val   = f"{row[facteur_col]:.3f}" if facteur_col else "N/A"
@@ -506,11 +517,10 @@ def generate_pdf_report(
         try:    poids_val     = f"{row[poids_col]:.1f}" if poids_col else "N/A"
         except: poids_val     = "N/A"
 
-        def two_line(text):
-            return Paragraph(two_line_place(text, max_line=28), style=cell_style)
-
         table_data.append([
-            str(row["Segment"]), two_line(row["Origine"]), two_line(row["Destination"]),
+            str(row["Segment"]),
+            Paragraph(two_line_place_local(str(row["Origine"])), styles['Normal']),
+            Paragraph(two_line_place_local(str(row["Destination"])), styles['Normal']),
             mode_clean, f"{row['Distance (km)']:.1f}", poids_val, facteur_val, emissions_val
         ])
 
@@ -668,7 +678,6 @@ if "ne_scale" not in st.session_state:
     st.session_state["ne_scale"] = NE_SCALE_DEFAULT
 if "pdf_theme" not in st.session_state:
     st.session_state["pdf_theme"] = PDF_THEME_DEFAULT
-
 # =========================
 # Apparence du rapport (PDF) — Sélecteurs (masquables)
 # =========================
@@ -688,13 +697,13 @@ if SHOW_PDF_APPEARANCE_PANEL:
 ne_scale = st.session_state["ne_scale"]
 
 # =========================
-# Aéroports IATA : chargement + recherche
+# Aéroports IATA : chargement + recherche (CORRIGÉ)
 # =========================
 @st.cache_data(show_spinner=False, ttl=7*24*60*60)
 def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
     """
     Charge le référentiel d'aéroports, ne garde que ceux avec code IATA (3 lettres) + lat/lon valides.
-    Colonnes utiles : iata_code, name, municipality, iso_country, coordinates, type.
+    Colonnes utiles attendues : iata_code, name, municipality, iso_country, coordinates, type.
     """
     try:
         df = pd.read_csv(path)
@@ -702,38 +711,53 @@ def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
         st.warning(f"Impossible de charger '{path}': {e}")
         return pd.DataFrame(columns=["iata_code","name","municipality","iso_country","lat","lon","label","type"])
 
-    assert "iata_code" in df.columns and "name" in df.columns and "coordinates" in df.columns, \
-        "Colonnes manquantes dans airport-codes.csv"
+    # Vérifs colonnes minimales
+    required = {"iata_code", "name", "coordinates"}
+    missing = required - set(df.columns)
+    if missing:
+        st.error(f"Colonnes manquantes dans airport-codes.csv : {', '.join(sorted(missing))}")
+        return pd.DataFrame(columns=["iata_code","name","municipality","iso_country","lat","lon","label","type"])
 
-    # Garder uniquement les aéroports avec code IATA (3 lettres usuelles)
+    # Ne garder que les codes IATA 3 lettres
     df = df[df["iata_code"].astype(str).str.len() == 3].copy()
-    df["iata_code"] = df["iata_code"].str.upper()
+    df["iata_code"] = df["iata_code"].astype(str).str.upper()
 
-    # On garde préférentiellement large/medium airports (qualité IATA meilleure)
+    # Filtrer sur types majeurs si dispo
     if "type" in df.columns:
         df = df[df["type"].isin(["large_airport", "medium_airport"])].copy()
 
     # Extraire lat/lon depuis "coordinates" (format "lat, lon")
-    coords = df["coordinates"].astype(str).str.replace('"', '').str.split(",", n=1, expand=True)
-    df["lat"] = pd.to_numeric(coords[0], errors="coerce")
-    df["lon"] = pd.to_numeric(coords[1], errors="coerce")
+    coord_series = df["coordinates"].astype(str).str.replace('"', "").str.strip()
+    parts = coord_series.str.split(",", n=1, expand=True)
+    if parts.shape[1] < 2:  # lignes mal formées
+        parts = pd.DataFrame({0: coord_series, 1: None})
+    lat_s = parts[0].astype(str).str.strip()
+    lon_s = parts[1].astype(str).str.strip()
+    df["lat"] = pd.to_numeric(lat_s, errors="coerce")
+    df["lon"] = pd.to_numeric(lon_s, errors="coerce")
     df = df.dropna(subset=["lat", "lon"]).copy()
 
+    # Garantir colonnes optionnelles
     for col in ["municipality", "iso_country", "name"]:
         if col not in df.columns:
             df[col] = ""
+    # Convertir en chaînes sûres
+    for col in ["name", "municipality", "iso_country"]:
+        df[col] = df[col].astype(str).replace({"nan": ""}).fillna("").str.strip()
 
-    def _label(row):
-        parts = [row["iata_code"], "—", row["name"] or "Sans nom"]
-        city = str(row.get("municipality") or "").strip()
-        country = str(row.get("iso_country") or "").strip()
+    def _label(row) -> str:
+        code = (row.get("iata_code") or "").strip()
+        name = (row.get("name") or "").strip() or "Sans nom"
+        city = (row.get("municipality") or "").strip()
+        country = (row.get("iso_country") or "").strip()
+        base = f"{code} — {name}"
         extra = " · ".join([p for p in [city, country] if p])
-        if extra:
-            parts += [extra]
-        return " ".join(parts)
-
+        return f"{base} {extra}" if extra else base
     df["label"] = df.apply(_label, axis=1)
-    return df
+    cols = ["iata_code", "name", "municipality", "iso_country", "lat", "lon", "label"]
+    if "type" in df.columns:
+        cols.append("type")
+    return df[cols]
 
 @st.cache_data(show_spinner=False, ttl=24*60*60)
 def airport_by_iata(code: str):
@@ -835,7 +859,7 @@ for i in range(1, len(st.session_state.segments)):
     prev, cur = st.session_state.segments[i-1], st.session_state.segments[i]
     if prev.get("dest_sel") and not cur.get("origin_raw") and not cur.get("origin_sel") and cur.get("origin_type","place")=="place":
         cur["origin_raw"] = prev["dest_sel"]; cur["origin_sel"] = prev["dest_sel"]
-    # En bonus : chaînage si aéroports (facultatif)
+    # En bonus : chaînage si aéroports
     if prev.get("dest_type") == "airport" and not cur.get("origin_iata"):
         cur["origin_type"] = "airport"
         cur["origin_iata"] = prev.get("dest_iata","")
@@ -964,7 +988,6 @@ for i in range(len(st.session_state.segments)):
                 key=f"origin_air_sel_{i}"
             )
             if options:
-                # récupérer la ligne sélectionnée
                 row = matches.iloc[options.index(sel)] if sel in options else matches.iloc[0]
                 st.session_state.segments[i]["origin_iata"] = row["iata_code"]
                 st.session_state.segments[i]["origin_air_label"] = row["label"]
@@ -973,8 +996,6 @@ for i in range(len(st.session_state.segments)):
                 st.session_state.segments[i]["origin_iata"] = ""
                 st.session_state.segments[i]["origin_air_label"] = ""
             st.session_state.segments[i]["origin_air_q"] = origin_air_q
-            # Nettoyage champs "place"
-            # (on garde origin_raw/sel tels quels si l'utilisateur re-switch)
         else:
             st.session_state.segments[i]["origin_type"] = "place"
             origin_raw = st.text_input(
@@ -1094,7 +1115,6 @@ for i in range(len(st.session_state.segments)):
     st.session_state.segments[i]["_origin_display"] = origin_display
     st.session_state.segments[i]["_dest_display"] = dest_display
     st.session_state.segments[i]["mode"] = mode
-
     # Alimenter segments_out
     segments_out.append({
         "origin_display": origin_display,
@@ -1153,7 +1173,6 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             if not seg["origin_display"] or not seg["destination_display"]:
                 st.warning(f"Segment {idx} : origine/destination manquante(s).")
                 continue
-
             coord1 = get_segment_coords(seg, side="origin")
             coord2 = get_segment_coords(seg, side="destination")
             if not coord1 or not coord2:
@@ -1396,3 +1415,4 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 import traceback; st.code(traceback.format_exc())
     else:
         st.info("Aucun segment valide n'a été calculé. Vérifiez les entrées ou les sélections.")
+``
