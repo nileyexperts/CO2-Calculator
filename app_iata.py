@@ -15,16 +15,3 @@ def load_iata_dict():
 
 def suggest_airport_name(iata_code: str, iata_dict: dict) -> str:
     return iata_dict.get(iata_code.upper(), "")
-
-st.markdown("---")
-st.subheader("🔎 Recherche d'aéroport par code IATA")
-iata_dict = load_iata_dict()
-iata_input = st.text_input("Entrez un code IATA (3 lettres)", max_chars=3).upper()
-if iata_input:
-    airport_name = suggest_airport_name(iata_input, iata_dict)
-    if airport_name:
-        st.success(f"✈️ {iata_input} = {airport_name}")
-    else:
-        st.warning("Code IATA inconnu ou non référencé.")
-else:
-    st.info("Veuillez saisir un code IATA pour obtenir le nom de l'aéroport.")
