@@ -344,7 +344,7 @@ def generate_pdf_report(
         pass
 
     # Titre
-    title_para = Paragraph("RAPPORT D'EMPREINTE CARBONE MULTIMODAL", title_style)
+    title_para = Paragraph("RAPPORT D'EMPREINTE Co2", title_style)
     tw, th = title_para.wrap(AVAIL_W - (logo_w + 0.5*cm if logo_drawn else 0), AVAIL_H)
     title_x = M + (logo_w + 0.5*cm if logo_drawn else 0)
     title_y = y - th + (logo_h - th)/2.0 if logo_drawn else y - th
