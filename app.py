@@ -899,21 +899,16 @@ for i in range(len(st.session_state.segments)):
 # =========================
 # ➕ Bouton discret "Ajouter un segment" (bas)
 # =========================
-def add_segment_end():
-    if len(st.session_state.segments) >= MAX_SEGMENTS:
-        st.warning(f"Nombre maximal de segments atteint ({MAX_SEGMENTS}).")
-        return
-    last = st.session_state.segments[-1]
-    new_seg = _default_segment(mode=last.get("mode","Routier"), weight=last.get("weight",1000.0))
-    if last.get("dest",{}).get("display"):
-        new_seg["origin"] = last["dest"].copy()
-    st.session_state.segments.append(new_seg)
-
 with st.container():
-    st.markdown('\n', unsafe_allow_html=True)
-    if st.button("➕ Ajouter un segment", use_container_width=False, key="btn_add_bottom"):
-        add_segment_end(); st.rerun()
-    st.markdown('\n', unsafe_allow_html=True)
+    col_add, col_del = st.columns([1, 1])
+    with col_add:
+        if st.button("➕ Ajouter un segment", use_container_width=True, key="btn_add_bottom"):
+            add_segment_end()
+            st.rerun()
+    with col_del:
+        if st.button("🗑 Supprimer le dernier segment", use_container_width=True, key="btn_del_bottom"):
+            remove_last_segment()
+            st.rerun()
 
 # =========================
 # Carte interactive — contrôles
