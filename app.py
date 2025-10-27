@@ -47,12 +47,23 @@ os.environ.setdefault("CARTOPY_CACHE_DIR", os.path.join(tempfile.gettempdir(), "
 # =========================
 st.set_page_config(page_title="Calculateur CO2 multimodal - NILEY EXPERTS", page_icon="🌍", layout="centered")
 
-# Fond global #DFEDF5
+# Fond global #DFEDF5 + badge CSS
 st.markdown(
     """
     <style>
         body { background-color: #DFEDF5; }
         .stApp { background-color: #DFEDF5; }
+        .badge-autofill {
+            display:inline-block;
+            background:#E8F0FE;
+            color:#1a73e8;
+            padding:2px 6px;
+            border-radius:10px;
+            font-size:0.80rem;
+            margin-left:6px;
+            vertical-align:middle;
+            white-space:nowrap;
+        }
     </style>
     """,
     unsafe_allow_html=True
@@ -127,6 +138,8 @@ def add_segment_end():
             "iata": prev_dest.get("iata",""),
             "query": prev_dest.get("display","")
         })
+        # Flag badge pour le nouveau segment (sera indexé après append)
+        # On marque à la relance via boucle d'auto-chaînage.
     if "weight_0" in st.session_state:
         try:
             new_seg["weight"] = float(st.session_state["weight_0"])
@@ -148,6 +161,7 @@ def remove_last_segment():
                 "origin_query_0","dest_query_0","origin_choice_0","dest_choice_0",
                 "origin_coord_0","dest_coord_0","origin_display_0","dest_display_0",
                 "origin_iata_0","dest_iata_0","origin_unlo_0","dest_unlo_0","mode_select_0",
+                "origin_autofill_0"
             ]):
                 st.session_state.pop(k, None)
         return
@@ -162,6 +176,7 @@ def remove_last_segment():
             f"origin_iata_{last_idx}", f"dest_iata_{last_idx}",
             f"origin_unlo_{last_idx}", f"dest_unlo_{last_idx}",
             f"mode_select_{last_idx}",
+            f"origin_autofill_{last_idx}",
         ]):
             st.session_state.pop(k, None)
 
@@ -174,6 +189,7 @@ def reset_segments():
                 "origin_query_", "dest_query_", "origin_choice_", "dest_choice_",
                 "origin_coord_", "dest_coord_", "origin_display_", "dest_display_",
                 "origin_iata_", "dest_iata_", "origin_unlo_", "dest_unlo_", "mode_select_",
+                "origin_autofill_",
             ]):
                 st.session_state.pop(k, None)
         st.session_state.pop("weight_0", None)
@@ -389,7 +405,6 @@ def generate_pdf_report(
     title_w, title_h = title_para.wrap(title_box_w, AVAIL_H)
 
     if logo_drawn:
-        # Titre centré verticalement par rapport au logo
         title_x = M + logo_w + 0.5*cm
         title_y = y - (logo_h/2.0) - (title_h/2.0)
     else:
@@ -397,7 +412,6 @@ def generate_pdf_report(
         title_y = y - title_h
     title_para.drawOn(c, title_x, title_y)
 
-    # Descendre sous le bloc d'entête : on prend la plus grande hauteur (logo/titre) + marge
     header_block_h = max(logo_h if logo_drawn else 0, title_h)
     y = y - header_block_h - 0.35*cm
 
@@ -433,10 +447,8 @@ def generate_pdf_report(
         map_h = max(4.0*cm, map_h - delta)
         table_h_avail = (y - M) - footer_h - map_h - 0.25*cm
 
-    # DPI selon qualité
     dpi = int(detail_params.get("dpi", 220))
 
-    # Heuristique de zoom agressive (0..9) bornée par detail_params.max_zoom
     def _choose_zoom(min_lon, max_lon, min_lat, max_lat):
         span_lon = max_lon - min_lon
         span_lat = max_lat - min_lat
@@ -456,7 +468,7 @@ def generate_pdf_report(
         all_lons = [r["lon_o"] for r in rows] + [r["lon_d"] for r in rows]
         min_lon, max_lon, min_lat, max_lat = _compute_extent_from_coords(all_lats, all_lons)
 
-        fig_w_in = AVAIL_W / 72.0   # points -> inches
+        fig_w_in = AVAIL_W / 72.0
         fig_h_in = map_h / 72.0
 
         min_lon, max_lon, min_lat, max_lat = _fit_extent_to_aspect(
@@ -663,7 +675,6 @@ def generate_pdf_report(
             break
 
     if final_tbl is None:
-        # troncature binaire à fs=6
         max_data = len(data_rows)
         low, high = 0, max_data
         best_tbl = None; best = 0
@@ -690,7 +701,6 @@ def generate_pdf_report(
     fw, fh = footer_para.wrap(AVAIL_W, 0.8*cm)
     footer_para.drawOn(c, M + (AVAIL_W - fw)/2.0, M - 0.2*cm)
 
-    # Fin (UNE page)
     c.showPage()
     c.save()
     buffer.seek(0)
@@ -878,9 +888,7 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str,
     unlo_key= f"{side_key}_unlo_{seg_index}"
 
     query_val = st.text_input(
-        f"{label_prefix} — Adresse / Ville / Pays"
-        + (" ou IATA (3 lettres)" if show_airports else "")
-        + (" ou UN/LOCODE (5 lettres)" if show_ports else ""),
+        f"{label_prefix} — Adresse / Ville / Pays",
         value=st.session_state.get(q_key, ""),
         key=q_key
     )
@@ -963,6 +971,8 @@ for i in range(1, len(st.session_state.segments)):
         cur["origin"]["coord"] = prev["dest"]["coord"]
         cur["origin"]["iata"] = prev["dest"]["iata"]
         cur["origin"]["query"] = prev["dest"]["display"]
+        # Marqueur pour afficher le badge sur Origine (segment i)
+        st.session_state[f"origin_autofill_{i}"] = True
 
 # Titre + reset
 col_title, col_reset = st.columns([8, 2])
@@ -990,12 +1000,23 @@ for i in range(len(st.session_state.segments)):
 
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("**Origine**")
+            # Badge à côté de "Origine" si auto-rempli
+            if st.session_state.get(f"origin_autofill_{i}", False):
+                st.markdown("**Origine** <span class='badge-autofill'>(repris du segment précédent)</span>", unsafe_allow_html=True)
+            else:
+                st.markdown("**Origine**")
             o = unified_location_input("origin", i, "Origine",
                                        show_airports=("aerien" in _normalize_no_diacritics(mode)))
         with c2:
             st.markdown("**Destination**")
             d = unified_location_input("dest", i, "Destination", show_airports=False)
+
+        # Si l'utilisateur modifie l'Origine et qu'elle ne correspond plus à la Destination du segment précédent,
+        # on retire le badge.
+        if st.session_state.get(f"origin_autofill_{i}", False) and i > 0:
+            prev_dest_display = st.session_state.segments[i-1]["dest"].get("display")
+            if o["display"] and prev_dest_display and o["display"] != prev_dest_display:
+                st.session_state[f"origin_autofill_{i}"] = False
 
         if "weight_0" not in st.session_state:
             st.session_state["weight_0"] = st.session_state.segments[0]["weight"]
@@ -1011,9 +1032,7 @@ for i in range(len(st.session_state.segments)):
         st.session_state.segments[i]["origin"] = {"query": o["query"], "display": o["display"], "iata": o["iata"], "coord": o["coord"]}
         st.session_state.segments[i]["dest"]   = {"query": d["query"], "display": d["display"], "iata": d["iata"], "coord": d["coord"]}
 
-        # === Chaînage live : D(i) -> O(i+1) (patch intégré) ===
-        # Si la destination du segment i est définie, on reporte automatiquement dans l'origine du segment i+1
-        # - uniquement si l'origine du i+1 est vide, ou bien si elle correspondait déjà à l'ancien chaînage.
+        # === Chaînage live : D(i) -> O(i+1) (avec badge) ===
         if i + 1 < len(st.session_state.segments):
             next_seg = st.session_state.segments[i + 1]
             new_dest_display = d["display"]
@@ -1026,13 +1045,14 @@ for i in range(len(st.session_state.segments)):
                 next_seg["origin"]["coord"]   = new_dest_coord
                 next_seg["origin"]["iata"]    = new_dest_iata
                 next_seg["origin"]["query"]   = new_dest_display
-                # Répliquer aussi dans les clés UI pour affichage immédiat
                 j = i + 1
                 st.session_state[f"origin_query_{j}"]   = new_dest_display
                 st.session_state[f"origin_display_{j}"] = new_dest_display
                 st.session_state[f"origin_coord_{j}"]   = new_dest_coord
                 st.session_state[f"origin_iata_{j}"]    = new_dest_iata
-                st.session_state.segments[i + 1] = next_seg
+                # Active le badge pour le segment suivant
+                st.session_state[f"origin_autofill_{j}"] = True
+                st.session_state.segments[j] = next_seg
 
         segments_out.append({
             "origin_display": o["display"], "destination_display": d["display"],
@@ -1273,7 +1293,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             help="« Identique à la carte Web » utilise le même style Carto (Voyager/Positron/Dark Matter). Sinon : Stamen/OSM/Natural Earth."
         )
 
-        # --- Qualité de rendu PDF (nouveau sélecteur) ---
+        # Qualité de rendu PDF
         detail_levels = {
             "Standard (léger, rapide)": {"dpi": 180, "max_zoom": 7},
             "Détaillé (équilibré)": {"dpi": 220, "max_zoom": 9},
@@ -1282,7 +1302,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         quality_label = st.selectbox(
             "Qualité de rendu PDF",
             options=list(detail_levels.keys()),
-            index=1,  # "Détaillé (équilibré)" par défaut
+            index=1,
             help="Ajuste la finesse du fond de carte : DPI et niveau de zoom des tuiles raster."
         )
         detail_params = detail_levels[quality_label]
