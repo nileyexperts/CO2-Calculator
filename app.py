@@ -138,8 +138,7 @@ def add_segment_end():
             "iata": prev_dest.get("iata",""),
             "query": prev_dest.get("display","")
         })
-        # Flag badge pour le nouveau segment (sera indexé après append)
-        # On marque à la relance via boucle d'auto-chaînage.
+        # Le badge/flags seront posés à la relance via l’auto-chaînage initial
     if "weight_0" in st.session_state:
         try:
             new_seg["weight"] = float(st.session_state["weight_0"])
@@ -161,7 +160,7 @@ def remove_last_segment():
                 "origin_query_0","dest_query_0","origin_choice_0","dest_choice_0",
                 "origin_coord_0","dest_coord_0","origin_display_0","dest_display_0",
                 "origin_iata_0","dest_iata_0","origin_unlo_0","dest_unlo_0","mode_select_0",
-                "origin_autofill_0"
+                "origin_autofill_0","origin_user_edited_0","chain_src_signature_0"
             ]):
                 st.session_state.pop(k, None)
         return
@@ -177,6 +176,8 @@ def remove_last_segment():
             f"origin_unlo_{last_idx}", f"dest_unlo_{last_idx}",
             f"mode_select_{last_idx}",
             f"origin_autofill_{last_idx}",
+            f"origin_user_edited_{last_idx}",
+            f"chain_src_signature_{last_idx}",
         ]):
             st.session_state.pop(k, None)
 
@@ -189,7 +190,7 @@ def reset_segments():
                 "origin_query_", "dest_query_", "origin_choice_", "dest_choice_",
                 "origin_coord_", "dest_coord_", "origin_display_", "dest_display_",
                 "origin_iata_", "dest_iata_", "origin_unlo_", "dest_unlo_", "mode_select_",
-                "origin_autofill_",
+                "origin_autofill_", "origin_user_edited_", "chain_src_signature_",
             ]):
                 st.session_state.pop(k, None)
         st.session_state.pop("weight_0", None)
@@ -395,7 +396,7 @@ def generate_pdf_report(
         if resp.ok:
             img = ImageReader(io.BytesIO(resp.content))
             c.drawImage(img, M, y - logo_h, width=logo_w, height=logo_h,
-                    preserveAspectRatio=True, mask='auto')
+                        preserveAspectRatio=True, mask='auto')
             logo_drawn = True
     except Exception:
         pass
@@ -649,7 +650,7 @@ def generate_pdf_report(
             notice = Paragraph(f"… {hidden_count} ligne(s) non affichée(s) pour tenir sur 1 page …",
                                ParagraphStyle('Notice', parent=styles['Normal'], fontSize=max(7, font_size-1),
                                               textColor=colors.grey, alignment=1))
-            body.append([notice] + [""]*(len(headers)-1))  # ligne notice fusionnée
+            body.append([notice] + [""]*(len(headers)-1))
         tbl = Table(body, colWidths=col_widths, repeatRows=1)
         total_row_offset = 1 if (show_notice and hidden_count>0) else 0
         style = [
@@ -705,6 +706,24 @@ def generate_pdf_report(
     c.save()
     buffer.seek(0)
     return buffer
+
+# =========================
+# Helpers chaînage D(i) -> O(i+1) — signatures & garde-fous
+# =========================
+def _normalize_signature(display, coord):
+    """Signature immuable d'un lieu (display + coord arrondies) pour détecter la source du chaînage."""
+    d = (display or "").strip()
+    if coord and isinstance(coord, (list, tuple)) and len(coord) == 2:
+        return (d, round(float(coord[0]), 6), round(float(coord[1]), 6))
+    return (d, None, None)
+
+def _is_location_empty(loc):
+    """Considère vide si display ou coord manquent."""
+    if not loc:
+        return True
+    disp = (loc.get("display") or "").strip()
+    coord = loc.get("coord")
+    return (not disp) or (not coord)
 
 # =========================
 # Auth
@@ -787,7 +806,7 @@ def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
     return df[cols]
 
 @st.cache_data(show_spinner=False, ttl=24*60*60)
-def search_airports(query: str, limit: int = 10) -> pd.DataFrame:
+def search_airports(query: str, limit: int = 20) -> pd.DataFrame:
     df = load_airports_iata()
     q = (query or "").strip()
     if df.empty: return df
@@ -871,17 +890,14 @@ def search_ports(query: str, limit: int = 12) -> pd.DataFrame:
     return res.head(limit)
 
 # =========================
-# Champ unifié (Adresse/Ville/Pays ou IATA)
+# Champ unifié (Adresse/Ville/Pays ou IATA avec priorité aéroports)
 # =========================
 def unified_location_input(side_key: str, seg_index: int, label_prefix: str,
                            show_airports: bool = True, show_ports: bool = False):
     """
     Champ texte + selectbox résultats combinés :
-    ✈️ aéroports (si show_airports) — ⚓ ports (si show_ports) — 📍 OpenCage
-    Comportement spécial IATA : si la saisie est exactement 3 lettres [A-Z], on force la
-    recherche aéroports et on privilégie la sélection d'un aéroport.
-
-    Retourne: dict {coord:(lat,lon) or None, display:str, iata:str, unlocode:str, query:str, choice:str}
+    ✈️ aéroports (si show_airports ou si IATA détecté) — ⚓ ports (si show_ports) — 📍 OpenCage.
+    Mode IATA : si saisie exactement 3 lettres [A-Z], on force la recherche aéroports et on privilégie un aéroport.
     """
     q_key   = f"{side_key}_query_{seg_index}"
     c_key   = f"{side_key}_choice_{seg_index}"
@@ -890,13 +906,9 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str,
     iata_key= f"{side_key}_iata_{seg_index}"
     unlo_key= f"{side_key}_unlo_{seg_index}"
 
-    # Libellé
     label = f"{label_prefix} — Adresse / Ville / Pays"
-    # On n’affiche pas d’indication IATA/UNLOCODE dans le label pour éviter d'inciter en double, le mode IATA est automatique.
-
     query_val = st.text_input(label, value=st.session_state.get(q_key, ""), key=q_key)
 
-    # Détection IATA stricte: exactement 3 lettres ASCII
     q_raw = (query_val or "").strip()
     is_iata_mode = bool(re.fullmatch(r"[A-Za-z]{3}", q_raw))
     q_iata = q_raw.upper() if is_iata_mode else None
@@ -905,23 +917,16 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str,
     ports = pd.DataFrame()
     oc_opts = []
     if q_raw:
-        # AEROPORTS:
-        # - si show_airports True (comportement normal)
-        # - ou si IATA détécté (on force la recherche aéroports)
         if show_airports or is_iata_mode:
             airports = search_airports(q_raw, limit=20)
-            # Si IATA strict, on filtre pour privilégier les IATA en tête
             if is_iata_mode and not airports.empty:
-                # D'abord ceux dont IATA commence par le code exact (préférence stricte), puis le reste
                 exact = airports[airports["iata_code"].str.upper() == q_iata]
                 others = airports[airports["iata_code"].str.upper() != q_iata]
                 airports = pd.concat([exact, others], ignore_index=True)
 
-        # PORTS
-        if show_ports and not is_iata_mode:  # si IATA, on ne mélange pas avec ports
+        if show_ports and not is_iata_mode:
             ports = search_ports(q_raw, limit=12)
 
-        # OpenCage uniquement si pas IATA (sinon on privilégie aéroports)
         if not is_iata_mode:
             oc = geocode_cached(q_raw, limit=5)
             oc_opts = [r['formatted'] for r in oc] if oc else []
@@ -930,63 +935,50 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str,
     airport_rows = []
     port_rows = []
 
-    # Injecter d'abord les aéroports (si dispo/activés)
     if (show_airports or is_iata_mode) and not airports.empty:
         for _, r in airports.iterrows():
             label_opt = f"✈️ {r['label']} (IATA {r['iata_code']})"
             options.append(label_opt); airport_rows.append(r)
 
-    # Puis ports (si activé et pas IATA)
     if show_ports and not is_iata_mode and not ports.empty:
         for _, r in ports.iterrows():
             suffix = f" (UN/LOCODE {r['unlocode']})" if r.get("unlocode") else ""
             label_opt = f"⚓ {r['label']}{suffix}"
             options.append(label_opt); port_rows.append(r)
 
-    # Enfin OpenCage (si pas IATA)
     if not is_iata_mode and oc_opts:
         options += [f"📍 {o}" for o in oc_opts]
 
-    # Aucun résultat
     if not options:
         options = ["— Aucun résultat —"]
 
-    # Index par défaut :
-    # - en mode IATA avec aéroports -> 1er aéroport
-    # - sinon 0
     default_index = 0
     if is_iata_mode and airport_rows:
-        default_index = 0  # le 1er de la liste est un aéroport
+        default_index = 0
 
     sel = st.selectbox("Résultats", options, index=default_index, key=c_key)
 
-    # Construire les valeurs de retour
     coord = None; display = ""; sel_iata = ""; sel_unlo = ""
     if sel != "— Aucun résultat —":
         if sel.startswith("✈️"):
-            # Trouver l’index relatif dans airport_rows
-            # options = [airports..., ports..., opencage...]
             idx_in_all = options.index(sel)
             r = airport_rows[idx_in_all] if 0 <= idx_in_all < len(airport_rows) else airports.iloc[0]
             coord = (float(r["lat"]), float(r["lon"]))
-            display = r["label"]  # libellé aéroport
-            sel_iata = r["iata_code"]
-            sel_unlo = ""
+            display = r["label"]
+            sel_iata = r["iata_code"]; sel_unlo = ""
         elif sel.startswith("⚓"):
             idx_global = options.index(sel)
             idx = idx_global - (len(airport_rows))
             r = port_rows[idx] if 0 <= idx < len(port_rows) else ports.iloc[0]
             coord = (float(r["lat"]), float(r["lon"]))
             display = r["label"]
-            sel_unlo = str(r.get("unlocode") or "")
-            sel_iata = ""
+            sel_unlo = str(r.get("unlocode") or ""); sel_iata = ""
         else:
             formatted = sel[2:].strip() if sel.startswith("📍") else sel
             coord = coords_from_formatted(formatted)
             display = formatted
             sel_iata = ""; sel_unlo = ""
 
-    # Persistance dans session_state
     st.session_state[crd_key]  = coord
     st.session_state[disp_key] = display
     st.session_state[iata_key] = sel_iata
@@ -1004,16 +996,25 @@ st.markdown("### Calculateur d'empreinte Co2 multimodal")
 if "segments" not in st.session_state or not st.session_state.segments:
     st.session_state.segments = [_default_segment()]
 
-# Auto-chaînage O = D précédent si Origine vide (au chargement)
+# Auto-chaînage O = D précédent si Origine vide (au chargement) + badge + signature
 for i in range(1, len(st.session_state.segments)):
     prev, cur = st.session_state.segments[i-1], st.session_state.segments[i]
-    if prev.get("dest",{}).get("display") and not cur.get("origin",{}).get("display"):
+    if prev.get("dest",{}).get("display") and _is_location_empty(cur.get("origin", {})):
         cur["origin"]["display"] = prev["dest"]["display"]
         cur["origin"]["coord"] = prev["dest"]["coord"]
         cur["origin"]["iata"] = prev["dest"]["iata"]
         cur["origin"]["query"] = prev["dest"]["display"]
-        # Marqueur pour afficher le badge sur Origine (segment i)
+        # UI keys pour reflet immédiat
+        st.session_state[f"origin_query_{i}"]   = prev["dest"]["display"]
+        st.session_state[f"origin_display_{i}"] = prev["dest"]["display"]
+        st.session_state[f"origin_coord_{i}"]   = prev["dest"]["coord"]
+        st.session_state[f"origin_iata_{i}"]    = prev["dest"]["iata"] or ""
+        # Marquage badge + signature + non-verrouillé
         st.session_state[f"origin_autofill_{i}"] = True
+        st.session_state[f"chain_src_signature_{i}"] = _normalize_signature(
+            prev["dest"].get("display"), prev["dest"].get("coord")
+        )
+        st.session_state[f"origin_user_edited_{i}"] = False
 
 # Titre + reset
 col_title, col_reset = st.columns([8, 2])
@@ -1041,7 +1042,6 @@ for i in range(len(st.session_state.segments)):
 
         c1, c2 = st.columns(2)
         with c1:
-            # Badge à côté de "Origine" si auto-rempli
             if st.session_state.get(f"origin_autofill_{i}", False):
                 st.markdown("**Origine** <span class='badge-autofill'>(repris du segment précédent)</span>", unsafe_allow_html=True)
             else:
@@ -1051,13 +1051,6 @@ for i in range(len(st.session_state.segments)):
         with c2:
             st.markdown("**Destination**")
             d = unified_location_input("dest", i, "Destination", show_airports=False)
-
-        # Si l'utilisateur modifie l'Origine et qu'elle ne correspond plus à la Destination du segment précédent,
-        # on retire le badge.
-        if st.session_state.get(f"origin_autofill_{i}", False) and i > 0:
-            prev_dest_display = st.session_state.segments[i-1]["dest"].get("display")
-            if o["display"] and prev_dest_display and o["display"] != prev_dest_display:
-                st.session_state[f"origin_autofill_{i}"] = False
 
         if "weight_0" not in st.session_state:
             st.session_state["weight_0"] = st.session_state.segments[0]["weight"]
@@ -1073,27 +1066,55 @@ for i in range(len(st.session_state.segments)):
         st.session_state.segments[i]["origin"] = {"query": o["query"], "display": o["display"], "iata": o["iata"], "coord": o["coord"]}
         st.session_state.segments[i]["dest"]   = {"query": d["query"], "display": d["display"], "iata": d["iata"], "coord": d["coord"]}
 
-        # === Chaînage live : D(i) -> O(i+1) (avec badge) ===
+        # === Chaînage live D(i) -> O(i+1) avec garde-fous (signatures/flags) ===
+
+        # 1) Si l'Origine(i) était autoremplie et que l'utilisateur l'a modifiée : enlever badge + verrouiller
+        if i > 0 and st.session_state.get(f"origin_autofill_{i}", False):
+            prev_sig = st.session_state.get(f"chain_src_signature_{i}")
+            cur_sig  = _normalize_signature(o["display"], o["coord"])
+            if prev_sig and cur_sig != prev_sig:
+                st.session_state[f"origin_autofill_{i}"] = False
+                st.session_state[f"origin_user_edited_{i}"] = (not _is_location_empty(st.session_state.segments[i]["origin"]))
+
+        # 2) Propagation vers O(i+1) si pas verrouillé
         if i + 1 < len(st.session_state.segments):
             next_seg = st.session_state.segments[i + 1]
-            new_dest_display = d["display"]
-            new_dest_coord   = d["coord"]
-            new_dest_iata    = d["iata"] or ""
-            origin_empty = not next_seg["origin"].get("display") or not next_seg["origin"].get("coord")
-            old_chain_display = next_seg["origin"].get("display", "")
-            if new_dest_display and new_dest_coord and (origin_empty or old_chain_display == st.session_state.segments[i]["dest"].get("display")):
-                next_seg["origin"]["display"] = new_dest_display
-                next_seg["origin"]["coord"]   = new_dest_coord
-                next_seg["origin"]["iata"]    = new_dest_iata
-                next_seg["origin"]["query"]   = new_dest_display
+            dest_disp = d["display"]; dest_coord = d["coord"]; dest_iata = d["iata"] or ""
+            dest_valid = bool(dest_disp and dest_coord)
+
+            next_origin = next_seg.get("origin", {})
+            next_empty = _is_location_empty(next_origin)
+            next_autofill   = bool(st.session_state.get(f"origin_autofill_{i+1}", False))
+            next_user_locked = bool(st.session_state.get(f"origin_user_edited_{i+1}", False))
+            next_prev_sig = st.session_state.get(f"chain_src_signature_{i+1}")
+
+            new_sig = _normalize_signature(dest_disp, dest_coord)
+
+            should_chain = False
+            if dest_valid and not next_user_locked:
+                if next_empty:
+                    should_chain = True
+                elif next_autofill and new_sig != next_prev_sig:
+                    should_chain = True
+
+            if should_chain:
+                next_seg["origin"]["display"] = dest_disp
+                next_seg["origin"]["coord"]   = dest_coord
+                next_seg["origin"]["iata"]    = dest_iata
+                next_seg["origin"]["query"]   = dest_disp
                 j = i + 1
-                st.session_state[f"origin_query_{j}"]   = new_dest_display
-                st.session_state[f"origin_display_{j}"] = new_dest_display
-                st.session_state[f"origin_coord_{j}"]   = new_dest_coord
-                st.session_state[f"origin_iata_{j}"]    = new_dest_iata
-                # Active le badge pour le segment suivant
+                st.session_state[f"origin_query_{j}"]   = dest_disp
+                st.session_state[f"origin_display_{j}"] = dest_disp
+                st.session_state[f"origin_coord_{j}"]   = dest_coord
+                st.session_state[f"origin_iata_{j}"]    = dest_iata
                 st.session_state[f"origin_autofill_{j}"] = True
+                st.session_state[f"chain_src_signature_{j}"] = new_sig
+                st.session_state[f"origin_user_edited_{j}"] = False
                 st.session_state.segments[j] = next_seg
+
+        # 3) Si l'utilisateur efface complètement O(i), retirer le verrou
+        if _is_location_empty(st.session_state.segments[i]["origin"]):
+            st.session_state[f"origin_user_edited_{i}"] = False
 
         segments_out.append({
             "origin_display": o["display"], "destination_display": d["display"],
@@ -1304,68 +1325,12 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 min_lon, max_lon = min(all_lons), max(all_lons)
                 mid_lat = (min_lat+max_lat)/2; mid_lon = (min_lon+max_lon)/2
                 span_lat = max(1e-6, max_lat-min_lat); span_lon = max(1e-6, max_lon-min_lon)
-                span_lon_equiv = span_lon*max(0.1, math.cos(math.radians(mid_lat)))
-                zoom_x = math.log2(360.0/max(1e-6, span_lon_equiv))
-                zoom_y = math.log2(180.0/max(1e-6, span_lat))
-                zoom = max(1.0, min(15.0, min(zoom_x, zoom_y)))
-                view = pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=float(zoom))
+Voici le **fichier complet `app.py`** avec **tous les patchs intégrés** :
 
-        st.pydeck_chart(pdk.Deck(
-            map_style=MAP_STYLES[map_style_label],
-            initial_view_state=view,
-            layers=layers,
-            tooltip={"text": "{name}"}
-        ))
-
-        # Exports
-        df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
-        dossier_val = st.session_state.get("dossier_transport","")
-        df_export.insert(0, "N° dossier Transport", dossier_val)
-        csv = df_export.to_csv(index=False).encode("utf-8")
-        safe_suffix = "".join(c if (c.isalnum() or c in "-_") else "_" for c in dossier_val.strip())
-        safe_suffix = f"_{safe_suffix}" if safe_suffix else ""
-        filename_csv = f"resultats_co2_multimodal{safe_suffix}.csv"
-        filename_pdf = f"rapport_co2_multimodal{safe_suffix}.pdf"
-
-        st.subheader("Exporter")
-        pdf_base_choice = st.selectbox(
-            "Fond de carte du PDF",
-            options=PDF_BASEMAP_LABELS, index=0,
-            help="« Identique à la carte Web » utilise le même style Carto (Voyager/Positron/Dark Matter). Sinon : Stamen/OSM/Natural Earth."
-        )
-
-        # Qualité de rendu PDF
-        detail_levels = {
-            "Standard (léger, rapide)": {"dpi": 180, "max_zoom": 7},
-            "Détaillé (équilibré)": {"dpi": 220, "max_zoom": 9},
-            "Ultra (fin mais plus lent)": {"dpi": 280, "max_zoom": 10},
-        }
-        quality_label = st.selectbox(
-            "Qualité de rendu PDF",
-            options=list(detail_levels.keys()),
-            index=1,
-            help="Ajuste la finesse du fond de carte : DPI et niveau de zoom des tuiles raster."
-        )
-        detail_params = detail_levels[quality_label]
-
-        c1, c2 = st.columns(2)
-        with c1:
-            st.download_button("Télécharger le détail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
-        with c2:
-            try:
-                with st.spinner("Génération du PDF en cours..."):
-                    pdf_buffer = generate_pdf_report(
-                        df=df, dossier_val=dossier_val,
-                        total_distance=total_distance, total_emissions=total_emissions,
-                        unit=unit, rows=rows,
-                        pdf_basemap_choice_label=pdf_base_choice,
-                        ne_scale=NE_SCALE_DEFAULT, pdf_theme=PDF_THEME_DEFAULT, pdf_icon_size_px=24,
-                        web_map_style_label=map_style_label,
-                        detail_params=detail_params
-                    )
-                st.download_button("Télécharger le rapport PDF", data=pdf_buffer, file_name=filename_pdf, mime="application/pdf")
-            except Exception as e:
-                st.error(f"Erreur lors de la génération du PDF : {e}")
-                import traceback; st.code(traceback.format_exc())
-    else:
-        st.info("Aucun segment valide n'a été calculé. Vérifiez les entrées ou les sélections.")
+- ✅ Rapport **PDF mono‑page** (A4 paysage) — carte + tableau (compactage & troncature si besoin)  
+- ✅ **Fond de carte du PDF identique à la carte Web** (Carto Voyager / Positron / Dark Matter) via tuiles Carto XYZ  
+- ✅ **Sélecteur UI « Qualité de rendu PDF »** (Standard / Détaillé / Ultra) — contrôle **DPI** & **zoom**  
+- ✅ **Carte détaillée** avec fallback **Natural Earth** enrichi (admin‑1, routes, urbain)  
+- ✅ **Badge** « *(repris du segment précédent)* » à côté d’**Origine** quand auto‑rempli  
+- ✅ **Chaînage live robuste** D(i) → O(i+1) avec **signature de source**, **verrou utilisateur** & **anti‑écrasement**  
+- ✅ **IATA prioritaire** : si l’utilisateur saisit **un code IATA (3 lettres)** dans un champ (Orig
