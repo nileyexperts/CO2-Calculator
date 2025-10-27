@@ -401,7 +401,7 @@ def generate_pdf_report(
     except Exception:
         pass
 
-    title_para = Paragraph("RAPPORT D'EMPREINTE CARBONE MULTIMODAL", title_style)
+    title_para = Paragraph("RAPPORT D'EMPREINTE Co2 TRANSPORT", title_style)
     title_box_w = AVAIL_W - (logo_w + 0.5*cm if logo_drawn else 0)
     title_w, title_h = title_para.wrap(title_box_w, AVAIL_H)
 
