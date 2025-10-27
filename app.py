@@ -177,18 +177,18 @@ def remove_last_segment():
 def reset_segments():
     try:
         st.session_state.segments = [_default_segment()]
-        for i in range(MAX_SEGMENTS):
-            for prefix in ["origin", "dest"]:
-                for suffix in ["query", "choice", "coord", "display", "iata", "unlo", "autofill", "user_edited"]:
-                    st.session_state.pop(f"{prefix}_{suffix}_{i}", None)
-            st.session_state.pop(f"mode_select_{i}", None)
-            st.session_state.pop(f"weight_{i}", None)
-            st.session_state.pop(f"chain_src_signature_{i}", None)
+        for k in list(st.session_state.keys()):
+            if any(pat in k for pat in [
+                "origin_query_", "dest_query_", "origin_choice_", "dest_choice_",
+                "origin_coord_", "dest_coord_", "origin_display_", "dest_display_",
+                "origin_iata_", "dest_iata_", "origin_unlo_", "dest_unlo_", "mode_select_",
+                "origin_autofill_", "origin_user_edited_", "chain_src_signature_",
+            ]):
+                st.session_state.pop(k, None)
         st.session_state.pop("weight_0", None)
         st.session_state.pop("dossier_transport", None)
     finally:
         st.rerun()
-
 
 # --------------------------
 # Utilitaires & APIs
