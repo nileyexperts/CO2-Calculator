@@ -42,7 +42,7 @@ os.environ.setdefault("CARTOPY_CACHE_DIR", os.path.join(tempfile.gettempdir(), "
 # --------------------------
 # Configuration page
 # --------------------------
-st.set_page_config(page_title="Calculateur CO2 multimodal - NILEY EXPERTS", page_icon="🌍", layout="centered")
+st.set_page_config(page_title="Calculateur CO2 multimodal - NILEY EXPERTS", page_icon="ðŸŒ", layout="centered")
 
 # Style global + style badge
 st.markdown(
@@ -341,7 +341,7 @@ def _carto_tiler_from_web_style(web_style_label: str):
     return CartoTiles()
 
 # --------------------------
-# Chaînage robuste: helpers
+# ChaÃ®nage robuste: helpers
 # --------------------------
 def _normalize_signature(display: str, coord: tuple | None) -> tuple:
     d = (display or "").strip()
@@ -417,7 +417,7 @@ def generate_pdf_report(
 
     # Resume
     info_summary_data = [
-        ["N° dossier Transport:", dossier_val, "Distance totale:", f"{total_distance:.1f} km"],
+        ["NÂ° dossier Transport:", dossier_val, "Distance totale:", f"{total_distance:.1f} km"],
         ["Date du rapport:", datetime.now().strftime("%d/%m/%Y %H:%M"), "Emissions totales:", f"{total_emissions:.2f} kg CO2e"],
         ["Nombre de segments:", str(len(rows)), "Emissions moyennes:", f"{(total_emissions/total_distance):.3f} kg CO2e/km" if total_distance>0 else "N/A"],
     ]
@@ -682,7 +682,7 @@ def generate_pdf_report(
         y = y - th - 0.10*cm
 
     footer_para = Paragraph(
-        f"Document genere le {datetime.now().strftime('%d/%m/%Y %H:%M')} — Calculateur CO2 multimodal - NILEY EXPERTS",
+        f"Document genere le {datetime.now().strftime('%d/%m/%Y %H:%M')} â€” Calculateur CO2 multimodal - NILEY EXPERTS",
         ParagraphStyle('Footer', parent=styles['Normal'], fontSize=7, textColor=colors.grey, alignment=1)
     )
     fw, fh = footer_para.wrap(AVAIL_W, 0.8*cm)
@@ -766,7 +766,7 @@ def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
         df[col] = df[col].astype(str).replace({"nan":""}).fillna("").str.strip()
     def _label(r):
         base = f"{(r['iata_code'] or '').strip()} - {(r['name'] or 'Sans nom').strip()}"
-        extra = " · ".join([p for p in [r['municipality'], r['iso_country']] if p])
+        extra = " Â· ".join([p for p in [r['municipality'], r['iso_country']] if p])
         return f"{base} {extra}" if extra else base
     df["label"] = df.apply(_label, axis=1)
     cols = ["iata_code","name","municipality","iso_country","lat","lon","label"]
@@ -828,7 +828,7 @@ def load_ports_csv(path: str = "ports.csv") -> pd.DataFrame:
     out["country"] = out["country"].astype(str).replace({"nan":""}).fillna("").str.strip()
     def _label_port(r):
         base = (r["name"] or "Port sans nom").strip()
-        extras = " · ".join([p for p in [r["unlocode"], r["country"]] if p])
+        extras = " Â· ".join([p for p in [r["unlocode"], r["country"]] if p])
         return f"{base} {extras}" if extras else base
     out["label"] = out.apply(_label_port, axis=1)
     return out[["unlocode","name","country","lat","lon","label"]]
@@ -858,7 +858,7 @@ def search_ports(query: str, limit: int = 12) -> pd.DataFrame:
 def unified_location_input(side_key: str, seg_index: int, label_prefix: str,
                            show_airports: bool = True, show_ports: bool = False):
     """
-    Saisie unifiee. Mode IATA prioritaire: si la saisie est exactement 3 lettres, on force la recherche aéroports.
+    Saisie unifiee. Mode IATA prioritaire: si la saisie est exactement 3 lettres, on force la recherche aÃ©roports.
     Retourne dict: coord, display, iata, unlocode, query, choice
     """
     q_key   = f"{side_key}_query_{seg_index}"
@@ -868,7 +868,7 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str,
     iata_key= f"{side_key}_iata_{seg_index}"
     unlo_key= f"{side_key}_unlo_{seg_index}"
 
-    label = f"{label_prefix} — Adresse / Ville / Pays"
+    label = f"{label_prefix} â€” Adresse / Ville / Pays"
     query_val = st.text_input(label, value=st.session_state.get(q_key, ""), key=q_key)
 
     q_raw = (query_val or "").strip()
@@ -897,20 +897,20 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str,
 
     if (show_airports or is_iata_mode) and not airports.empty:
         for _, r in airports.iterrows():
-            label_opt = f"✈️ {r['label']} (IATA {r['iata_code']})"
+            label_opt = f"âœˆï¸ {r['label']} (IATA {r['iata_code']})"
             options.append(label_opt); airport_rows.append(r)
 
     if show_ports and not is_iata_mode and not ports.empty:
         for _, r in ports.iterrows():
             suffix = f" (UN/LOCODE {r['unlocode']})" if r.get("unlocode") else ""
-            label_opt = f"⚓ {r['label']}{suffix}"
+            label_opt = f"âš“ {r['label']}{suffix}"
             options.append(label_opt); port_rows.append(r)
 
     if not is_iata_mode and oc_opts:
-        options += [f"📍 {o}" for o in oc_opts]
+        options += [f"ðŸ“ {o}" for o in oc_opts]
 
     if not options:
-        options = ["— Aucun resultat —"]
+        options = ["â€” Aucun resultat â€”"]
 
     default_index = 0
     if is_iata_mode and airport_rows:
@@ -919,15 +919,15 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str,
     sel = st.selectbox("Resultats", options, index=default_index, key=c_key)
 
     coord = None; display = ""; sel_iata = ""; sel_unlo = ""
-    if sel != "— Aucun resultat —":
-        if sel.startswith("✈️"):
+    if sel != "â€” Aucun resultat â€”":
+        if sel.startswith("âœˆï¸"):
             idx_in_all = options.index(sel)
             r = airport_rows[idx_in_all] if 0 <= idx_in_all < len(airport_rows) else airports.iloc[0]
             coord = (float(r["lat"]), float(r["lon"]))
             display = r["label"]
             sel_iata = r["iata_code"]
             sel_unlo = ""
-        elif sel.startswith("⚓"):
+        elif sel.startswith("âš“"):
             idx_global = options.index(sel)
             idx = idx_global - (len(airport_rows))
             r = port_rows[idx] if 0 <= idx < len(port_rows) else ports.iloc[0]
@@ -936,7 +936,7 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str,
             sel_unlo = str(r.get("unlocode") or "")
             sel_iata = ""
         else:
-            formatted = sel[2:].strip() if sel.startswith("📍") else sel
+            formatted = sel[2:].strip() if sel.startswith("ðŸ“") else sel
             coord = coords_from_formatted(formatted)
             display = formatted
             sel_iata = ""; sel_unlo = ""
@@ -1103,14 +1103,14 @@ MAP_STYLES = {
     "Carto Dark Matter (sombre)": "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
 }
 with col_map2:
-    focus_choices = ["— Tous —"] + [f"Segment {i+1}" for i in range(len(segments_out))]
+    focus_choices = ["â€” Tous â€”"] + [f"Segment {i+1}" for i in range(len(segments_out))]
     focus_sel = st.selectbox("Focus segment", options=focus_choices, index=0)
 with col_map3:
     show_icons = st.checkbox("Afficher les icones mode", value=True)
 
 # Calcul
 st.subheader("Calcul")
-dossier_transport = st.text_input("N° dossier Transport (obligatoire) *",
+dossier_transport = st.text_input("NÂ° dossier Transport (obligatoire) *",
                                   value=st.session_state.get("dossier_transport",""),
                                   placeholder="ex : TR-2025-001")
 st.session_state["dossier_transport"] = (dossier_transport or "").strip()
@@ -1125,7 +1125,7 @@ factors = {
 
 can_calculate = bool(st.session_state["dossier_transport"])
 if not can_calculate:
-    st.warning("Veuillez renseigner le N° dossier Transport avant de lancer le calcul.")
+    st.warning("Veuillez renseigner le NÂ° dossier Transport avant de lancer le calcul.")
 
 if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
     rows = []; total_emissions = 0.0; total_distance = 0.0
@@ -1255,7 +1255,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             zoom = 6 if span_deg < 1.5 else (5 if span_deg < 4 else (4 if span_deg < 10 else 3))
             return pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=zoom)
 
-        if focus_sel != "— Tous —":
+        if focus_sel != "â€” Tous â€”":
             idx = int(focus_sel.split()[-1])
             sel_row = next((r for r in rows if r["Segment"]==idx), None)
             view = compute_view_for_segment(sel_row) if sel_row else pdk.ViewState(latitude=48.85, longitude=2.35, zoom=3)
@@ -1292,7 +1292,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         # Exports
         df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
         dossier_val = st.session_state.get("dossier_transport","")
-        df_export.insert(0, "N° dossier Transport", dossier_val)
+        df_export.insert(0, "NÂ° dossier Transport", dossier_val)
         csv = df_export.to_csv(index=False).encode("utf-8")
         safe_suffix = "".join(c if (c.isalnum() or c in "-_") else "_" for c in dossier_val.strip())
         safe_suffix = f"_{safe_suffix}" if safe_suffix else ""
