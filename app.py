@@ -877,76 +877,117 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str,
                            show_airports: bool = True, show_ports: bool = False):
     """
     Champ texte + selectbox résultats combinés :
-    ✈️ aéroports (si show_airports), ⚓ ports (si show_ports), puis 📍 OpenCage.
-    Renvoie dict {coord:(lat,lon) or None, display:str, iata:str, unlocode:str, query:str, choice:str}
+    ✈️ aéroports (si show_airports) — ⚓ ports (si show_ports) — 📍 OpenCage
+    Comportement spécial IATA : si la saisie est exactement 3 lettres [A-Z], on force la
+    recherche aéroports et on privilégie la sélection d'un aéroport.
+
+    Retourne: dict {coord:(lat,lon) or None, display:str, iata:str, unlocode:str, query:str, choice:str}
     """
-    q_key = f"{side_key}_query_{seg_index}"
-    c_key = f"{side_key}_choice_{seg_index}"
+    q_key   = f"{side_key}_query_{seg_index}"
+    c_key   = f"{side_key}_choice_{seg_index}"
     crd_key = f"{side_key}_coord_{seg_index}"
     disp_key= f"{side_key}_display_{seg_index}"
     iata_key= f"{side_key}_iata_{seg_index}"
     unlo_key= f"{side_key}_unlo_{seg_index}"
 
-    query_val = st.text_input(
-        f"{label_prefix} — Adresse / Ville / Pays",
-        value=st.session_state.get(q_key, ""),
-        key=q_key
-    )
+    # Libellé
+    label = f"{label_prefix} — Adresse / Ville / Pays"
+    # On n’affiche pas d’indication IATA/UNLOCODE dans le label pour éviter d'inciter en double, le mode IATA est automatique.
+
+    query_val = st.text_input(label, value=st.session_state.get(q_key, ""), key=q_key)
+
+    # Détection IATA stricte: exactement 3 lettres ASCII
+    q_raw = (query_val or "").strip()
+    is_iata_mode = bool(re.fullmatch(r"[A-Za-z]{3}", q_raw))
+    q_iata = q_raw.upper() if is_iata_mode else None
 
     airports = pd.DataFrame()
     ports = pd.DataFrame()
     oc_opts = []
-    if query_val:
-        if show_airports:
-            airports = search_airports(query_val, limit=10)
-        if show_ports:
-            ports = search_ports(query_val, limit=12)
-        oc = geocode_cached(query_val, limit=5)
-        oc_opts = [r['formatted'] for r in oc] if oc else []
+    if q_raw:
+        # AEROPORTS:
+        # - si show_airports True (comportement normal)
+        # - ou si IATA détécté (on force la recherche aéroports)
+        if show_airports or is_iata_mode:
+            airports = search_airports(q_raw, limit=20)
+            # Si IATA strict, on filtre pour privilégier les IATA en tête
+            if is_iata_mode and not airports.empty:
+                # D'abord ceux dont IATA commence par le code exact (préférence stricte), puis le reste
+                exact = airports[airports["iata_code"].str.upper() == q_iata]
+                others = airports[airports["iata_code"].str.upper() != q_iata]
+                airports = pd.concat([exact, others], ignore_index=True)
+
+        # PORTS
+        if show_ports and not is_iata_mode:  # si IATA, on ne mélange pas avec ports
+            ports = search_ports(q_raw, limit=12)
+
+        # OpenCage uniquement si pas IATA (sinon on privilégie aéroports)
+        if not is_iata_mode:
+            oc = geocode_cached(q_raw, limit=5)
+            oc_opts = [r['formatted'] for r in oc] if oc else []
 
     options = []
     airport_rows = []
     port_rows = []
 
-    if show_airports and not airports.empty:
+    # Injecter d'abord les aéroports (si dispo/activés)
+    if (show_airports or is_iata_mode) and not airports.empty:
         for _, r in airports.iterrows():
-            label = f"✈️ {r['label']} (IATA {r['iata_code']})"
-            options.append(label); airport_rows.append(r)
+            label_opt = f"✈️ {r['label']} (IATA {r['iata_code']})"
+            options.append(label_opt); airport_rows.append(r)
 
-    if show_ports and not ports.empty:
+    # Puis ports (si activé et pas IATA)
+    if show_ports and not is_iata_mode and not ports.empty:
         for _, r in ports.iterrows():
             suffix = f" (UN/LOCODE {r['unlocode']})" if r.get("unlocode") else ""
-            label = f"⚓ {r['label']}{suffix}"
-            options.append(label); port_rows.append(r)
+            label_opt = f"⚓ {r['label']}{suffix}"
+            options.append(label_opt); port_rows.append(r)
 
-    if oc_opts:
+    # Enfin OpenCage (si pas IATA)
+    if not is_iata_mode and oc_opts:
         options += [f"📍 {o}" for o in oc_opts]
 
+    # Aucun résultat
     if not options:
         options = ["— Aucun résultat —"]
 
-    sel = st.selectbox("Résultats", options, index=0, key=c_key)
+    # Index par défaut :
+    # - en mode IATA avec aéroports -> 1er aéroport
+    # - sinon 0
+    default_index = 0
+    if is_iata_mode and airport_rows:
+        default_index = 0  # le 1er de la liste est un aéroport
 
+    sel = st.selectbox("Résultats", options, index=default_index, key=c_key)
+
+    # Construire les valeurs de retour
     coord = None; display = ""; sel_iata = ""; sel_unlo = ""
     if sel != "— Aucun résultat —":
         if sel.startswith("✈️"):
-            idx = options.index(sel)
-            r = airport_rows[idx] if 0 <= idx < len(airport_rows) else airports.iloc[0]
+            # Trouver l’index relatif dans airport_rows
+            # options = [airports..., ports..., opencage...]
+            idx_in_all = options.index(sel)
+            r = airport_rows[idx_in_all] if 0 <= idx_in_all < len(airport_rows) else airports.iloc[0]
             coord = (float(r["lat"]), float(r["lon"]))
-            display = r["label"]; sel_iata = r["iata_code"]; sel_unlo = ""
+            display = r["label"]  # libellé aéroport
+            sel_iata = r["iata_code"]
+            sel_unlo = ""
         elif sel.startswith("⚓"):
             idx_global = options.index(sel)
             idx = idx_global - (len(airport_rows))
             r = port_rows[idx] if 0 <= idx < len(port_rows) else ports.iloc[0]
             coord = (float(r["lat"]), float(r["lon"]))
-            display = r["label"]; sel_unlo = str(r.get("unlocode") or ""); sel_iata = ""
+            display = r["label"]
+            sel_unlo = str(r.get("unlocode") or "")
+            sel_iata = ""
         else:
             formatted = sel[2:].strip() if sel.startswith("📍") else sel
             coord = coords_from_formatted(formatted)
             display = formatted
             sel_iata = ""; sel_unlo = ""
 
-    st.session_state[crd_key] = coord
+    # Persistance dans session_state
+    st.session_state[crd_key]  = coord
     st.session_state[disp_key] = display
     st.session_state[iata_key] = sel_iata
     st.session_state[unlo_key] = sel_unlo
