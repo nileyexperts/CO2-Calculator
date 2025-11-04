@@ -1320,7 +1320,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         detail_params = detail_levels[quality_label]
 
         c1, c2 = st.columns(2)
-        with c1:
+        c1:
             # Exports
 df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
 dossier_val = st.session_state.get("dossier_transport","")
