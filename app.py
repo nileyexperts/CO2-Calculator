@@ -1000,6 +1000,18 @@ for i in range(len(st.session_state.segments)):
                 st.markdown("**Origine** <span class='badge-autofill'>(repris du segment precedent)</span>", unsafe_allow_html=True)
             else:
                 st.markdown("**Origine**")
+    # Pré-remplissage automatique de l'origine avec la destination du segment précédent
+    if i > 0:
+        prev_seg = st.session_state.segments[i-1]
+        prev_dest = prev_seg.get('dest', {})
+        if prev_dest.get('display') and prev_dest.get('coord') and _is_location_empty(st.session_state.segments[i].get('origin', {})):
+            st.session_state.segments[i]['origin'].update({
+                'display': prev_dest.get('display', ''),
+                'coord': prev_dest.get('coord'),
+                'iata': prev_dest.get('iata', ''),
+                'query': prev_dest.get('display', '')
+            })
+            st.session_state[f'origin_autofill_{i}'] = True
             o = unified_location_input("origin", i, "Origine",
                                        show_airports=("aerien" in _normalize_no_diacritics(mode)))
         with c2:
