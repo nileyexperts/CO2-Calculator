@@ -995,14 +995,16 @@ for i in range(len(st.session_state.segments)):
             st.session_state.segments[i]["mode"] = mode
 
         c1, c2 = st.columns(2)
-with c1:
-    if st.session_state.get(f"origin_autofill_{i}", False):
-        st.markdown("**Origine** <span class='badge-autofill'>(repris du segment precedent)</span>", unsafe_allow_html=True)
-    else:
-        st.markdown("**Origine**")
-    o = unified_location_input("origin", i, "Origine", show_airports=("aerien" in _normalize_no_diacritics(mode)))
-            st.markdown("**Destination**")
-            d = unified_location_input("dest", i, "Destination", show_airports=False)
+        with c1:
+            if st.session_state.get(f"origin_autofill_{i}", False):
+                st.markdown("**Origine** <span class='badge-autofill'>(repris du segment precedent)</span>", unsafe_allow_html=True)
+            else:
+                st.markdown("**Origine**")
+            o = unified_location_input("origin", i, "Origine",
+                                       show_airports=("aerien" in _normalize_no_diacritics(mode)))
+        with c2:
+    st.markdown("**Destination**")
+    d = unified_location_input("dest", i, "Destination", show_airports=False)
 
         # Si l'utilisateur modifie l'origine par rapport a la source de chainage, enlever le badge et verrouiller
         if st.session_state.get(f"origin_autofill_{i}", False) and i > 0:
