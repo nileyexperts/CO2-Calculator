@@ -994,14 +994,13 @@ for i in range(len(st.session_state.segments)):
                                 index=mode_options.index(current_mode), key=f"mode_select_{i}")
             st.session_state.segments[i]["mode"] = mode
 
-c1, c2 = st.columns(2)
+        c1, c2 = st.columns(2)
 with c1:
-                st.markdown("**Origine** <span class='badge-autofill'>(repris du segment precedent)</span>", unsafe_allow_html=True)
-            else:
-                st.markdown("**Origine**")
-            o = unified_location_input("origin", i, "Origine",
-                                       show_airports=("aerien" in _normalize_no_diacritics(mode)))
-        with c2:
+    if st.session_state.get(f"origin_autofill_{i}", False):
+        st.markdown("**Origine** <span class='badge-autofill'>(repris du segment precedent)</span>", unsafe_allow_html=True)
+    else:
+        st.markdown("**Origine**")
+    o = unified_location_input("origin", i, "Origine", show_airports=("aerien" in _normalize_no_diacritics(mode)))
             st.markdown("**Destination**")
             d = unified_location_input("dest", i, "Destination", show_airports=False)
 
