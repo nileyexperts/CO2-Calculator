@@ -1000,18 +1000,6 @@ for i in range(len(st.session_state.segments)):
                 st.markdown("**Origine** <span class='badge-autofill'>(repris du segment precedent)</span>", unsafe_allow_html=True)
             else:
                 st.markdown("**Origine**")
-    # Pré-remplissage automatique de l'origine avec la destination du segment précédent
-    if i > 0:
-        prev_seg = st.session_state.segments[i-1]
-        prev_dest = prev_seg.get('dest', {})
-        if prev_dest.get('display') and prev_dest.get('coord') and _is_location_empty(st.session_state.segments[i].get('origin', {})):
-            st.session_state.segments[i]['origin'].update({
-                'display': prev_dest.get('display', ''),
-                'coord': prev_dest.get('coord'),
-                'iata': prev_dest.get('iata', ''),
-                'query': prev_dest.get('display', '')
-            })
-            st.session_state[f'origin_autofill_{i}'] = True
             o = unified_location_input("origin", i, "Origine",
                                        show_airports=("aerien" in _normalize_no_diacritics(mode)))
         with c2:
@@ -1333,22 +1321,74 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
 
         c1, c2 = st.columns(2)
         with c1:
-            st.download_button("Telecharger le detail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
-        with c2:
-            try:
-                with st.spinner("Generation du PDF..."):
-                    pdf_buffer = generate_pdf_report(
-                        df=df, dossier_val=dossier_val,
-                        total_distance=total_distance, total_emissions=total_emissions,
-                        unit=unit, rows=rows,
-                        pdf_basemap_choice_label=pdf_base_choice,
-                        ne_scale=NE_SCALE_DEFAULT, pdf_theme=PDF_THEME_DEFAULT, pdf_icon_size_px=24,
-                        web_map_style_label=map_style_label,
-                        detail_params=detail_params
-                    )
-                st.download_button("Telecharger le rapport PDF", data=pdf_buffer, file_name=filename_pdf, mime="application/pdf")
-            except Exception as e:
-                st.error(f"Erreur lors de la generation du PDF : {e}")
-                import traceback; st.code(traceback.format_exc())
-    else:
-        st.info("Aucun segment valide n'a ete calcule. Verifiez les entrees.")
+            # Exports
+df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
+dossier_val = st.session_state.get("dossier_transport","")
+df_export.insert(0, "N° dossier Transport", dossier_val)
+
+csv = df_export.to_csv(index=False).encode("utf-8")
+safe_suffix = "".join(c if (c.isalnum() or c in "-_") else "_" for c in dossier_val.strip())
+safe_suffix = f"_{safe_suffix}" if safe_suffix else ""
+filename_csv = f"resultats_co2_multimodal{safe_suffix}.csv"
+filename_pdf = f"rapport_co2_multimodal{safe_suffix}.pdf"
+
+st.subheader("Exporter")
+pdf_base_choice = st.selectbox(
+    "Fond de carte du PDF",
+    options=PDF_BASEMAP_LABELS,
+    index=0,
+    help="Identique à la carte Web utilise le style Carto (Voyager/Positron/Dark Matter)."
+)
+detail_levels = {
+    "Standard (léger, rapide)": {"dpi": 180, "max_zoom": 7},
+    "Détaillé (équilibre)": {"dpi": 220, "max_zoom": 9},
+    "Ultra (fin mais plus lent)": {"dpi": 280, "max_zoom": 10},
+}
+quality_label = st.selectbox(
+    "Qualité de rendu PDF",
+    options=list(detail_levels.keys()),
+    index=1,
+    help="Ajuste la finesse du fond de carte: DPI et niveau de zoom."
+)
+detail_params = detail_levels[quality_label]
+
+c1, c2 = st.columns(2)
+with c1:
+    st.download_button("Télécharger le détail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
+
+with c2:
+    try:
+        with st.spinner("Génération du PDF..."):
+            pdf_buffer = generate_pdf_report(
+                df=df,
+                dossier_val=dossier_val,
+                total_distance=total_distance,
+                total_emissions=total_emissions,
+                unit=unit,
+                rows=rows,
+                pdf_basemap_choice_label=pdf_base_choice,
+                ne_scale=NE_SCALE_DEFAULT,
+                pdf_theme=PDF_THEME_DEFAULT,
+                pdf_icon_size_px=24,
+                web_map_style_label=map_style_label,
+                detail_params=detail_params
+            )
+
+            # ✅ Sauvegarde dans un dossier persistant
+            output_dir = "media"
+            os.makedirs(output_dir, exist_ok=True)
+            file_path = os.path.join(output_dir, filename_pdf)
+            with open(file_path, "wb") as f_out:
+                f_out.write(pdf_buffer.getbuffer())
+
+            # ✅ Bouton basé sur le fichier sauvegardé
+            with open(file_path, "rb") as f_in:
+                st.download_button(
+                    label="Télécharger le rapport PDF",
+                    data=f_in,
+                    file_name=filename_pdf,
+                    mime="application/pdf"
+                )
+    except Exception as e:
+        st.error(f"Erreur lors de la génération du PDF : {e}")
+        import traceback; st.code(traceback.format_exc())
