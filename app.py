@@ -995,7 +995,35 @@ for i in range(len(st.session_state.segments)):
             st.session_state.segments[i]["mode"] = mode
 
         c1, c2 = st.columns(2)
-        with c1:
+with c1:
+    st.download_button("Télécharger le détail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
+with c2:
+    try:
+        with st.spinner("Génération du PDF..."):
+            pdf_buffer = generate_pdf_report(
+                df=df,
+                dossier_val=dossier_val,
+                total_distance=total_distance,
+                total_emissions=total_emissions,
+                unit=unit,
+                rows=rows,
+                pdf_basemap_choice_label=pdf_base_choice,
+                ne_scale=NE_SCALE_DEFAULT,
+                pdf_theme=PDF_THEME_DEFAULT,
+                pdf_icon_size_px=24,
+                web_map_style_label=map_style_label,
+                detail_params=detail_params
+            )
+            output_dir = "media"
+            os.makedirs(output_dir, exist_ok=True)
+            file_path_pdf = os.path.join(output_dir, filename_pdf)
+            with open(file_path_pdf, "wb") as f_out:
+                f_out.write(pdf_buffer.getbuffer())
+            with open(file_path_pdf, "rb") as f_in:
+                st.download_button(label="Télécharger le rapport PDF", data=f_in, file_name=filename_pdf, mime="application/pdf")
+    except Exception as e:
+        st.error(f"Erreur lors de la génération du PDF : {e}")
+        import traceback; st.code(traceback.format_exc())
             if st.session_state.get(f"origin_autofill_{i}", False):
                 st.markdown("**Origine** <span class='badge-autofill'>(repris du segment precedent)</span>", unsafe_allow_html=True)
             else:
@@ -1320,7 +1348,35 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         detail_params = detail_levels[quality_label]
 
         c1, c2 = st.columns(2)
-        with c1:
+with c1:
+    st.download_button("Télécharger le détail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
+with c2:
+    try:
+        with st.spinner("Génération du PDF..."):
+            pdf_buffer = generate_pdf_report(
+                df=df,
+                dossier_val=dossier_val,
+                total_distance=total_distance,
+                total_emissions=total_emissions,
+                unit=unit,
+                rows=rows,
+                pdf_basemap_choice_label=pdf_base_choice,
+                ne_scale=NE_SCALE_DEFAULT,
+                pdf_theme=PDF_THEME_DEFAULT,
+                pdf_icon_size_px=24,
+                web_map_style_label=map_style_label,
+                detail_params=detail_params
+            )
+            output_dir = "media"
+            os.makedirs(output_dir, exist_ok=True)
+            file_path_pdf = os.path.join(output_dir, filename_pdf)
+            with open(file_path_pdf, "wb") as f_out:
+                f_out.write(pdf_buffer.getbuffer())
+            with open(file_path_pdf, "rb") as f_in:
+                st.download_button(label="Télécharger le rapport PDF", data=f_in, file_name=filename_pdf, mime="application/pdf")
+    except Exception as e:
+        st.error(f"Erreur lors de la génération du PDF : {e}")
+        import traceback; st.code(traceback.format_exc())
             # Exports
 df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
 dossier_val = st.session_state.get("dossier_transport","")
@@ -1354,6 +1410,34 @@ detail_params = detail_levels[quality_label]
 
 c1, c2 = st.columns(2)
 with c1:
+    st.download_button("Télécharger le détail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
+with c2:
+    try:
+        with st.spinner("Génération du PDF..."):
+            pdf_buffer = generate_pdf_report(
+                df=df,
+                dossier_val=dossier_val,
+                total_distance=total_distance,
+                total_emissions=total_emissions,
+                unit=unit,
+                rows=rows,
+                pdf_basemap_choice_label=pdf_base_choice,
+                ne_scale=NE_SCALE_DEFAULT,
+                pdf_theme=PDF_THEME_DEFAULT,
+                pdf_icon_size_px=24,
+                web_map_style_label=map_style_label,
+                detail_params=detail_params
+            )
+            output_dir = "media"
+            os.makedirs(output_dir, exist_ok=True)
+            file_path_pdf = os.path.join(output_dir, filename_pdf)
+            with open(file_path_pdf, "wb") as f_out:
+                f_out.write(pdf_buffer.getbuffer())
+            with open(file_path_pdf, "rb") as f_in:
+                st.download_button(label="Télécharger le rapport PDF", data=f_in, file_name=filename_pdf, mime="application/pdf")
+    except Exception as e:
+        st.error(f"Erreur lors de la génération du PDF : {e}")
+        import traceback; st.code(traceback.format_exc())
     st.download_button("Télécharger le détail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
 
 with c2:
