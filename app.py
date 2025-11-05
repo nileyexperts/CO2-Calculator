@@ -1001,9 +1001,10 @@ for i in range(len(st.session_state.segments)):
             else:
                 st.markdown("**Origine**")
             o = unified_location_input("origin", i, "Origine",
-            d = unified_location_input("dest", i, "Destination", show_airports=("aerien" in _normalize_no_diacritics(mode)))
                                        show_airports=("aerien" in _normalize_no_diacritics(mode)))
 with c2:
+    st.markdown("**Destination**")
+    d = unified_location_input("dest", i, "Destination", show_airports=("aerien" in _normalize_no_diacritics(mode)))
 
         # Si l'utilisateur modifie l'origine par rapport a la source de chainage, enlever le badge et verrouiller
         if st.session_state.get(f"origin_autofill_{i}", False) and i > 0:
@@ -1323,6 +1324,8 @@ with c1:
     st.download_button("Télécharger le détail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
 
 with c2:
+    st.markdown("**Destination**")
+    d = unified_location_input("dest", i, "Destination", show_airports=("aerien" in _normalize_no_diacritics(mode)))
     try:
         with st.spinner("Génération du PDF..."):
             pdf_buffer = generate_pdf_report(
