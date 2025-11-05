@@ -738,9 +738,6 @@ geocoder = OpenCageGeocode(API_KEY)
 # --------------------------
 @st.cache_data(show_spinner=False, ttl=7*24*60*60)
 def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
-    if not os.path.exists(path):
-        st.warning(f"Fichier {path} introuvable. Fallback vide.")
-        return pd.DataFrame(columns=["iata_code","name","municipality","iso_country","lat","lon","label","type"])
     try:
         df = pd.read_csv(path)
     except Exception as e:
@@ -801,9 +798,6 @@ def search_airports(query: str, limit: int = 20) -> pd.DataFrame:
 # --------------------------
 @st.cache_data(show_spinner=False, ttl=7*24*60*60)
 def load_ports_csv(path: str = "ports.csv") -> pd.DataFrame:
-    if not os.path.exists(path):
-        st.warning(f"Fichier {path} introuvable. Fallback vide.")
-        return pd.DataFrame(columns=["unlocode", "name", "country", "lat", "lon", "label"])
     try:
         df = pd.read_csv(path)
     except Exception as e:
@@ -1008,7 +1002,9 @@ for i in range(len(st.session_state.segments)):
                 st.markdown("**Origine**")
             o = unified_location_input("origin", i, "Origine",
                                        show_airports=("aerien" in _normalize_no_diacritics(mode)))
-with c2:
+        with c2:
+            st.markdown("**Destination**")
+            d = unified_location_input("dest", i, "Destination", show_airports=False)
 
         # Si l'utilisateur modifie l'origine par rapport a la source de chainage, enlever le badge et verrouiller
         if st.session_state.get(f"origin_autofill_{i}", False) and i > 0:
@@ -1324,42 +1320,23 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         detail_params = detail_levels[quality_label]
 
         c1, c2 = st.columns(2)
-with c1:
-    st.download_button("Télécharger le détail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
-
-with c2:
-    try:
-        with st.spinner("Génération du PDF..."):
-            pdf_buffer = generate_pdf_report(
-                df=df,
-                dossier_val=dossier_val,
-                total_distance=total_distance,
-                total_emissions=total_emissions,
-                unit=unit,
-                rows=rows,
-                pdf_basemap_choice_label=pdf_base_choice,
-                ne_scale=NE_SCALE_DEFAULT,
-                pdf_theme=PDF_THEME_DEFAULT,
-                pdf_icon_size_px=24,
-                web_map_style_label=map_style_label,
-                detail_params=detail_params
-            )
-
-            # ✅ Sauvegarde dans un dossier persistant
-            output_dir = "media"
-            os.makedirs(output_dir, exist_ok=True)
-            file_path = os.path.join(output_dir, filename_pdf)
-            with open(file_path, "wb") as f_out:
-                f_out.write(pdf_buffer.getbuffer())
-
-            # ✅ Bouton basé sur le fichier sauvegardé
-            with open(file_path, "rb") as f_in:
-                st.download_button(
-                    label="Télécharger le rapport PDF",
-                    data=f_in,
-                    file_name=filename_pdf,
-                    mime="application/pdf"
-                )
-    except Exception as e:
-        st.error(f"Erreur lors de la génération du PDF : {e}")
-        import traceback; st.code(traceback.format_exc())
+        with c1:
+            st.download_button("Telecharger le detail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
+        with c2:
+            try:
+                with st.spinner("Generation du PDF..."):
+                    pdf_buffer = generate_pdf_report(
+                        df=df, dossier_val=dossier_val,
+                        total_distance=total_distance, total_emissions=total_emissions,
+                        unit=unit, rows=rows,
+                        pdf_basemap_choice_label=pdf_base_choice,
+                        ne_scale=NE_SCALE_DEFAULT, pdf_theme=PDF_THEME_DEFAULT, pdf_icon_size_px=24,
+                        web_map_style_label=map_style_label,
+                        detail_params=detail_params
+                    )
+                st.download_button("Telecharger le rapport PDF", data=pdf_buffer, file_name=filename_pdf, mime="application/pdf")
+            except Exception as e:
+                st.error(f"Erreur lors de la generation du PDF : {e}")
+                import traceback; st.code(traceback.format_exc())
+    else:
+        st.info("Aucun segment valide n'a ete calcule. Verifiez les entrees.")
