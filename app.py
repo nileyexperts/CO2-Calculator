@@ -1158,9 +1158,13 @@ for i in range(len(st.session_state.segments)):
                 st.markdown("**Origine**")
             o = unified_location_input("origin", i, "Origine", show_airports=("aerien" in _normalize_no_diacritics(mode)))
         with c2:
-            st.markdown("**Destination**")
-            d = unified_location_input("dest", i, "Destination", show_airports=("aerien" in _normalize_no_diacritics(mode)))
+    # Bouton pour réinitialiser le cache PDF
+    if st.button("Réinitialiser le PDF", type="secondary", help="Force une nouvelle génération"):
+        st.cache_data.clear()
+        st.session_state.pop("pdf_bytes", None)
+        st.success("Cache PDF réinitialisé.")
 
+    # Génération PDF avec cache intelligent
     if "pdf_bytes" not in st.session_state:
         with st.spinner("Génération du PDF..."):
             pdf_buffer = generate_pdf_report(
