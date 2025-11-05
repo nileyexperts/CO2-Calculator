@@ -876,9 +876,9 @@ geocoder = OpenCageGeocode(API_KEY)
 def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
     try:
         df = pd.read_csv(path)
-    # (supprimé) except Exception as e:
-    #     st.warning(f"Impossible de charger '{path}': {e}")
-    #     return pd.DataFrame(columns=["iata_code","name","municipality","iso_country","lat","lon","label","type"])
+    except Exception as e:
+        st.warning(f"Impossible de charger '{path}': {e}")
+        return pd.DataFrame(columns=["iata_code","name","municipality","iso_country","lat","lon","label","type"])
 
     required = {"iata_code","name","coordinates"}
     missing = required - set(df.columns)
