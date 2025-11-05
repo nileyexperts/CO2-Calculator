@@ -1003,10 +1003,6 @@ for i in range(len(st.session_state.segments)):
             o = unified_location_input("origin", i, "Origine",
                                        show_airports=("aerien" in _normalize_no_diacritics(mode)))
 with c2:
-    st.markdown("**Destination**")
-    d = unified_location_input("dest", i, "Destination", show_airports=False)
-            st.markdown("**Destination**")
-            d = unified_location_input("dest", i, "Destination", show_airports=False)
 
         # Si l'utilisateur modifie l'origine par rapport a la source de chainage, enlever le badge et verrouiller
         if st.session_state.get(f"origin_autofill_{i}", False) and i > 0:
@@ -1302,32 +1298,30 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         filename_pdf = f"rapport_co2_multimodal{safe_suffix}.pdf"
 
         st.subheader("Exporter")
-pdf_base_choice = st.selectbox(
-    "Fond de carte du PDF",
-    options=PDF_BASEMAP_LABELS,
-    index=0,
-    help="Identique à la carte Web utilise le style Carto (Voyager/Positron/Dark Matter)."
-)
-detail_levels = {
-    "Standard (léger, rapide)": {"dpi": 180, "max_zoom": 7},
-    "Détaillé (équilibre)": {"dpi": 220, "max_zoom": 9},
-    "Ultra (fin mais plus lent)": {"dpi": 280, "max_zoom": 10},
-}
-quality_label = st.selectbox(
-    "Qualité de rendu PDF",
-    options=list(detail_levels.keys()),
-    index=1,
-    help="Ajuste la finesse du fond de carte: DPI et niveau de zoom."
-)
-detail_params = detail_levels[quality_label]
+        pdf_base_choice = st.selectbox(
+            "Fond de carte du PDF",
+            options=PDF_BASEMAP_LABELS, index=0,
+            help="Identique a la carte Web utilise le style Carto (Voyager/Positron/Dark Matter)."
+        )
 
-c1, c2 = st.columns(2)
+        detail_levels = {
+            "Standard (leger, rapide)": {"dpi": 180, "max_zoom": 7},
+            "Detaille (equilibre)": {"dpi": 220, "max_zoom": 9},
+            "Ultra (fin mais plus lent)": {"dpi": 280, "max_zoom": 10},
+        }
+        quality_label = st.selectbox(
+            "Qualite de rendu PDF",
+            options=list(detail_levels.keys()),
+            index=1,
+            help="Ajuste la finesse du fond de carte: DPI et niveau de zoom."
+        )
+        detail_params = detail_levels[quality_label]
+
+        c1, c2 = st.columns(2)
 with c1:
     st.download_button("Télécharger le détail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
 
 with c2:
-    st.markdown("**Destination**")
-    d = unified_location_input("dest", i, "Destination", show_airports=False)
     try:
         with st.spinner("Génération du PDF..."):
             pdf_buffer = generate_pdf_report(
