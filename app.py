@@ -1497,6 +1497,15 @@ else:
         initial_view_state=view,
         layers=layers,
         tooltip={"text": "{name}"}
+    ))
+
+# Original PyDeck removed
+# st.pydeck_chart(pdk.Deck(
+            map_style=MAP_STYLES[map_style_label],
+            initial_view_state=view,
+            layers=layers,
+            tooltip={"text": "{name}"}
+        ))
 
         # Exports
         df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
