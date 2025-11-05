@@ -737,6 +737,7 @@ geocoder = OpenCageGeocode(API_KEY)
 # Donnees Aeroports / IATA
 # --------------------------
 @st.cache_data(show_spinner=False, ttl=7*24*60*60)
+if not os.path.exists(path): st.warning(f'Fichier {path} introuvable. Fallback vide.')
 def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
     try:
         df = pd.read_csv(path)
@@ -797,6 +798,7 @@ def search_airports(query: str, limit: int = 20) -> pd.DataFrame:
 # Ports
 # --------------------------
 @st.cache_data(show_spinner=False, ttl=7*24*60*60)
+if not os.path.exists(path): st.warning(f'Fichier {path} introuvable. Fallback vide.')
 def load_ports_csv(path: str = "ports.csv") -> pd.DataFrame:
     try:
         df = pd.read_csv(path)
@@ -1019,7 +1021,8 @@ with c2:
                                          min_value=0.001, value=float(st.session_state["weight_0"]),
                                          step=100.0, key="weight_0")
         else:
-            weight_val = st.session_state["weight_0"]
+            # TODO: permettre saisie par segment si besoin
+        weight_val = st.session_state["weight_0"]
         st.session_state.segments[i]["weight"] = weight_val
 
         st.session_state.segments[i]["origin"] = {"query": o["query"], "display": o["display"], "iata": o["iata"], "coord": o["coord"]}
@@ -1125,6 +1128,16 @@ can_calculate = bool(st.session_state["dossier_transport"])
 if not can_calculate:
     st.warning("Veuillez renseigner le N° dossier Transport avant de lancer le calcul.")
 
+# Validation stricte avant calcul
+valid_segments = []
+for idx, seg in enumerate(segments_out, start=1):
+    if not seg['origin_display'] or not seg['destination_display'] or not seg['coord_o'] or not seg['coord_d']:
+        st.error(f'Segment {idx}: origine/destination invalide.')
+    else:
+        valid_segments.append(seg)
+if not valid_segments:
+    st.stop()
+
 if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
     rows = []; total_emissions = 0.0; total_distance = 0.0
     with st.spinner("Calcul en cours..."):
@@ -1142,7 +1155,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                     r = osrm_route(coord1, coord2, overview="full")
                     distance_km = r["distance_km"]; route_coords = r["coords"]
                 except Exception as e:
-                    st.warning(f"Segment {idx}: OSRM indisponible ({e}). Distance a vol d'oiseau.")
+                    st.warning(f"Segment {idx}: OSRM indisponible ({e}). Utilisation de la distance à vol d'oiseau comme fallback.")
                     distance_km = compute_distance_km(coord1, coord2)
             else:
                 distance_km = compute_distance_km(coord1, coord2)
@@ -1324,7 +1337,8 @@ with c1:
 with c2:
     try:
         with st.spinner("Génération du PDF..."):
-            pdf_buffer = generate_pdf_report(
+            if len(rows) > 20: st.warning('Le PDF sera tronqué pour tenir sur une page (plus de 20 segments).')
+pdf_buffer = generate_pdf_report(
                 df=df,
                 dossier_val=dossier_val,
                 total_distance=total_distance,
