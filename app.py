@@ -1383,7 +1383,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                     pdf_bytes = pdf_buffer.getvalue()
                     b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
                     st.markdown(
-                        f"""
+                        f"
                         <div style="margin-top:0.5rem">
                           <a href="data:application/pdf;base64,{b64_pdf}"
                              target="_blank" rel="noopener"
