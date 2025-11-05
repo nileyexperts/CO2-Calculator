@@ -1,41 +1,17 @@
-# -*- coding: utf-8 -*-
 # Calculateur CO2 multimodal - NILEY EXPERTS
 # Application Streamlit avec export PDF mono-page.
 
-import os
-import io
-import re
-import time
-import math
-import unicodedata
-import tempfile
-from io import BytesIO
-from datetime import datetime
 
-import numpy as np
-import pandas as pd
-import requests
-from PIL import Image as PILImage
 
-import streamlit as st
-import pydeck as pdk
-from geopy.distance import great_circle
-from opencage.geocoder import OpenCageGeocode
 
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import cm
-from reportlab.platypus import Paragraph, Table, TableStyle
-from reportlab.lib.utils import ImageReader
+# PDF
 
-import matplotlib
+# Matplotlib pour le rendu de la carte du PDF
 matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
 os.environ.setdefault("CARTOPY_CACHE_DIR", os.path.join(tempfile.gettempdir(), "cartopy_cache"))
 
+# Configuration page
 st.set_page_config(page_title="Calculateur CO2 multimodal - NILEY EXPERTS", page_icon="🌍", layout="centered")
 
 st.markdown(
@@ -243,6 +219,7 @@ def mode_to_category(mode_str: str) -> str:
         return "ferroviaire"
     return "routier"
 
+# PDF helpers
 def _compute_extent_from_coords(all_lats, all_lons, margin_ratio=0.12, min_span_deg=1e-3):
     if not all_lats or not all_lons:
         return (-10, 30, 30, 60)
@@ -295,7 +272,6 @@ def _pdf_add_mode_icon(ax, lon, lat, cat_key, size_px, transform=None):
 
 def _carto_tiler_from_web_style(web_style_label: str):
     try:
-        import cartopy.io.img_tiles as cimgt
     except Exception:
         return None
     url_by_label = {
@@ -329,13 +305,13 @@ def _is_location_empty(loc: dict) -> bool:
     coord = loc.get("coord")
     return (not disp) or (not coord)
 
+# Rapport PDF mono-page
 def generate_pdf_report(
     df, dossier_val, total_distance, total_emissions, unit, rows,
     pdf_basemap_choice_label, ne_scale='50m', pdf_theme='terrain', pdf_icon_size_px=24,
     web_map_style_label=None,
     detail_params=None
 ):
-    from reportlab.pdfgen import canvas as pdfcanvas
 
     if detail_params is None:
         detail_params = {"dpi": 220, "max_zoom": 9}
@@ -444,9 +420,6 @@ def generate_pdf_report(
 
         use_cartopy = True
         try:
-            import cartopy.crs as ccrs
-            import cartopy.feature as cfeature
-            from cartopy.io.img_tiles import Stamen, OSM
         except Exception:
             use_cartopy = False
 
@@ -576,7 +549,6 @@ def generate_pdf_report(
     def _p_cell_dyn(s, fs):
         stl = ParagraphStyle('CellWrapDyn', parent=styles['Normal'], fontSize=fs, leading=max(8, fs+2), alignment=0)
         try:
-            from reportlab.lib.utils import escape
         except Exception:
             def escape(x): return (x or '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
         return Paragraph(escape(str(s)), stl)
@@ -901,6 +873,7 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str,
     return {"coord": coord, "display": display, "iata": sel_iata, "unlocode": sel_unlo,
             "query": query_val, "choice": sel}
 
+# UI
 st.image(LOGO_URL, width=620)
 st.markdown("### Calculateur d'empreinte CO2 multimodal")
 
@@ -952,9 +925,6 @@ for i in range(len(st.session_state.segments)):
                                        show_airports=("aerien" in _normalize_no_diacritics(mode)))
 with c2:
     st.markdown("**Destination**")
-    d = unified_location_input("dest", i, "Destination", show_airports=False)
-            st.markdown("**Destination**")
-            d = unified_location_input("dest", i, "Destination", show_airports=False)
 
         if st.session_state.get(f"origin_autofill_{i}", False) and i > 0:
             prev_sig = st.session_state.get(f"chain_src_signature_{i}")
@@ -1301,7 +1271,6 @@ with c1:
 
 with c2:
     st.markdown("**Destination**")
-    d = unified_location_input("dest", i, "Destination", show_airports=False)
     try:
         with st.spinner("Génération du PDF..."):
             pdf_buffer = generate_pdf_report(
@@ -1334,4 +1303,3 @@ with c2:
                 )
     except Exception as e:
         st.error(f"Erreur lors de la génération du PDF : {e}")
-        import traceback; st.code(traceback.format_exc())
