@@ -1482,25 +1482,47 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         with c1:
             st.download_button("Telecharger le detail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
         with c2:
-            try:
-                with st.spinner("Generation du PDF..."):
-                    pdf_buffer = generate_pdf_report(
-                        df=df,
-                        dossier_val=dossier_val,
-                        total_distance=total_distance,
-                        total_emissions=total_emissions,
-                        unit=unit,
-                        rows=rows,
-                        pdf_basemap_choice_label=pdf_base_choice,
-                        ne_scale=NE_SCALE_DEFAULT,
-                        pdf_theme=PDF_THEME_DEFAULT,
-                        pdf_icon_size_px=24,
-                        web_map_style_label=map_style_label,
-                        detail_params=detail_params
-                    )
-                st.download_button("Telecharger le rapport PDF", data=pdf_buffer, file_name=filename_pdf, mime="application/pdf")
-            except Exception as e:
-                st.error(f"Erreur lors de la generation du PDF : {e}")
-                import traceback; st.code(traceback.format_exc())
-    else:
-        st.info("Aucun segment valide n'a ete calcule. Verifiez les entrees.")
+    try:
+        with st.spinner("Generation du PDF..."):
+            pdf_buffer = generate_pdf_report(
+                df=df,
+                dossier_val=dossier_val,
+                total_distance=total_distance,
+                total_emissions=total_emissions,
+                unit=unit,
+                rows=rows,
+                pdf_basemap_choice_label=pdf_base_choice,
+                ne_scale=NE_SCALE_DEFAULT,
+                pdf_theme=PDF_THEME_DEFAULT,
+                pdf_icon_size_px=24,
+                web_map_style_label=map_style_label,
+                detail_params=detail_params
+            )
+
+        # 1) Bouton de téléchargement classique (inchangé)
+        st.download_button(
+            "Télécharger le rapport PDF",
+            data=pdf_buffer,
+            file_name=filename_pdf,
+            mime="application/pdf",
+            use_container_width=True
+        )
+
+        # 2) Lien pour OUVRIR dans un NOUVEL onglet (sans vider la page)
+        import base64
+        pdf_bytes = pdf_buffer.getvalue()
+        b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        open_link_html = f'''
+            <a href="data:application/pdf;base64,{b64}" target="_blank" rel="noopener"
+               download="{filename_pdf}"
+               style="
+                   display:inline-block;
+                   margin-top:0.5rem;
+                   padding:0.55rem 0.e PDF plus tard
+        st.session_state["last_pdf_bytes"] = pdf_bytes
+        st.session_state["last_pdf_name"]  = filename_pdf
+
+    except Exception as e:
+        st.error(f"Erreur lors de la generation du PDF : {e}")
+        import traceback; st.code(traceback.format_exc())
+
