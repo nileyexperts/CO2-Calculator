@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 # Calculateur CO2 multimodal - NILEY EXPERTS
-# Application Streamlit avec export PDF mono-page.
+# Application Streamlit avec export PDF mono-page, compatible Safari (correctifs A+B).
 
 import os
 import io
 import re
 import time
 import math
+import base64
 import unicodedata
 import tempfile
 from io import BytesIO
@@ -44,7 +45,11 @@ os.environ.setdefault("CARTOPY_CACHE_DIR", os.path.join(tempfile.gettempdir(), "
 # --------------------------
 # Configuration page
 # --------------------------
-st.set_page_config(page_title="Calculateur CO2 multimodal - NILEY EXPERTS", page_icon="🌍", layout="centered")
+st.set_page_config(
+    page_title="Calculateur CO2 multimodal - NILEY EXPERTS",
+    page_icon="🌍",
+    layout="centered"
+)
 
 # --------------------------
 # Style global
@@ -712,7 +717,12 @@ if "auth_ok" not in st.session_state:
 if not st.session_state.auth_ok:
     st.markdown("## Acces securise")
     with st.form("login_form", clear_on_submit=True):
-        password_input = st.text_input("Entrez le mot de passe pour acceder a l'application :", type="password", placeholder="Votre mot de passe", key="__pwd__")
+        password_input = st.text_input(
+            "Entrez le mot de passe pour acceder a l'application :",
+            type="password",
+            placeholder="Votre mot de passe",
+            key="__pwd__"
+        )
         submitted = st.form_submit_button("Valider")
         if submitted:
             if password_input == st.secrets[PASSWORD_KEY]:
@@ -762,8 +772,8 @@ def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
         df = df[df["type"].isin(["large_airport","medium_airport"])].copy()
 
     coord_series = df["coordinates"].astype(str).str.replace('"','').str.strip()
-    parts = coord_series.split(",", n=1, expand=True) if hasattr(coord_series, "split") else None
-    if parts is None or (hasattr(parts, "shape") and parts.shape[1] < 2):
+    parts = coord_series.str.split(",", n=1, expand=True)
+    if parts.shape[1] < 2:
         parts = pd.DataFrame({0:coord_series, 1:None})
     df["lat"] = pd.to_numeric(parts[0].astype(str).str.strip(), errors="coerce")
     df["lon"] = pd.to_numeric(parts[1].astype(str).str.strip(), errors="coerce")
@@ -1124,7 +1134,11 @@ with col_map3:
 
 # Calcul
 st.subheader("Calcul")
-dossier_transport = st.text_input("N° dossier Transport (obligatoire) *", value=st.session_state.get("dossier_transport",""), placeholder="ex : TR-2025-001")
+dossier_transport = st.text_input(
+    "N° dossier Transport (obligatoire) *",
+    value=st.session_state.get("dossier_transport",""),
+    placeholder="ex : TR-2025-001"
+)
 st.session_state["dossier_transport"] = (dossier_transport or "").strip()
 
 unit = "kg"
@@ -1310,20 +1324,20 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             tooltip={"text": "{name}"}
         ))
 
-        # Préparer exports
+        # ------------------------------------------------------------------
+        # --- Exporter : préparer et stocker des BYTES STABLES en session ---
+        # ------------------------------------------------------------------
         df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
         dossier_val = st.session_state.get("dossier_transport","")
         df_export.insert(0, "N° dossier Transport", dossier_val)
-        csv = df_export.to_csv(index=False).encode("utf-8")
+        csv_bytes = df_export.to_csv(index=False).encode("utf-8")
 
         safe_suffix = "".join(c if (c.isalnum() or c in "-_") else "_" for c in dossier_val.strip())
         safe_suffix = f"_{safe_suffix}" if safe_suffix else ""
         filename_csv = f"resultats_co2_multimodal{safe_suffix}.csv"
         filename_pdf = f"rapport_co2_multimodal{safe_suffix}.pdf"
 
-        # --- Exporter ---
         st.subheader("Exporter")
-
         pdf_base_choice = st.selectbox(
             "Fond de carte du PDF",
             options=PDF_BASEMAP_LABELS,
@@ -1343,7 +1357,6 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         )
         detail_params = detail_levels[quality_label]
 
-        # >>> Correctif Safari : générer le PDF en amont et passer des octets (bytes)
         try:
             with st.spinner("Préparation du PDF..."):
                 pdf_io = generate_pdf_report(
@@ -1360,25 +1373,13 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                     web_map_style_label=map_style_label,
                     detail_params=detail_params
                 )
-                pdf_bytes = pdf_io.getvalue()  # BytesIO -> bytes (clé pour Safari)
+                # BytesIO -> bytes (clé pour Safari) + persistance session
+                st.session_state["__pdf_bytes"] = pdf_io.getvalue()
+                st.session_state["__pdf_name"]  = filename_pdf
+                st.session_state["__csv_bytes"] = csv_bytes
+                st.session_state["__csv_name"]  = filename_csv
 
-            c1, c2 = st.columns(2)
-            with c1:
-                st.download_button(
-                    "Télécharger le détail (CSV)",
-                    data=csv,
-                    file_name=filename_csv,
-                    mime="text/csv",
-                    key="btn_csv"
-                )
-            with c2:
-                st.download_button(
-                    "Télécharger le rapport PDF",
-                    data=pdf_bytes,                 # <- bytes, pas BytesIO
-                    file_name=filename_pdf,
-                    mime="application/pdf",
-                    key="btn_pdf"
-                )
+            st.success("Fichiers prêts au téléchargement (section en bas de page).")
 
         except Exception as e:
             st.error(f"Erreur lors de la generation du PDF : {e}")
@@ -1386,4 +1387,51 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
 
     else:
         st.info("Aucun segment valide n'a ete calcule. Verifiez les entrees.")
-        
+
+# ----------------------------------------------------------------------
+# --- Téléchargements stables (Safari/Proxy) : en dehors des branches ---
+# ----------------------------------------------------------------------
+st.markdown("---")
+st.subheader("Téléchargements")
+
+c1, c2 = st.columns(2)
+with c1:
+    if "__csv_bytes" in st.session_state:
+        st.download_button(
+            "Télécharger le détail (CSV)",
+            data=st.session_state["__csv_bytes"],
+            file_name=st.session_state.get("__csv_name", "resultats_co2_multimodal.csv"),
+            mime="text/csv",
+            key="btn_csv_global"
+        )
+with c2:
+    if "__pdf_bytes" in st.session_state:
+        st.download_button(
+            "Télécharger le rapport PDF",
+            data=st.session_state["__pdf_bytes"],    # <- bytes stables
+            file_name=st.session_state.get("__pdf_name", "rapport_co2_multimodal.pdf"),
+            mime="application/pdf",
+            key="btn_pdf_global"
+        )
+
+# Lien de secours (fallback) en data:URL, utile pour Safari/iOS ou proxy strict
+if "__pdf_bytes" in st.session_state:
+    try:
+        b64 = base64.b64encode(st.session_state["__pdf_bytes"]).decode("utf-8")
+        fname = st.session_state.get("__pdf_name", "rapport_co2_multimodal.pdf")
+        st.markdown(
+            f'''
+            <div style="margin-top:0.5rem">
+              <a download="{fname}" href="data:application/pdf;base64,{b64}"
+                F (lien alternatif)
+              </a>
+              <div style="font-size:0.85em;color:#666;margin-top:0.3rem">
+                Si le bouton ci-dessus provoque un 404 dans Safari, utilisez ce lien alternatif.
+              </div>
+            </div>
+            ''',
+            unsafe_allow_html=True
+        )
+    except Exception:
+        # Si le PDF est très volumineux, éviter le fallback base64
+        pass
