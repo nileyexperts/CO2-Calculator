@@ -124,22 +124,37 @@ def add_segment_end():
     if len(st.session_state.segments) >= MAX_SEGMENTS:
         st.warning("Nombre maximum de segments atteint.")
         return
+
     prev = st.session_state.segments[-1]
     new_seg = _default_segment()
     prev_dest = prev.get("dest", {})
+    
+    # Forcer le chaînage même si l'utilisateur a modifié l'origine
     if prev_dest.get("display") and prev_dest.get("coord"):
         new_seg["origin"].update({
-            "display": prev_dest.get("display",""),
+            "display": prev_dest.get("display", ""),
             "coord": prev_dest.get("coord"),
-            "iata": prev_dest.get("iata",""),
-            "query": prev_dest.get("display","")
+            "iata": prev_dest.get("iata", ""),
+            "query": prev_dest.get("display", "")
         })
+        # Mise à jour explicite de l'état de session pour refléter le chaînage
+        j = len(st.session_state.segments)
+        st.session_state[f"origin_query_{j}"] = prev_dest.get("display", "")
+        st.session_state[f"origin_display_{j}"] = prev_dest.get("display", "")
+        st.session_state[f"origin_coord_{j}"] = prev_dest.get("coord")
+        st.session_state[f"origin_iata_{j}"] = prev_dest.get("iata", "")
+        st.session_state[f"origin_autofill_{j}"] = True
+        st.session_state[f"chain_src_signature_{j}"] = _normalize_signature(prev_dest.get("display"), prev_dest.get("coord"))
+        st.session_state[f"origin_user_edited_{j}"] = False
+
     if "weight_0" in st.session_state:
         try:
             new_seg["weight"] = float(st.session_state["weight_0"])
         except Exception:
             pass
+
     st.session_state.segments.append(new_seg)
+
 
 def remove_last_segment():
     if "segments" not in st.session_state or not st.session_state.segments:
