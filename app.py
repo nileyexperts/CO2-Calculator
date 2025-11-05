@@ -18,6 +18,34 @@ import requests
 from PIL import Image as PILImage
 
 import streamlit as st
+
+# === DEBUG BUILD ===
+DEBUG_BUILD = True
+try:
+    import os, sys
+    import streamlit as st  # already imported, but safe here in debug block
+    st.sidebar.header('Debug Runtime Info')
+    st.sidebar.write({'__file__': __file__, 'cwd': os.getcwd(), 'python': sys.version.split()[0]})
+    def _read_snippet(path, start, end):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            out = []
+            for i in range(start, min(end, len(lines))):
+                s = lines[i].rstrip('
+').replace('	', '    ')
+                out.append(str(i+1).rjust(5) + ': ' + s)
+            return '
+'.join(out)
+        except Exception as e:
+            return 'Cannot read snippet: ' + str(e)
+    with st.sidebar.expander('Voir lignes 990-1025 (app.py)'):
+        st.code(_read_snippet(__file__, 989, 1025), language='python')
+except Exception as _e:
+    pass
+# === END DEBUG BUILD ===
+
+
 import pydeck as pdk
 from geopy.distance import great_circle
 from opencage.geocoder import OpenCageGeocode
