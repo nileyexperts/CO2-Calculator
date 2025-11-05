@@ -30,9 +30,8 @@ from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, Table, TableStyle
 from reportlab.lib.utils import ImageReader
 
-# >>> CORRECTIF: import pour l’échappement XML des Paragraph
+# Correctif : échappement XML pour Paragraph (ReportLab)
 from xml.sax.saxutils import escape as xml_escape
-# <<< CORRECTIF
 
 # Matplotlib pour le rendu de la carte du PDF
 import matplotlib
@@ -48,9 +47,83 @@ os.environ.setdefault("CARTOPY_CACHE_DIR", os.path.join(tempfile.gettempdir(), "
 # --------------------------
 st.set_page_config(page_title="Calculateur CO2 multimodal - NILEY EXPERTS", page_icon="🌍", layout="centered")
 
-# Style global + style badge
+# --------------------------
+# Style global : fond + conteneurs arrondis
+# --------------------------
 st.markdown(
     """
+    <style>
+    /* ---------- Fond de l'app ---------- */
+    [data-testid="stAppViewContainer"] {
+        background: #DFEDF5 !important;
+    }
+    [data-testid="stHeader"] {
+        background: rgba(0,0,0,0) !important;
+    }
+    .stApp { /* fallback */
+        background-color: #DFEDF5 !important;
+    }
+    .block-container { /* garder le fond global visible sous les blocs */
+        background: transparent !important;
+    }
+
+    /* ---------- Cartes/sections : bordures arrondies ---------- */
+    /* Cible la majorité des conteneurs streamlit (colonnes, containers, forms, etc.) */
+    /* On évite d'appliquer le style au container racine (.block-container) */
+    [data-testid="stAppViewContainer"] .block-container > div {
+        border-radius: 12px;
+        background: #FFFFFF;               /* carte blanche lisible sur #DFEDF5 */
+        border: 1px solid #CFD8E3;         /* gris bleuté discret */
+        box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
+        padding: 0.75rem 1rem;
+        margin-bottom: 0.75rem;            /* respiration entre cartes */
+    }
+
+    /* Conteneurs créés via st.container(border=True) : harmonise le rendu */
+    [data-testid="stVerticalBlock"] > div[style*="border"] {
+        border-radius: 12px !important;
+        border: 1px solid #CFD8E3 !important;
+        background: #FFFFFF !important;
+        box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06) !important;
+        padding: 0.75rem 1rem !important;
+    }
+
+    /* Tableaux, onglets, et composants courants */
+    [data-testid="stDataFrame"] {
+        border-radius: 12px;
+        overflow: hidden; /* arrondis effectifs sur l'intérieur du tableau */
+        border: 1px solid #CFD8E3;
+        box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
+        background: #FFFFFF;
+    }
+    [data-testid="stTabs"] {
+        border-radius: 12px;
+        border: 1px solid #CFD8E3;
+        background: #FFFFFF;
+        box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
+        padding: 0.25rem 0.25rem 0.75rem 0.25rem;
+    }
+
+    /* Pydeck et Matplotlib : cadre doux autour des canvases */
+    .stDeckGlJson { /* pydeck chart wrapper */
+        border-radius: 12px;
+        border: 1px solid #CFD8E3;
+        box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
+        background: #FFFFFF;
+        padding: 0.25rem;
+    }
+    [data-testid="stImage"] canvas,
+    [data-testid="stImage"] img {
+        border-radius: 12px;
+    }
+
+    /* Boutons plus cohérents avec les cartes */
+    .stButton > button {
+        border-radius: 10px !important;
+        border: 1px solid #CFD8E3 !important;
+        box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06) !important;
+    }
+    </style>
     """,
     unsafe_allow_html=True
 )
@@ -89,9 +162,9 @@ MAX_SEGMENTS = 50
 
 ICON_URLS = {
     "routier": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/truck.png",
-    "aerien": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/plane.png",
-    "maritime": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/ship.png",
-    "ferroviaire": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/train.png",
+    "aerien":  "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/plane.png",
+    "maritime":"https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/ship.png",
+    "ferroviaire":"https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/train.png",
 }
 
 # --------------------------
@@ -347,7 +420,7 @@ def _carto_tiler_from_web_style(web_style_label: str):
 # --------------------------
 # Chaînage robuste: helpers
 # --------------------------
-def _normalize_signature(display: str, coord: tuple | None) -> tuple:
+def _normalize_signature(display: str, coord) -> tuple:
     d = (display or "").strip()
     if coord and isinstance(coord, (list, tuple)) and len(coord) == 2:
         return (d, round(float(coord[0]), 6), round(float(coord[1]), 6))
@@ -618,13 +691,12 @@ def generate_pdf_report(
     headers = ["Seg.", "Origine", "Destination", "Mode", "Dist.\n(km)", f"Poids\n({unit})", "Facteur\n(kg CO2e/t.km)", "Emissions\n(kg CO2e)"]
     col_widths = [1.2*cm, 4.8*cm, 4.8*cm, 3.0*cm, 1.8*cm, 1.8*cm, 2.2*cm, 2.2*cm]
 
-    # >>> CORRECTIF: version sécurisée de la cellule Paragraph
+    # Correctif : version sécurisée de la cellule Paragraph
     def _p_cell_dyn(s, fs):
         stl = ParagraphStyle('CellWrapDyn', parent=styles['Normal'], fontSize=fs, leading=max(8, fs+2), alignment=0)
         txt = "" if s is None else str(s)
         txt = xml_escape(txt, entities={"'": "&apos;", '"': "&quot;"})
         return Paragraph(txt, stl)
-    # <<< CORRECTIF
 
     data_rows = []
     for _, row in df.iterrows():
