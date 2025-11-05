@@ -1157,8 +1157,89 @@ for i in range(len(st.session_state.segments)):
                 st.markdown("**Origine**")
             o = unified_location_input("origin", i, "Origine", show_airports=("aerien" in _normalize_no_diacritics(mode)))
         with c2:
-            st.markdown("**Destination**")
-            d = unified_location_input("dest", i, "Destination", show_airports=False)
+    try:
+        with st.spinner("Generation du PDF..."):
+            pdf_buffer = generate_pdf_report(
+                df=df,
+                dossier_val=dossier_val,
+                total_distance=total_distance,
+                total_emissions=total_emissions,
+                unit=unit,
+                rows=rows,
+                pdf_basemap_choice_label=pdf_base_choice,
+                ne_scale=NE_SCALE_DEFAULT,
+                pdf_theme=PDF_THEME_DEFAULT,
+                pdf_icon_size_px=24,
+                web_map_style_label=map_style_label,
+                detail_params=detail_params
+            )
+
+            # Assurer une position cohérente et des bytes stables
+            pdf_buffer.seek(0)
+            pdf_bytes = pdf_buffer.getvalue()          # bytes immuables
+            from io import BytesIO
+            pdf_for_dl = BytesIO(pdf_bytes)            # pour le bouton (réutilisable)
+            pdf_for_dl.seek(0)
+
+            st.download_button(
+                "Telecharger le rapport PDF",
+                data=pdf_for_dl,
+                file_name=filename_pdf,
+                mime="application/pdf"
+            )
+
+            # ===== Ouverture dans un nouvel onglet : Data URL (petits PDF) OU Blob JS (grands PDF) =====
+            import base64
+            MAX_DATA_URL = 1_500_000  # ~1.5 Mo : au delà, on passe en Blob JS pour fiabilité
+            if len(pdf_bytes) <= MAX_DATA_URL:
+                # --- Option A : data URL ---
+                b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+                st.markdown(
+                    f"""
+                    <div style="margin-top:0.5rem">
+                      <a href="data:application/pdf;base64,{b64_pdf}"
+                         target="_blank" rel="noopener"
+                         style="text-decoration:none;display:inline-flex;align-items:center;gap:.5rem;
+                                padding:.5rem .75rem;border:1px solid #e0e0e# --- Option B : Blob JS (robuste pour gros fichiers) ---
+                # On évite de mettre une data URL énorme dans le DOM, on crée un Blob côté navigateur
+                from streamlit.components.v1 import html
+                b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+                html(
+                    f"""
+                    <button id="openPdfBtn"
+                            style="margin-top:8px;padding:.5rem .75rem;border:1px solid #e0e0e0;border-radius:6px;cursor:pointer;">
+                      📄 Ouvrir le rapport PDF dans un nouvel onglet
+                    </button>
+                    <script>
+                      (function() {{
+                        const b64 = "{b64_pdf}";
+                        // Base64 -> bytes
+                        const bin = atob(b64);
+                        const len = bin.length;
+                        const bytes = new Uint8Array(len);
+                        for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+
+                        // Blob + URL objet
+                        const blob = new Blob([bytes], {{type: "application/pdf"}});
+                        const url = URL.createObjectURL(blob);
+
+                        // Ouverture sur click (user gesture)
+                        document.getElementById("openPdfBtn").onclick = () => {{
+                          const w = window.open(url, "_blank", "noopener");
+                          if (!w) {{
+                            alert("Le navigateur a bloque l'ouverture du nouvel onglet. Autorisez les pop-ups pour ce site.");
+                          }}
+                        }};
+                      }})();
+                    </script>
+                    """,
+                    height=60
+                )
+            # ===== Fin ouverture nouvel onglet =====
+
+    except Exception as e:
+        st.error(f"Erreur lors de la generation du PDF : {e}")
+        import traceback; st.code(traceback.format_exc())
 
         # Si l'utilisateur modifie l'origine par rapport à la source de chainage, enlever le badge et verrouiller
         if st.session_state.get(f"origin_autofill_{i}", False) and i > 0:
