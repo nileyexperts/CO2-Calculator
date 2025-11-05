@@ -50,13 +50,22 @@ st.set_page_config(page_title="Calculateur CO2 multimodal - NILEY EXPERTS", page
 # --------------------------
 # Style global : fond + conteneurs arrondis
 # --------------------------
-st.markdown("""
-<style>
-[data-testid="stAppViewContainer"] {
-    background-color: #DFEDF5;
-}
-</style>
-""", unsafe_allow_html=True)
+st.markdown(
+    """
+    <style>
+    /* ---------- Fond de l'app ---------- */
+    [data-testid="stAppViewContainer"] {
+        background: #DFEDF5 !important;
+    }
+    [data-testid="stHeader"] {
+        background: rgba(0,0,0,0) !important;
+    }
+    .stApp { /* fallback */
+        background-color: #DFEDF5 !important;
+    }
+    .block-container { /* garder le fond global visible sous les blocs */
+        background: transparent !important;
+    }
 
     /* ---------- Cartes/sections : bordures arrondies ---------- */
     /* Cible la majorité des conteneurs streamlit (colonnes, containers, forms, etc.) */
