@@ -484,7 +484,6 @@ def _is_location_empty(loc: dict) -> bool:
 # --------------------------
 # Rapport PDF mono-page
 # --------------------------
-@st.cache_data(show_spinner=False, ttl=24*60*60)
 def generate_pdf_report(
     df, dossier_val, total_distance, total_emissions, unit, rows,
     pdf_basemap_choice_label, ne_scale='50m', pdf_theme='terrain',
@@ -876,9 +875,9 @@ geocoder = OpenCageGeocode(API_KEY)
 def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
     try:
         df = pd.read_csv(path)
-    # (supprimé) except Exception as e:
-    #     st.warning(f"Impossible de charger '{path}': {e}")
-    #     return pd.DataFrame(columns=["iata_code","name","municipality","iso_country","lat","lon","label","type"])
+    except Exception as e:
+        st.warning(f"Impossible de charger '{path}': {e}")
+        return pd.DataFrame(columns=["iata_code","name","municipality","iso_country","lat","lon","label","type"])
 
     required = {"iata_code","name","coordinates"}
     missing = required - set(df.columns)
@@ -1159,34 +1158,146 @@ for i in range(len(st.session_state.segments)):
             o = unified_location_input("origin", i, "Origine", show_airports=("aerien" in _normalize_no_diacritics(mode)))
         with c2:
             st.markdown("**Destination**")
-            d = unified_location_input("dest", i, "Destination", show_airports=("aerien" in _normalize_no_diacritics(mode)))
-    # Bouton pour réinitialiser le cache PDF
-    if st.button("Réinitialiser le PDF", type="secondary", help="Force une nouvelle génération"):
-        st.cache_data.clear()
-        st.session_state.pop("pdf_bytes", None)
-        st.success("Cache PDF réinitialisé.")
+            d = unified_location_input("dest", i, "Destination", show_airports=False)
 
-    # Génération PDF avec cache intelligent
-    if "pdf_bytes" not in st.session_state:
-        with st.spinner("Génération du PDF..."):
-            pdf_buffer = generate_pdf_report(
-                df=df,
-                dossier_val=dossier_val,
-                total_distance=total_distance,
-                total_emissions=total_emissions,
-                unit=unit,
-                rows=rows,
-                pdf_basemap_choice_label=pdf_base_choice,
-                ne_scale=NE_SCALE_DEFAULT,
-                pdf_theme=PDF_THEME_DEFAULT,
-                pdf_icon_size_px=24,
-                web_map_style_label=map_style_label,
-                detail_params=detail_params
-            )
-            st.session_state["pdf_bytes"] = pdf_buffer.getvalue()
+        # Si l'utilisateur modifie l'origine par rapport à la source de chainage, enlever le badge et verrouiller
+        if st.session_state.get(f"origin_autofill_{i}", False) and i > 0:
+            prev_sig = st.session_state.get(f"chain_src_signature_{i}")
+            cur_sig  = _normalize_signature(o["display"], o["coord"])
+            if prev_sig and cur_sig != prev_sig:
+                st.session_state[f"origin_autofill_{i}"] = False
+                st.session_state[f"origin_user_edited_{i}"] = (not _is_location_empty({"display": o["display"], "coord": o["coord"]}))
 
-    st.download_button("Télécharger le rapport PDF", data=st.session_state["pdf_bytes"], file_name=filename_pdf, mime="application/pdf")
-except Exception as e:
+        if "weight_0" not in st.session_state:
+            st.session_state["weight_0"] = st.session_state.segments[0]["weight"]
+
+        if i == 0:
+            weight_val = st.number_input("Poids transporte (applique a tous les segments)", min_value=0.001, value=float(st.session_state["weight_0"]), step=100.0, key="weight_0")
+        else:
+            weight_val = st.session_state["weight_0"]
+        st.session_state.segments[i]["weight"] = weight_val
+
+        st.session_state.segments[i]["origin"] = {"query": o["query"], "display": o["display"], "iata": o["iata"], "coord": o["coord"]}
+        st.session_state.segments[i]["dest"]   = {"query": d["query"], "display": d["display"], "iata": d["iata"], "coord": d["coord"]}
+
+        # Chaine live D(i) -> O(i+1) robuste
+        if i + 1 < len(st.session_state.segments):
+            next_seg = st.session_state.segments[i + 1]
+            dest_disp  = d["display"]; dest_coord = d["coord"]; dest_iata = d["iata"] or ""
+            dest_valid = bool(dest_disp and dest_coord)
+            next_origin      = next_seg.get("origin", {})
+            next_empty       = _is_location_empty(next_origin)
+            next_autofill    = bool(st.session_state.get(f"origin_autofill_{i+1}", False))
+            next_user_locked = bool(st.session_state.get(f"origin_user_edited_{i+1}", False))
+            next_prev_sig    = st.session_state.get(f"chain_src_signature_{i+1}")
+            new_sig          = _normalize_signature(dest_disp, dest_coord)
+
+            should_chain = False
+            if dest_valid and not next_user_locked:
+                if next_empty:
+                    should_chain = True
+                elif next_autofill and new_sig != next_prev_sig:
+                    should_chain = True
+
+            if should_chain:
+                next_seg["origin"]["display"] = dest_disp
+                next_seg["origin"]["coord"]   = dest_coord
+                next_seg["origin"]["iata"]    = dest_iata
+                next_seg["origin"]["query"]   = dest_disp
+
+                j = i + 1
+                st.session_state[f"origin_query_{j}"]   = dest_disp
+                st.session_state[f"origin_display_{j}"] = dest_disp
+                st.session_state[f"origin_coord_{j}"]   = dest_coord
+                st.session_state[f"origin_iata_{j}"]    = dest_iata
+                st.session_state[f"origin_autofill_{j}"]= True
+                st.session_state[f"chain_src_signature_{j}"] = new_sig
+                st.session_state[f"origin_user_edited_{j}"]  = False
+                st.session_state.segments[j] = next_seg
+
+        if _is_location_empty(st.session_state.segments[i]["origin"]):
+            st.session_state[f"origin_user_edited_{i}"] = False
+
+        segments_out.append({
+            "origin_display": o["display"],
+            "destination_display": d["display"],
+            "origin_iata": o["iata"],
+            "dest_iata": d["iata"],
+            "mode": mode,
+            "weight": weight_val,
+            "coord_o": o["coord"],
+            "coord_d": d["coord"],
+            "origin": o["display"],
+            "destination": d["display"],
+        })
+
+with st.container():
+    col_add, col_del = st.columns([1, 1])
+    with col_add:
+        if st.button("Ajouter un segment", use_container_width=True, key="btn_add_bottom"):
+            add_segment_end()
+            st.rerun()
+    with col_del:
+        if st.button("Supprimer le dernier segment", use_container_width=True, key="btn_del_bottom"):
+            remove_last_segment()
+            st.rerun()
+
+# Carte interactive
+st.subheader("Carte interactive")
+col_map1, col_map2, col_map3 = st.columns([3, 2, 3])
+with col_map1:
+    map_style_label = st.selectbox(
+        "Fond de carte (Web)",
+        options=["Carto Voyager", "Carto Positron (clair)", "Carto Dark Matter (sombre)"],
+        index=0
+    )
+MAP_STYLES = {
+    "Carto Voyager": "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+    "Carto Positron (clair)": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+    "Carto Dark Matter (sombre)": "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+}
+with col_map2:
+    focus_choices = ["— Tous —"] + [f"Segment {i+1}" for i in range(len(segments_out))]
+    focus_sel = st.selectbox("Focus segment", options=focus_choices, index=0)
+with col_map3:
+    show_icons = st.checkbox("Afficher les icones mode", value=True)
+
+# Calcul
+st.subheader("Calcul")
+dossier_transport = st.text_input("N° dossier Transport (obligatoire) *", value=st.session_state.get("dossier_transport",""), placeholder="ex : TR-2025-001")
+st.session_state["dossier_transport"] = (dossier_transport or "").strip()
+
+unit = "kg"
+factors = {
+    "Routier": float(DEFAULT_EMISSION_FACTORS["Routier"]),
+    "Aerien": float(DEFAULT_EMISSION_FACTORS["Aerien"]),
+    "Maritime": float(DEFAULT_EMISSION_FACTORS["Maritime"]),
+    "Ferroviaire": float(DEFAULT_EMISSION_FACTORS["Ferroviaire"]),
+}
+
+can_calculate = bool(st.session_state["dossier_transport"])
+if not can_calculate:
+    st.warning("Veuillez renseigner le N° dossier Transport avant de lancer le calcul.")
+
+if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
+    rows = []; total_emissions = 0.0; total_distance = 0.0
+    with st.spinner("Calcul en cours..."):
+        for idx, seg in enumerate(segments_out, start=1):
+            if not seg["origin_display"] or not seg["destination_display"]:
+                st.warning(f"Segment {idx} : origine/destination manquante(s).")
+                continue
+
+            coord1, coord2 = seg["coord_o"], seg["coord_d"]
+            if not coord1 or not coord2:
+                st.error(f"Segment {idx} : lieu introuvable ou ambigu.")
+                continue
+
+            route_coords = None
+            if "routier" in _normalize_no_diacritics(seg["mode"]):
+                try:
+                    r = osrm_route(coord1, coord2, overview="full")
+                    distance_km = r["distance_km"]; route_coords = r["coords"]
+                except Exception as e:
                     st.warning(f"Segment {idx}: OSRM indisponible ({e}). Distance a vol d'oiseau.")
                     distance_km = compute_distance_km(coord1, coord2)
             else:
@@ -1347,64 +1458,7 @@ except Exception as e:
         filename_csv = f"resultats_co2_multimodal{safe_suffix}.csv"
         filename_pdf = f"rapport_co2_multimodal{safe_suffix}.pdf"
 
-
-# --- Consolidation des résultats AVANT la section Exporter ---
-rows = []
-total_distance = 0.0
-total_emissions = 0.0
-unit = "kg"
-factors = DEFAULT_EMISSION_FACTORS
-
-for idx, seg in enumerate(st.session_state.segments if 'segments' in st.session_state else [], start=1):
-    coord1 = seg.get("origin", {}).get("coord")
-    coord2 = seg.get("dest", {}).get("coord")
-    if not coord1 or not coord2:
-        continue
-    route_coords = None
-    try:
-        if "routier" in _normalize_no_diacritics(seg.get("mode", "")):
-            r = osrm_route(coord1, coord2)
-            distance_km = float(r.get("distance_km", 0.0))
-            route_coords = r.get("coords")
-        else:
-            raise RuntimeError("OSRM non utilisé pour ce mode")
-    except Exception:
-        distance_km = compute_distance_km(coord1, coord2)
-
-    weight_tonnes = float(seg.get("weight", 0.0)) / 1000.0
-    factor = float(factors.get(seg.get("mode"), 0.0))
-    emissions = compute_emissions(distance_km, weight_tonnes, factor)
-
-    total_distance += distance_km
-    total_emissions += emissions
-
-    rows.append({
-        "Segment": idx,
-        "Origine": seg.get("origin",{}).get("display",""),
-        "Destination": seg.get("dest",{}).get("display",""),
-        "Mode": seg.get("mode",""),
-        "Distance (km)": round(distance_km, 1),
-        f"Poids ({unit})": round(float(seg.get("weight", 0.0)), 1),
-        "Facteur (kg CO2e/t.km)": factor,
-        "Emissions (kg CO2e)": round(emissions, 2),
-        "lat_o": coord1[0], "lon_o": coord1[1],
-        "lat_d": coord2[0], "lon_d": coord2[1],
-        "route_coords": route_coords,
-    })
-
-if rows:
-    df = pd.DataFrame(rows)
-else:
-    df = pd.DataFrame(columns=[
-        "Segment","Origine","Destination","Mode","Distance (km)",
-        f"Poids ({unit})","Facteur (kg CO2e/t.km)","Emissions (kg CO2e)",
-        "lat_o","lon_o","lat_d","lon_d","route_coords"
-    ])
-
-# Valeur sûre par défaut pour map_style_label si absente
-map_style_label = locals().get('map_style_label', None)
-
-st.subheader("Exporter")
+        st.subheader("Exporter")
         pdf_base_choice = st.selectbox(
             "Fond de carte du PDF",
             options=PDF_BASEMAP_LABELS,
@@ -1429,58 +1483,23 @@ st.subheader("Exporter")
             st.download_button("Telecharger le detail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
         with c2:
             try:
-                if st.button("Réinitialiser le PDF", type="secondary", help="Force une nouvelle génération"):
-                    st.cache_data.clear()
-                    st.session_state.pop("pdf_bytes", None)
-                    st.success("Cache PDF réinitialisé.")
-                if "pdf_bytes" not in st.session_state:
-                    with st.spinner("Génération du PDF..."):
-                        pdf_buffer = generate_pdf_report(
-                            df=df,
-                            dossier_val=dossier_val,
-                            total_distance=total_distance,
-                            total_emissions=total_emissions,
-                            unit=unit,
-                            rows=rows,
-                            pdf_basemap_choice_label=pdf_base_choice,
-                            ne_scale=NE_SCALE_DEFAULT,
-                            pdf_theme=PDF_THEME_DEFAULT,
-                            pdf_icon_size_px=24,
-                            web_map_style_label=map_style_label,
-                            detail_params=detail_params
-                        )
-                    st.session_state["pdf_bytes"] = pdf_buffer.getvalue()
-                st.download_button("Télécharger le rapport PDF", data=st.session_state["pdf_bytes"], file_name=filename_pdf, mime="application/pdf")
+                with st.spinner("Generation du PDF..."):
+                    pdf_buffer = generate_pdf_report(
+                        df=df,
+                        dossier_val=dossier_val,
+                        total_distance=total_distance,
+                        total_emissions=total_emissions,
+                        unit=unit,
+                        rows=rows,
+                        pdf_basemap_choice_label=pdf_base_choice,
+                        ne_scale=NE_SCALE_DEFAULT,
+                        pdf_theme=PDF_THEME_DEFAULT,
+                        pdf_icon_size_px=24,
+                        web_map_style_label=map_style_label,
+                        detail_params=detail_params
+                    )
+                st.download_button("Telecharger le rapport PDF", data=pdf_buffer, file_name=filename_pdf, mime="application/pdf")
             except Exception as e:
-                st.error(f"Erreur lors de la generation du PDF : {e}")
-                import traceback; st.code(traceback.format_exc())
-    # Bouton pour réinitialiser le cache PDF
-    if st.button("Réinitialiser le PDF", type="secondary", help="Force une nouvelle génération"):
-        st.cache_data.clear()
-        st.session_state.pop("pdf_bytes", None)
-        st.success("Cache PDF réinitialisé.")
-
-    # Génération PDF avec cache intelligent
-    if "pdf_bytes" not in st.session_state:
-        with st.spinner("Génération du PDF..."):
-            pdf_buffer = generate_pdf_report(
-                df=df,
-                dossier_val=dossier_val,
-                total_distance=total_distance,
-                total_emissions=total_emissions,
-                unit=unit,
-                rows=rows,
-                pdf_basemap_choice_label=pdf_base_choice,
-                ne_scale=NE_SCALE_DEFAULT,
-                pdf_theme=PDF_THEME_DEFAULT,
-                pdf_icon_size_px=24,
-                web_map_style_label=map_style_label,
-                detail_params=detail_params
-            )
-            st.session_state["pdf_bytes"] = pdf_buffer.getvalue()
-
-    st.download_button("Télécharger le rapport PDF", data=st.session_state["pdf_bytes"], file_name=filename_pdf, mime="application/pdf")
-except Exception as e:
                 st.error(f"Erreur lors de la generation du PDF : {e}")
                 import traceback; st.code(traceback.format_exc())
     else:
