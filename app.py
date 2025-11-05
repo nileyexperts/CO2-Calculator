@@ -1349,10 +1349,9 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
 # (Optionnel) Lien HTML vers un PDF hébergé (ouvrir dans un nouvel onglet)
 # Si tu exposes ton PDF via une URL, tu peux utiliser ceci :
 def render_pdf_link(pdf_url: str, label: str = "📄 Ouvrir le rapport PDF dans un nouvel onglet") -> str:
-    # Pas de f-string multi-ligne : on utilise .format() pour éviter tout risque de parsing
-    return (
-        '{url}'
-        '<span>{label}</span>'
-        '</a>'
-    ).format(url=pdf_url, label=label)
-    
+    parts = [
+        '{}',
+        '<span>{}</span>'.format(label),
+        '</a>',
+    ]
+    return "".join(parts)
