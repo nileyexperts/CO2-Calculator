@@ -1365,11 +1365,6 @@ except Exception as e:
         with c1:
             st.download_button("Telecharger le detail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
         with c2:
-            try:
-            except Exception as e:
-                st.error(f"Erreur lors de la generation du PDF : {e}")
-                import traceback
-                st.code(traceback.format_exc())
     # Bouton pour réinitialiser le cache PDF
     if st.button("Réinitialiser le PDF", type="secondary", help="Force une nouvelle génération"):
         st.cache_data.clear()
