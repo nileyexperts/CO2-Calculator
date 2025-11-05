@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 # Calculateur CO2 multimodal - NILEY EXPERTS
 # Application Streamlit avec export PDF mono-page.
@@ -12,12 +11,10 @@ import unicodedata
 import tempfile
 from io import BytesIO
 from datetime import datetime
-
 import numpy as np
 import pandas as pd
 import requests
 from PIL import Image as PILImage
-
 import streamlit as st
 import pydeck as pdk
 from geopy.distance import great_circle
@@ -53,125 +50,6 @@ st.set_page_config(page_title="Calculateur CO2 multimodal - NILEY EXPERTS", page
 # --------------------------
 st.markdown(
     """
-    <style>
-    /* ---------- Fond de l'app ---------- */
-    [data-testid="stAppViewContainer"] {
-        background-color: #DFEDF5 !important;
-    }
-    [data-testid="stHeader"] {
-        background: rgba(0,0,0,0) !important;
-    }
-    .stApp { /* fallback */
-        background-color: #DFEDF5 !important;
-    }
-    .block-container { /* garder le fond global visible sous les blocs */
-        background: transparent !important;
-    }
-
-    /* ---------- Cartes/sections : bordures arrondies ---------- */
-    [data-testid="stAppViewContainer"] .block-container > div {
-        border-radius: 12px;
-        background: #FFFFFF;
-        border: 1px solid #CFD8E3;
-        box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
-        padding: 0.75rem 1rem;
-        margin-bottom: 0.75rem;
-    }
-    [data-testid="stVerticalBlock"] > div[style*="border"] {
-        border-radius: 12px !important;
-        border: 1px solid #CFD8E3 !important;
-        background: #FFFFFF !important;
-        box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06) !important;
-        padding: 0.75rem 1rem !important;
-    }
-
-    /* Tableaux, onglets, et composants courants */
-    [data-testid="stDataFrame"] {
-        border-radius: 12px;
-        overflow: hidden;
-        border: 1px solid #CFD8E3;
-        box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
-        background: #FFFFFF;
-    }
-    [data-testid="stTabs"] {
-        border-radius: 12px;
-        border: 1px solid #CFD8E3;
-        background: #FFFFFF;
-        box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
-        padding: 0.25rem 0.25rem 0.75rem 0.25rem;
-    }
-
-    /* Pydeck et Matplotlib : cadre doux autour des canvases */
-    .stDeckGlJson {
-        border-radius: 12px;
-        border: 1px solid #CFD8E3;
-        box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
-        background: #FFFFFF;
-        padding: 0.25rem;
-    }
-    [data-testid="stImage"] canvas,
-    [data-testid="stImage"] img {
-        border-radius: 12px;
-    }
-
-    /* Boutons : cohérence visuelle */
-    .stButton > button {
-        border-radius: 10px !important;
-        border: 1px solid #CFD8E3 !important;
-        box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06) !important;
-    }
-
-    /* ==============================
-       Champs de saisie Origine/Destination
-       ============================== */
-    /* Le label texte au-dessus du champ */
-    label:has(+ div [data-testid="stTextInput"] input[aria-label*="Origine — Adresse"]),
-    label:has(+ div [data-testid="stTextInput"] input[aria-label*="Destination — Adresse"]) {
-        color: #0F2A3A;
-        font-weight: 600;
-    }
-
-    /* Boîte wrapper des champs Origine */
-    [data-testid="stTextInput"]:has(input[aria-label*="Origine — Adresse"]) {
-        border: 1px solid #8CB3CC;
-        border-radius: 10px;
-        background: #CFE3EE;  /* plus foncé que #DFEDF5 */
-        padding: 0.5rem 0.65rem;
-        box-shadow: 0 1px 4px rgba(16,24,40,0.06);
-    }
-
-    /* Boîte wrapper des champs Destination */
-    [data-testid="stTextInput"]:has(input[aria-label*="Destination — Adresse"]) {
-        border: 1px solid #8CB3CC;
-        border-radius: 10px;
-        background: #CFE3EE;
-        padding: 0.5rem 0.65rem;
-        box-shadow: 0 1px 4px rgba(16,24,40,0.06);
-    }
-
-    /* L'INPUT interne : transparent pour laisser voir le fond du wrapper */
-    [data-testid="stTextInput"] input[aria-label*="Origine — Adresse"],
-    [data-testid="stTextInput"] input[aria-label*="Destination — Adresse"] {
-        background: transparent !important;
-        border: none !important;
-        box-shadow: none !important;
-        color: #0F2A3A;
-    }
-
-    /* Placeholder lisible */
-    [data-testid="stTextInput"] input[aria-label*="Origine — Adresse"]::placeholder,
-    [data-testid="stTextInput"] input[aria-label*="Destination — Adresse"]::placeholder {
-        color: #3E6074;
-        opacity: 0.9;
-    }
-
-    /* Focus (clavier/souris) : cadre + halo d’accessibilité */
-    [data-testid="stTextInput"]:has(input[aria-label*="Origine — Adresse"]:focus-within),
-    [data-testid="stTextInput"]:has(input[aria-label*="Destination — Adresse"]:focus-within) {
-        border-color: #3B82B3 !important;
-        box-shadow: 0 0 0 3px rgba(59,130,179,0.25);
-    }
-    </style>
     """,
     unsafe_allow_html=True
 )
@@ -198,19 +76,17 @@ PDF_BASEMAP_MODES = {
     "OSM (internet)": "osm",
     "Natural Earth (vectoriel, offline)": "naturalearth",
 }
-
 DEFAULT_EMISSION_FACTORS = {
     "Routier": 0.100,
     "Aerien": 0.500,
     "Maritime": 0.015,
     "Ferroviaire": 0.030,
 }
-
 MAX_SEGMENTS = 50
 
 ICON_URLS = {
     "routier": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/truck.png",
-    "aerien":  "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/plane.png",
+    "aerien": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/plane.png",
     "maritime":"https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/ship.png",
     "ferroviaire":"https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/train.png",
 }
@@ -235,10 +111,8 @@ def add_segment_end():
     if len(st.session_state.segments) >= MAX_SEGMENTS:
         st.warning("Nombre maximum de segments atteint.")
         return
-
     prev = st.session_state.segments[-1]
     new_seg = _default_segment()
-
     prev_dest = prev.get("dest", {})
     # Forcer le chaînage même si l'utilisateur a modifié l'origine
     if prev_dest.get("display") and prev_dest.get("coord"):
@@ -250,10 +124,10 @@ def add_segment_end():
         })
         # Mise à jour explicite de l'état de session pour refléter le chaînage
         j = len(st.session_state.segments)
-        st.session_state[f"origin_query_{j}"] = prev_dest.get("display", "")
+        st.session_state[f"origin_query_{j}"]   = prev_dest.get("display", "")
         st.session_state[f"origin_display_{j}"] = prev_dest.get("display", "")
-        st.session_state[f"origin_coord_{j}"] = prev_dest.get("coord")
-        st.session_state[f"origin_iata_{j}"] = prev_dest.get("iata", "")
+        st.session_state[f"origin_coord_{j}"]   = prev_dest.get("coord")
+        st.session_state[f"origin_iata_{j}"]    = prev_dest.get("iata", "")
         st.session_state[f"origin_autofill_{j}"] = True
         st.session_state[f"chain_src_signature_{j}"] = _normalize_signature(prev_dest.get("display"), prev_dest.get("coord"))
         st.session_state[f"origin_user_edited_{j}"] = False
@@ -289,10 +163,10 @@ def remove_last_segment():
         if any(pat in k for pat in [
             f"origin_query_{last_idx}", f"dest_query_{last_idx}",
             f"origin_choice_{last_idx}", f"dest_choice_{last_idx}",
-            f"origin_coord_{last_idx}",  f"dest_coord_{last_idx}",
+            f"origin_coord_{last_idx}", f"dest_coord_{last_idx}",
             f"origin_display_{last_idx}",f"dest_display_{last_idx}",
-            f"origin_iata_{last_idx}",   f"dest_iata_{last_idx}",
-            f"origin_unlo_{last_idx}",   f"dest_unlo_{last_idx}",
+            f"origin_iata_{last_idx}", f"dest_iata_{last_idx}",
+            f"origin_unlo_{last_idx}", f"dest_unlo_{last_idx}",
             f"mode_select_{last_idx}",
             f"origin_autofill_{last_idx}",
             f"origin_user_edited_{last_idx}",
@@ -414,7 +288,7 @@ def _fit_extent_to_aspect(min_lon, max_lon, min_lat, max_lat, target_aspect_w_ov
         extra = (needed_lat - span_lat) / 2.0
         min_lat -= extra; max_lat += extra
     min_lon = max(-180.0, min_lon); max_lon = min(180.0, max_lon)
-    min_lat = max(-90.0, min_lat);  max_lat = min(90.0,  max_lat)
+    min_lat = max(-90.0, min_lat); max_lat = min(90.0, max_lat)
     return (min_lon, max_lon, min_lat, max_lat)
 
 def _pdf_add_mode_icon(ax, lon, lat, cat_key, size_px, transform=None):
@@ -452,7 +326,6 @@ def _carto_tiler_from_web_style(web_style_label: str):
         "Carto Voyager": "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
     }
     subdomains = ["a", "b", "c", "d"]
-
     template = url_by_label.get(web_style_label)
     if not template:
         template = url_by_label["Carto Positron (clair)"]
@@ -503,8 +376,10 @@ def generate_pdf_report(
     c = pdfcanvas.Canvas(buffer, pagesize=landscape(A4))
 
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=14, textColor=colors.HexColor('#1f4788'), spaceAfter=0, alignment=1)
-    heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'], fontSize=10.5, textColor=colors.HexColor('#2c5aa0'), spaceAfter=0, spaceBefore=0, alignment=0)
+    title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=14,
+                                 textColor=colors.HexColor('#1f4788'), spaceAfter=0, alignment=1)
+    heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'], fontSize=10.5,
+                                   textColor=colors.HexColor('#2c5aa0'), spaceAfter=0, spaceBefore=0, alignment=0)
     normal_style = styles['Normal']; normal_style.fontSize = 8
 
     y = PAGE_H - M
@@ -561,7 +436,6 @@ def generate_pdf_report(
     min_table_h = 5.5*cm
     max_map_h = 7.5*cm
     remaining_h = (y - M) - footer_h
-
     map_h = max(4.0*cm, min(max_map_h, remaining_h * 0.42))
     table_h_avail = remaining_h - map_h - 0.25*cm
     if table_h_avail < min_table_h:
@@ -575,13 +449,13 @@ def generate_pdf_report(
         span_lon = max_lon - min_lon
         span_lat = max_lat - min_lat
         span = max(span_lon, span_lat)
-        if span <= 0.5:   z = 9
+        if span <= 0.5: z = 9
         elif span <= 1.0: z = 8
         elif span <= 2.0: z = 7
         elif span <= 5.0: z = 6
         elif span <= 12.0:z = 5
         elif span <= 24.0:z = 4
-        else:             z = 3
+        else: z = 3
         return min(z, int(detail_params.get("max_zoom", 9)))
 
     map_buffer = None
@@ -589,12 +463,11 @@ def generate_pdf_report(
         all_lats = [r["lat_o"] for r in rows] + [r["lat_d"] for r in rows]
         all_lons = [r["lon_o"] for r in rows] + [r["lon_d"] for r in rows]
         min_lon, max_lon, min_lat, max_lat = _compute_extent_from_coords(all_lats, all_lons)
-
         fig_w_in = AVAIL_W / 72.0
         fig_h_in = map_h / 72.0
-
         min_lon, max_lon, min_lat, max_lat = _fit_extent_to_aspect(
-            min_lon, max_lon, min_lat, max_lat, target_aspect_w_over_h=(AVAIL_W / max(1, map_h))
+            min_lon, max_lon, min_lat, max_lat,
+            target_aspect_w_over_h=(AVAIL_W / max(1, map_h))
         )
 
         use_cartopy = True
@@ -637,6 +510,7 @@ def generate_pdf_report(
                     zoom = _choose_zoom(min_lon, max_lon, min_lat, max_lat)
                     ax.add_image(tiler, zoom)
                     raster_ok = True
+
             except Exception:
                 raster_ok = False
 
@@ -645,10 +519,10 @@ def generate_pdf_report(
                 colors_cfg = {'ocean':'#EAF4FF','land':'#F7F5F2','lakes_fc':'#EAF4FF','lakes_ec':'#B3D4F5',
                               'coast':'#818892','borders0':'#8F98A3'}
                 ax.add_feature(cfeature.OCEAN.with_scale(ne_scale), facecolor=colors_cfg['ocean'], edgecolor='none', zorder=0)
-                ax.add_feature(cfeature.LAND.with_scale(ne_scale),  facecolor=colors_cfg['land'],  edgecolor='none', zorder=0)
+                ax.add_feature(cfeature.LAND.with_scale(ne_scale), facecolor=colors_cfg['land'], edgecolor='none', zorder=0)
                 ax.add_feature(cfeature.LAKES.with_scale(ne_scale), facecolor=colors_cfg['lakes_fc'], edgecolor=colors_cfg['lakes_ec'], linewidth=0.3, zorder=1)
                 ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), edgecolor=colors_cfg['coast'], linewidth=0.4, zorder=2)
-                ax.add_feature(cfeature.BORDERS.with_scale(ne_scale),   edgecolor=colors_cfg['borders0'], linewidth=0.5, zorder=2)
+                ax.add_feature(cfeature.BORDERS.with_scale(ne_scale), edgecolor=colors_cfg['borders0'], linewidth=0.5, zorder=2)
                 try:
                     admin1 = cfeature.NaturalEarthFeature('cultural', 'admin_1_states_provinces_lines', '10m', edgecolor='#777777', facecolor='none')
                     ax.add_feature(admin1, linewidth=0.4, zorder=2)
@@ -711,12 +585,14 @@ def generate_pdf_report(
                 ax.plot([min_lon, max_lon],[yy,yy], color='#E6E9EF', lw=0.6)
             for xx in np.arange(min_lon, max_lon+1e-9, lon_step):
                 ax.plot([xx,xx],[min_lat,max_lat], color='#E6E9EF', lw=0.6)
+
             mode_colors = {"routier":"#0066CC","aerien":"#CC0000","maritime":"#009900","ferroviaire":"#9900CC"}
             for r in rows:
                 cat = mode_to_category(r["Mode"]); color = mode_colors.get(cat, "#666666")
                 ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]], color=color, lw=2.0, alpha=0.9)
                 ax.scatter([r["lon_o"]],[r["lat_o"]], s=22, c="#0A84FF", edgecolor='white', lw=0.8)
                 ax.scatter([r["lon_d"]],[r["lat_d"]], s=22, c="#FF3B30", edgecolor='white', lw=0.8)
+
             map_buffer = io.BytesIO()
             plt.tight_layout()
             plt.savefig(map_buffer, format='png', dpi=dpi, bbox_inches='tight', facecolor='white', edgecolor='none')
@@ -887,7 +763,6 @@ def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
 
     df = df[df["iata_code"].astype(str).str.len()==3].copy()
     df["iata_code"] = df["iata_code"].astype(str).str.upper()
-
     if "type" in df.columns:
         df = df[df["type"].isin(["large_airport","medium_airport"])].copy()
 
@@ -1040,13 +915,11 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str, sho
         if show_airports or is_iata_mode:
             airports = search_airports(q_raw, limit=20)
             if is_iata_mode and not airports.empty:
-                exact  = airports[airports["iata_code"].str.upper() == q_iata]
+                exact = airports[airports["iata_code"].str.upper() == q_iata]
                 others = airports[airports["iata_code"].str.upper() != q_iata]
                 airports = pd.concat([exact, others], ignore_index=True)
-
         if show_ports and not is_iata_mode:
             ports = search_ports(q_raw, limit=12)
-
         if not is_iata_mode:
             oc = geocode_cached(q_raw, limit=5)
             oc_opts = [r['formatted'] for r in oc] if oc else []
@@ -1054,28 +927,23 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str, sho
     options = []
     airport_rows = []
     port_rows = []
-
     if (show_airports or is_iata_mode) and not airports.empty:
         for _, r in airports.iterrows():
             label_opt = f"✈️ {r['label']} (IATA {r['iata_code']})"
             options.append(label_opt); airport_rows.append(r)
-
     if show_ports and not is_iata_mode and not ports.empty:
         for _, r in ports.iterrows():
             suffix = f" (UN/LOCODE {r['unlocode']})" if r.get("unlocode") else ""
             label_opt = f"⚓ {r['label']}{suffix}"
             options.append(label_opt); port_rows.append(r)
-
     if not is_iata_mode and oc_opts:
         options += [f"📍 {o}" for o in oc_opts]
-
     if not options:
         options = ["— Aucun resultat —"]
 
     default_index = 0
     if is_iata_mode and airport_rows:
         default_index = 0
-
     sel = st.selectbox("Resultats", options, index=default_index, key=c_key)
 
     coord = None; display = ""; sel_iata = ""; sel_unlo = ""
@@ -1170,7 +1038,6 @@ for i in range(len(st.session_state.segments)):
 
         if "weight_0" not in st.session_state:
             st.session_state["weight_0"] = st.session_state.segments[0]["weight"]
-
         if i == 0:
             weight_val = st.number_input("Poids transporte (applique a tous les segments)", min_value=0.001, value=float(st.session_state["weight_0"]), step=100.0, key="weight_0")
         else:
@@ -1183,14 +1050,14 @@ for i in range(len(st.session_state.segments)):
         # Chaine live D(i) -> O(i+1) robuste
         if i + 1 < len(st.session_state.segments):
             next_seg = st.session_state.segments[i + 1]
-            dest_disp  = d["display"]; dest_coord = d["coord"]; dest_iata = d["iata"] or ""
+            dest_disp = d["display"]; dest_coord = d["coord"]; dest_iata = d["iata"] or ""
             dest_valid = bool(dest_disp and dest_coord)
-            next_origin      = next_seg.get("origin", {})
-            next_empty       = _is_location_empty(next_origin)
-            next_autofill    = bool(st.session_state.get(f"origin_autofill_{i+1}", False))
+            next_origin = next_seg.get("origin", {})
+            next_empty  = _is_location_empty(next_origin)
+            next_autofill = bool(st.session_state.get(f"origin_autofill_{i+1}", False))
             next_user_locked = bool(st.session_state.get(f"origin_user_edited_{i+1}", False))
-            next_prev_sig    = st.session_state.get(f"chain_src_signature_{i+1}")
-            new_sig          = _normalize_signature(dest_disp, dest_coord)
+            next_prev_sig = st.session_state.get(f"chain_src_signature_{i+1}")
+            new_sig = _normalize_signature(dest_disp, dest_coord)
 
             should_chain = False
             if dest_valid and not next_user_locked:
@@ -1204,7 +1071,6 @@ for i in range(len(st.session_state.segments)):
                 next_seg["origin"]["coord"]   = dest_coord
                 next_seg["origin"]["iata"]    = dest_iata
                 next_seg["origin"]["query"]   = dest_disp
-
                 j = i + 1
                 st.session_state[f"origin_query_{j}"]   = dest_disp
                 st.session_state[f"origin_display_{j}"] = dest_disp
@@ -1219,16 +1085,11 @@ for i in range(len(st.session_state.segments)):
             st.session_state[f"origin_user_edited_{i}"] = False
 
         segments_out.append({
-            "origin_display": o["display"],
-            "destination_display": d["display"],
-            "origin_iata": o["iata"],
-            "dest_iata": d["iata"],
-            "mode": mode,
-            "weight": weight_val,
-            "coord_o": o["coord"],
-            "coord_d": d["coord"],
-            "origin": o["display"],
-            "destination": d["display"],
+            "origin_display": o["display"], "destination_display": d["display"],
+            "origin_iata": o["iata"], "dest_iata": d["iata"],
+            "mode": mode, "weight": weight_val,
+            "coord_o": o["coord"], "coord_d": d["coord"],
+            "origin": o["display"], "destination": d["display"],
         })
 
 with st.container():
@@ -1266,7 +1127,6 @@ with col_map3:
 st.subheader("Calcul")
 dossier_transport = st.text_input("N° dossier Transport (obligatoire) *", value=st.session_state.get("dossier_transport",""), placeholder="ex : TR-2025-001")
 st.session_state["dossier_transport"] = (dossier_transport or "").strip()
-
 unit = "kg"
 factors = {
     "Routier": float(DEFAULT_EMISSION_FACTORS["Routier"]),
@@ -1274,8 +1134,8 @@ factors = {
     "Maritime": float(DEFAULT_EMISSION_FACTORS["Maritime"]),
     "Ferroviaire": float(DEFAULT_EMISSION_FACTORS["Ferroviaire"]),
 }
-
 can_calculate = bool(st.session_state["dossier_transport"])
+
 if not can_calculate:
     st.warning("Veuillez renseigner le N° dossier Transport avant de lancer le calcul.")
 
@@ -1286,7 +1146,6 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             if not seg["origin_display"] or not seg["destination_display"]:
                 st.warning(f"Segment {idx} : origine/destination manquante(s).")
                 continue
-
             coord1, coord2 = seg["coord_o"], seg["coord_d"]
             if not coord1 or not coord2:
                 st.error(f"Segment {idx} : lieu introuvable ou ambigu.")
@@ -1325,6 +1184,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
     if rows:
         df = pd.DataFrame(rows)
         st.success(f"{len(rows)} segment(s) - Distance totale : {total_distance:.1f} km - Emissions : {total_emissions:.2f} kg CO2e")
+
         st.dataframe(
             df[["Segment","Origine","Destination","Mode","Distance (km)",f"Poids ({unit})","Facteur (kg CO2e/t.km)","Emissions (kg CO2e)"]],
             use_container_width=True
@@ -1338,8 +1198,13 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         layers = []
         if route_paths:
             layers.append(pdk.Layer(
-                "PathLayer", data=route_paths, get_path="path", get_color=[187,147,87,220],
-                width_scale=1, width_min_pixels=4, pickable=True
+                "PathLayer",
+                data=route_paths,
+                get_path="path",
+                get_color=[187,147,87,220],
+                width_scale=1,
+                width_min_pixels=4,
+                pickable=True
             ))
 
         straight_lines = []
@@ -1352,32 +1217,40 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 })
         if straight_lines:
             layers.append(pdk.Layer(
-                "LineLayer", data=straight_lines, get_source_position="from", get_target_position="to",
-                get_width=3, get_color=[120,120,120,160], pickable=True
+                "LineLayer",
+                data=straight_lines,
+                get_source_position="from",
+                get_target_position="to",
+                get_width=3,
+                get_color=[120,120,120,160],
+                pickable=True
             ))
 
         points, labels = [], []
         for r in rows:
             points += [
-                {"position":[r["lon_o"], r["lat_o"]], "name":f"S{r['Segment']} - Origine", "color":[0,122,255,220]},
-                {"position":[r["lon_d"], r["lat_d"]], "name":f"S{r['Segment']} - Destination","color":[220,66,66,220]},
+                {"position":[r["lon_o"], r["lat_o"]], "name":f"S{r['Segment']} - Origine",     "color":[0,122,255,220]},
+                {"position":[r["lon_d"], r["lat_d"]], "name":f"S{r['Segment']} - Destination", "color":[220,66,66,220]},
             ]
             labels += [
                 {"position":[r["lon_o"], r["lat_o"]], "text":f"S{r['Segment']} O", "color":[0,122,255,255]},
                 {"position":[r["lon_d"], r["lat_d"]], "text":f"S{r['Segment']} D", "color":[220,66,66,255]},
             ]
+
         if points:
             layers.append(pdk.Layer(
-                "ScatterplotLayer", data=points, get_position="position", get_fill_color="color",
-                get_radius=20000, radius_min_pixels=2, radius_max_pixels=60, pickable=True,
-                stroked=True, get_line_color=[255,255,255], line_width_min_pixels=1
+                "ScatterplotLayer", data=points,
+                get_position="position", get_fill_color="color",
+                get_radius=20000, radius_min_pixels=2, radius_max_pixels=60,
+                pickable=True, stroked=True, get_line_color=[255,255,255], line_width_min_pixels=1
             ))
         if labels:
             layers.append(pdk.Layer(
-                "TextLayer", data=labels, get_position="position", get_text="text", get_color="color",
-                get_size=16, size_units="pixels", get_text_anchor="start", get_alignment_baseline="top", background=False
+                "TextLayer", data=labels,
+                get_position="position", get_text="text", get_color="color",
+                get_size=16, size_units="pixels", get_text_anchor="start", get_alignment_baseline="top",
+                background=False
             ))
-
         if show_icons:
             icons = []
             for r in rows:
@@ -1398,8 +1271,9 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 })
             if icons:
                 layers.append(pdk.Layer(
-                    "IconLayer", data=icons, get_icon="icon", get_position="position",
-                    get_size=28, size_units="pixels", pickable=True
+                    "IconLayer", data=icons,
+                    get_icon="icon", get_position="position", get_size=28,
+                    size_units="pixels", pickable=True
                 ))
 
         # Vue
@@ -1498,9 +1372,30 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                         web_map_style_label=map_style_label,
                         detail_params=detail_params
                     )
-                st.download_button("Telecharger le rapport PDF", data=pdf_buffer, file_name=filename_pdf, mime="application/pdf")
+                    st.download_button(
+                        "Telecharger le rapport PDF",
+                        data=pdf_buffer,
+                        file_name=filename_pdf,
+                        mime="application/pdf"
+                    )
+
+                    # ===== Option A : Lien base64 pour ouvrir le PDF dans un nouvel onglet =====
+                    import base64
+                    pdf_bytes = pdf_buffer.getvalue()
+                    b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+                    st.markdown(
+                        f"""
+                        <div style="margin-top:0.5rem">
+                          <a href="data:application/pdf;base64,{b64_pdf}"
+                             target="_blank" rel="noopener"
+                             style="text-decoration:none;display:inline-flex;align-items:center;gap:.5rem;
+                                   
+                    )
+                    # ===== Fin Option A =====
+
             except Exception as e:
                 st.error(f"Erreur lors de la generation du PDF : {e}")
                 import traceback; st.code(traceback.format_exc())
+
     else:
         st.info("Aucun segment valide n'a ete calcule. Verifiez les entrees.")
