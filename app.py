@@ -1339,16 +1339,17 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             st.download_button("Telecharger le detail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
         with c2:
             try:
-                with st.spinner("Generation du PDF..."):
-                    pdf_buffer = generate_pdf_report(
-                        df=df, dossier_val=dossier_val,
-                        total_distance=total_distance, total_emissions=total_emissions,
-                        unit=unit, rows=rows,
-                        pdf_basemap_choice_label=pdf_base_choice,
-                        ne_scale=NE_SCALE_DEFAULT, pdf_theme=PDF_THEME_DEFAULT, pdf_icon_size_px=24,
-                        web_map_style_label=map_style_label,
-                        detail_params=detail_params
-                    )
+    try:
+        with st.spinner("Generation du PDF..."):
+            pdf_buffer = generate_pdf_report(
+                df=df, dossier_val=dossier_val,
+                total_distance=total_distance, total_emissions=total_emissions,
+                unit=unit, rows=rows,
+                pdf_basemap_choice_label=pdf_base_choice,
+                ne_scale=NE_SCALE_DEFAULT, pdf_theme=PDF_THEME_DEFAULT, pdf_icon_size_px=24,
+                web_map_style_label=map_style_label,
+                detail_params=detail_params
+            )
         if pdf_buffer and pdf_buffer.getbuffer().nbytes > 0:
             st.download_button(
                 "Telecharger le rapport PDF",
@@ -1358,7 +1359,6 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             )
         else:
             st.error("Le PDF n'a pas pu être généré.")
-            except Exception as e:
                 st.error(f"Erreur lors de la generation du PDF : {e}")
                 import traceback; st.code(traceback.format_exc())
     else:
