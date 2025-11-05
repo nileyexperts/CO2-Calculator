@@ -876,9 +876,9 @@ geocoder = OpenCageGeocode(API_KEY)
 def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
     try:
         df = pd.read_csv(path)
-    except Exception as e:
-        st.warning(f"Impossible de charger '{path}': {e}")
-        return pd.DataFrame(columns=["iata_code","name","municipality","iso_country","lat","lon","label","type"])
+    # (supprimé) except Exception as e:
+    #     st.warning(f"Impossible de charger '{path}': {e}")
+    #     return pd.DataFrame(columns=["iata_code","name","municipality","iso_country","lat","lon","label","type"])
 
     required = {"iata_code","name","coordinates"}
     missing = required - set(df.columns)
@@ -1158,6 +1158,8 @@ for i in range(len(st.session_state.segments)):
                 st.markdown("**Origine**")
             o = unified_location_input("origin", i, "Origine", show_airports=("aerien" in _normalize_no_diacritics(mode)))
         with c2:
+            st.markdown("**Destination**")
+            d = unified_location_input("dest", i, "Destination", show_airports=("aerien" in _normalize_no_diacritics(mode)))
     # Bouton pour réinitialiser le cache PDF
     if st.button("Réinitialiser le PDF", type="secondary", help="Force une nouvelle génération"):
         st.cache_data.clear()
@@ -1369,6 +1371,32 @@ except Exception as e:
         with c1:
             st.download_button("Telecharger le detail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
         with c2:
+            try:
+                if st.button("Réinitialiser le PDF", type="secondary", help="Force une nouvelle génération"):
+                    st.cache_data.clear()
+                    st.session_state.pop("pdf_bytes", None)
+                    st.success("Cache PDF réinitialisé.")
+                if "pdf_bytes" not in st.session_state:
+                    with st.spinner("Génération du PDF..."):
+                        pdf_buffer = generate_pdf_report(
+                            df=df,
+                            dossier_val=dossier_val,
+                            total_distance=total_distance,
+                            total_emissions=total_emissions,
+                            unit=unit,
+                            rows=rows,
+                            pdf_basemap_choice_label=pdf_base_choice,
+                            ne_scale=NE_SCALE_DEFAULT,
+                            pdf_theme=PDF_THEME_DEFAULT,
+                            pdf_icon_size_px=24,
+                            web_map_style_label=map_style_label,
+                            detail_params=detail_params
+                        )
+                    st.session_state["pdf_bytes"] = pdf_buffer.getvalue()
+                st.download_button("Télécharger le rapport PDF", data=st.session_state["pdf_bytes"], file_name=filename_pdf, mime="application/pdf")
+            except Exception as e:
+                st.error(f"Erreur lors de la generation du PDF : {e}")
+                import traceback; st.code(traceback.format_exc())
     # Bouton pour réinitialiser le cache PDF
     if st.button("Réinitialiser le PDF", type="secondary", help="Force une nouvelle génération"):
         st.cache_data.clear()
