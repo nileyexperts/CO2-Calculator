@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 # Calculateur CO2 multimodal - NILEY EXPERTS
 # Application Streamlit avec export PDF mono-page.
