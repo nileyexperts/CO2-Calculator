@@ -876,9 +876,9 @@ geocoder = OpenCageGeocode(API_KEY)
 def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
     try:
         df = pd.read_csv(path)
-    # (supprimé) except Exception as e:
-    #     st.warning(f"Impossible de charger '{path}': {e}")
-    #     return pd.DataFrame(columns=["iata_code","name","municipality","iso_country","lat","lon","label","type"])
+    except Exception as e:
+        st.warning(f"Impossible de charger '{path}': {e}")
+        return pd.DataFrame(columns=["iata_code","name","municipality","iso_country","lat","lon","label","type"])
 
     required = {"iata_code","name","coordinates"}
     missing = required - set(df.columns)
@@ -946,9 +946,9 @@ def search_airports(query: str, limit: int = 20) -> pd.DataFrame:
 def load_ports_csv(path: str = "ports.csv") -> pd.DataFrame:
     try:
         df = pd.read_csv(path)
-    # (supprimé) except Exception as e:
-    #     st.warning(f"Impossible de charger '{path}': {e}")
-    #     return pd.DataFrame(columns=["unlocode", "name", "country", "lat", "lon", "label"])
+    except Exception as e:
+        st.warning(f"Impossible de charger '{path}': {e}")
+        return pd.DataFrame(columns=["unlocode", "name", "country", "lat", "lon", "label"])
 
     cols = {c.lower(): c for c in df.columns}
     def pick(*cands):
@@ -1186,245 +1186,245 @@ for i in range(len(st.session_state.segments)):
             st.session_state["pdf_bytes"] = pdf_buffer.getvalue()
 
     st.download_button("Télécharger le rapport PDF", data=st.session_state["pdf_bytes"], file_name=filename_pdf, mime="application/pdf")
-# (supprimé) except Exception as e:
-#                     st.warning(f"Segment {idx}: OSRM indisponible ({e}). Distance a vol d'oiseau.")
-#                     distance_km = compute_distance_km(coord1, coord2)
-#             else:
-#                 distance_km = compute_distance_km(coord1, coord2)
+# except Exception as e:
+                    # st.warning(f"Segment {idx}: OSRM indisponible ({e}). Distance a vol d'oiseau.")
+                    # distance_km = compute_distance_km(coord1, coord2)
+            # else:
+                # distance_km = compute_distance_km(coord1, coord2)
 
-#             weight_tonnes = seg["weight"] / 1000.0
-#             factor = float(factors.get(seg["mode"], 0.0))
-#             emissions = compute_emissions(distance_km, weight_tonnes, factor)
-#             total_distance += distance_km; total_emissions += emissions
+            # weight_tonnes = seg["weight"] / 1000.0
+            # factor = float(factors.get(seg["mode"], 0.0))
+            # emissions = compute_emissions(distance_km, weight_tonnes, factor)
+            # total_distance += distance_km; total_emissions += emissions
 
-#             rows.append({
-#                 "Segment": idx,
-#                 "Origine": seg["origin_display"],
-#                 "Destination": seg["destination_display"],
-#                 "Mode": seg["mode"],
-#                 "Distance (km)": round(distance_km, 1),
-#                 f"Poids ({unit})": round(seg["weight"], 1),
-#                 "Facteur (kg CO2e/t.km)": factor,
-#                 "Emissions (kg CO2e)": round(emissions, 2),
-#                 "lat_o": coord1[0], "lon_o": coord1[1],
-#                 "lat_d": coord2[0], "lon_d": coord2[1],
-#                 "route_coords": route_coords,
-#             })
+            # rows.append({
+                # "Segment": idx,
+                # "Origine": seg["origin_display"],
+                # "Destination": seg["destination_display"],
+                # "Mode": seg["mode"],
+                # "Distance (km)": round(distance_km, 1),
+                # f"Poids ({unit})": round(seg["weight"], 1),
+                # "Facteur (kg CO2e/t.km)": factor,
+                # "Emissions (kg CO2e)": round(emissions, 2),
+                # "lat_o": coord1[0], "lon_o": coord1[1],
+                # "lat_d": coord2[0], "lon_d": coord2[1],
+                # "route_coords": route_coords,
+            # })
 
-#     if rows:
-#         df = pd.DataFrame(rows)
-#         st.success(f"{len(rows)} segment(s) - Distance totale : {total_distance:.1f} km - Emissions : {total_emissions:.2f} kg CO2e")
-#         st.dataframe(
-#             df[["Segment","Origine","Destination","Mode","Distance (km)",f"Poids ({unit})","Facteur (kg CO2e/t.km)","Emissions (kg CO2e)"]],
-#             use_container_width=True
-#         )
+    # if rows:
+        # df = pd.DataFrame(rows)
+        # st.success(f"{len(rows)} segment(s) - Distance totale : {total_distance:.1f} km - Emissions : {total_emissions:.2f} kg CO2e")
+        # st.dataframe(
+            # df[["Segment","Origine","Destination","Mode","Distance (km)",f"Poids ({unit})","Facteur (kg CO2e/t.km)","Emissions (kg CO2e)"]],
+            # use_container_width=True
+        # )
 
-#         route_paths = [
-#             {"path": r["route_coords"], "name": f"Segment {r['Segment']} - {r['Mode']}"}
-#             for r in rows if ("routier" in _normalize_no_diacritics(r["Mode"]) and r.get("route_coords"))
-#         ]
+        # route_paths = [
+            # {"path": r["route_coords"], "name": f"Segment {r['Segment']} - {r['Mode']}"}
+            # for r in rows if ("routier" in _normalize_no_diacritics(r["Mode"]) and r.get("route_coords"))
+        # ]
 
-#         layers = []
-#         if route_paths:
-#             layers.append(pdk.Layer(
-#                 "PathLayer", data=route_paths, get_path="path", get_color=[187,147,87,220],
-#                 width_scale=1, width_min_pixels=4, pickable=True
-#             ))
+        # layers = []
+        # if route_paths:
+            # layers.append(pdk.Layer(
+                # "PathLayer", data=route_paths, get_path="path", get_color=[187,147,87,220],
+                # width_scale=1, width_min_pixels=4, pickable=True
+            # ))
 
-#         straight_lines = []
-#         for r in rows:
-#             if not ("routier" in _normalize_no_diacritics(r["Mode"]) and r.get("route_coords")):
-#                 straight_lines.append({
-#                     "from":[r["lon_o"], r["lat_o"]],
-#                     "to":  [r["lon_d"], r["lat_d"]],
-#                     "name": f"Segment {r['Segment']} - {r['Mode']}",
-#                 })
-#         if straight_lines:
-#             layers.append(pdk.Layer(
-#                 "LineLayer", data=straight_lines, get_source_position="from", get_target_position="to",
-#                 get_width=3, get_color=[120,120,120,160], pickable=True
-#             ))
+        # straight_lines = []
+        # for r in rows:
+            # if not ("routier" in _normalize_no_diacritics(r["Mode"]) and r.get("route_coords")):
+                # straight_lines.append({
+                    # "from":[r["lon_o"], r["lat_o"]],
+                    # "to":  [r["lon_d"], r["lat_d"]],
+                    # "name": f"Segment {r['Segment']} - {r['Mode']}",
+                # })
+        # if straight_lines:
+            # layers.append(pdk.Layer(
+                # "LineLayer", data=straight_lines, get_source_position="from", get_target_position="to",
+                # get_width=3, get_color=[120,120,120,160], pickable=True
+            # ))
 
-#         points, labels = [], []
-#         for r in rows:
-#             points += [
-#                 {"position":[r["lon_o"], r["lat_o"]], "name":f"S{r['Segment']} - Origine", "color":[0,122,255,220]},
-#                 {"position":[r["lon_d"], r["lat_d"]], "name":f"S{r['Segment']} - Destination","color":[220,66,66,220]},
-#             ]
-#             labels += [
-#                 {"position":[r["lon_o"], r["lat_o"]], "text":f"S{r['Segment']} O", "color":[0,122,255,255]},
-#                 {"position":[r["lon_d"], r["lat_d"]], "text":f"S{r['Segment']} D", "color":[220,66,66,255]},
-#             ]
-#         if points:
-#             layers.append(pdk.Layer(
-#                 "ScatterplotLayer", data=points, get_position="position", get_fill_color="color",
-#                 get_radius=20000, radius_min_pixels=2, radius_max_pixels=60, pickable=True,
-#                 stroked=True, get_line_color=[255,255,255], line_width_min_pixels=1
-#             ))
-#         if labels:
-#             layers.append(pdk.Layer(
-#                 "TextLayer", data=labels, get_position="position", get_text="text", get_color="color",
-#                 get_size=16, size_units="pixels", get_text_anchor="start", get_alignment_baseline="top", background=False
-#             ))
+        # points, labels = [], []
+        # for r in rows:
+            # points += [
+                # {"position":[r["lon_o"], r["lat_o"]], "name":f"S{r['Segment']} - Origine", "color":[0,122,255,220]},
+                # {"position":[r["lon_d"], r["lat_d"]], "name":f"S{r['Segment']} - Destination","color":[220,66,66,220]},
+            # ]
+            # labels += [
+                # {"position":[r["lon_o"], r["lat_o"]], "text":f"S{r['Segment']} O", "color":[0,122,255,255]},
+                # {"position":[r["lon_d"], r["lat_d"]], "text":f"S{r['Segment']} D", "color":[220,66,66,255]},
+            # ]
+        # if points:
+            # layers.append(pdk.Layer(
+                # "ScatterplotLayer", data=points, get_position="position", get_fill_color="color",
+                # get_radius=20000, radius_min_pixels=2, radius_max_pixels=60, pickable=True,
+                # stroked=True, get_line_color=[255,255,255], line_width_min_pixels=1
+            # ))
+        # if labels:
+            # layers.append(pdk.Layer(
+                # "TextLayer", data=labels, get_position="position", get_text="text", get_color="color",
+                # get_size=16, size_units="pixels", get_text_anchor="start", get_alignment_baseline="top", background=False
+            # ))
 
-#         if show_icons:
-#             icons = []
-#             for r in rows:
-#                 cat = mode_to_category(r["Mode"])
-#                 url = ICON_URLS.get(cat)
-#                 if not url:
-#                     continue
-#                 if r.get("route_coords"):
-#                     coords_poly = r["route_coords"]; mid_index = len(coords_poly)//2
-#                     lon_mid, lat_mid = coords_poly[mid_index][0], coords_poly[mid_index][1]
-#                 else:
-#                     lon_mid = (r["lon_o"] + r["lon_d"]) / 2.0
-#                     lat_mid = (r["lat_o"] + r["lat_d"]) / 2.0
-#                 icons.append({
-#                     "position":[lon_mid,lat_mid],
-#                     "name":f"S{r['Segment']} - {cat.capitalize()}",
-#                     "icon":{"url":url, "width":64, "height":64, "anchorY":64, "anchorX":32}
-#                 })
-#             if icons:
-#                 layers.append(pdk.Layer(
-#                     "IconLayer", data=icons, get_icon="icon", get_position="position",
-#                     get_size=28, size_units="pixels", pickable=True
-#                 ))
+        # if show_icons:
+            # icons = []
+            # for r in rows:
+                # cat = mode_to_category(r["Mode"])
+                # url = ICON_URLS.get(cat)
+                # if not url:
+                    # continue
+                # if r.get("route_coords"):
+                    # coords_poly = r["route_coords"]; mid_index = len(coords_poly)//2
+                    # lon_mid, lat_mid = coords_poly[mid_index][0], coords_poly[mid_index][1]
+                # else:
+                    # lon_mid = (r["lon_o"] + r["lon_d"]) / 2.0
+                    # lat_mid = (r["lat_o"] + r["lat_d"]) / 2.0
+                # icons.append({
+                    # "position":[lon_mid,lat_mid],
+                    # "name":f"S{r['Segment']} - {cat.capitalize()}",
+                    # "icon":{"url":url, "width":64, "height":64, "anchorY":64, "anchorX":32}
+                # })
+            # if icons:
+                # layers.append(pdk.Layer(
+                    # "IconLayer", data=icons, get_icon="icon", get_position="position",
+                    # get_size=28, size_units="pixels", pickable=True
+                # ))
 
-#         # Vue
-#         def compute_view_for_segment(r):
-#             mid_lat = (r["lat_o"] + r["lat_d"]) / 2.0
-#             mid_lon = (r["lon_o"] + r["lon_d"]) / 2.0
-#             span_deg = max(
-#                 abs(r["lat_d"]-r["lat_o"]),
-#                 abs(r["lon_d"]-r["lon_o"])*max(0.3, math.cos(math.radians(mid_lat)))
-#             )
-#             zoom = 6 if span_deg < 1.5 else (5 if span_deg < 4 else (4 if span_deg < 10 else 3))
-#             return pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=zoom)
+        # Vue
+        # def compute_view_for_segment(r):
+            # mid_lat = (r["lat_o"] + r["lat_d"]) / 2.0
+            # mid_lon = (r["lon_o"] + r["lon_d"]) / 2.0
+            # span_deg = max(
+                # abs(r["lat_d"]-r["lat_o"]),
+                # abs(r["lon_d"]-r["lon_o"])*max(0.3, math.cos(math.radians(mid_lat)))
+            # )
+            # zoom = 6 if span_deg < 1.5 else (5 if span_deg < 4 else (4 if span_deg < 10 else 3))
+            # return pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=zoom)
 
-#         if focus_sel != "— Tous —":
-#             idx = int(focus_sel.split()[-1])
-#             sel_row = next((r for r in rows if r["Segment"]==idx), None)
-#             view = compute_view_for_segment(sel_row) if sel_row else pdk.ViewState(latitude=48.85, longitude=2.35, zoom=3)
-#         else:
-#             all_lats, all_lons = [], []
-#             for r in rows:
-#                 all_lats += [r["lat_o"], r["lat_d"]]
-#                 all_lons += [r["lon_o"], r["lon_d"]]
-#             if route_paths:
-#                 for dct in route_paths:
-#                     if dct.get("path"):
-#                         all_lats += [pt[1] for pt in dct["path"]]
-#                         all_lons += [pt[0] for pt in dct["path"]]
-#             if not all_lats or not all_lons:
-#                 view = pdk.ViewState(latitude=48.8534, longitude=2.3488, zoom=3)
-#             else:
-#                 min_lat, max_lat = min(all_lats), max(all_lats)
-#                 min_lon, max_lon = min(all_lons), max(all_lons)
-#                 mid_lat = (min_lat+max_lat)/2; mid_lon = (min_lon+max_lon)/2
-#                 span_lat = max(1e-6, max_lat-min_lat); span_lon = max(1e-6, max_lon-min_lon)
-#                 span_lon_equiv = span_lon*max(0.1, math.cos(math.radians(mid_lat)))
-#                 zoom_x = math.log2(360.0/max(1e-6, span_lon_equiv))
-#                 zoom_y = math.log2(180.0/max(1e-6, span_lat))
-#                 zoom = max(1.0, min(15.0, min(zoom_x, zoom_y)))
-#                 view = pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=float(zoom))
+        # if focus_sel != "— Tous —":
+            # idx = int(focus_sel.split()[-1])
+            # sel_row = next((r for r in rows if r["Segment"]==idx), None)
+            # view = compute_view_for_segment(sel_row) if sel_row else pdk.ViewState(latitude=48.85, longitude=2.35, zoom=3)
+        # else:
+            # all_lats, all_lons = [], []
+            # for r in rows:
+                # all_lats += [r["lat_o"], r["lat_d"]]
+                # all_lons += [r["lon_o"], r["lon_d"]]
+            # if route_paths:
+                # for dct in route_paths:
+                    # if dct.get("path"):
+                        # all_lats += [pt[1] for pt in dct["path"]]
+                        # all_lons += [pt[0] for pt in dct["path"]]
+            # if not all_lats or not all_lons:
+                # view = pdk.ViewState(latitude=48.8534, longitude=2.3488, zoom=3)
+            # else:
+                # min_lat, max_lat = min(all_lats), max(all_lats)
+                # min_lon, max_lon = min(all_lons), max(all_lons)
+                # mid_lat = (min_lat+max_lat)/2; mid_lon = (min_lon+max_lon)/2
+                # span_lat = max(1e-6, max_lat-min_lat); span_lon = max(1e-6, max_lon-min_lon)
+                # span_lon_equiv = span_lon*max(0.1, math.cos(math.radians(mid_lat)))
+                # zoom_x = math.log2(360.0/max(1e-6, span_lon_equiv))
+                # zoom_y = math.log2(180.0/max(1e-6, span_lat))
+                # zoom = max(1.0, min(15.0, min(zoom_x, zoom_y)))
+                # view = pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=float(zoom))
 
-#         st.pydeck_chart(pdk.Deck(
-#             map_style=MAP_STYLES[map_style_label],
-#             initial_view_state=view,
-#             layers=layers,
-#             tooltip={"text": "{name}"}
-#         ))
+        # st.pydeck_chart(pdk.Deck(
+            # map_style=MAP_STYLES[map_style_label],
+            # initial_view_state=view,
+            # layers=layers,
+            # tooltip={"text": "{name}"}
+        # ))
 
-#         # Exports
-#         df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
-#         dossier_val = st.session_state.get("dossier_transport","")
-#         df_export.insert(0, "N° dossier Transport", dossier_val)
+        # Exports
+        # df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
+        # dossier_val = st.session_state.get("dossier_transport","")
+        # df_export.insert(0, "N° dossier Transport", dossier_val)
 
-#         csv = df_export.to_csv(index=False).encode("utf-8")
-#         safe_suffix = "".join(c if (c.isalnum() or c in "-_") else "_" for c in dossier_val.strip())
-#         safe_suffix = f"_{safe_suffix}" if safe_suffix else ""
-#         filename_csv = f"resultats_co2_multimodal{safe_suffix}.csv"
-#         filename_pdf = f"rapport_co2_multimodal{safe_suffix}.pdf"
+        # csv = df_export.to_csv(index=False).encode("utf-8")
+        # safe_suffix = "".join(c if (c.isalnum() or c in "-_") else "_" for c in dossier_val.strip())
+        # safe_suffix = f"_{safe_suffix}" if safe_suffix else ""
+        # filename_csv = f"resultats_co2_multimodal{safe_suffix}.csv"
+        # filename_pdf = f"rapport_co2_multimodal{safe_suffix}.pdf"
 
-#         st.subheader("Exporter")
-#         pdf_base_choice = st.selectbox(
-#             "Fond de carte du PDF",
-#             options=PDF_BASEMAP_LABELS,
-#             index=0,
-#             help="Identique a la carte Web utilise le style Carto (Voyager/Positron/Dark Matter)."
-#         )
-#         detail_levels = {
-#             "Standard (leger, rapide)": {"dpi": 180, "max_zoom": 7},
-#             "Detaille (equilibre)":     {"dpi": 220, "max_zoom": 9},
-#             "Ultra (fin mais plus lent)": {"dpi": 280, "max_zoom": 10},
-#         }
-#         quality_label = st.selectbox(
-#             "Qualite de rendu PDF",
-#             options=list(detail_levels.keys()),
-#             index=1,
-#             help="Ajuste la finesse du fond de carte: DPI et niveau de zoom."
-#         )
-#         detail_params = detail_levels[quality_label]
+        # st.subheader("Exporter")
+        # pdf_base_choice = st.selectbox(
+            # "Fond de carte du PDF",
+            # options=PDF_BASEMAP_LABELS,
+            # index=0,
+            # help="Identique a la carte Web utilise le style Carto (Voyager/Positron/Dark Matter)."
+        # )
+        # detail_levels = {
+            # "Standard (leger, rapide)": {"dpi": 180, "max_zoom": 7},
+            # "Detaille (equilibre)":     {"dpi": 220, "max_zoom": 9},
+            # "Ultra (fin mais plus lent)": {"dpi": 280, "max_zoom": 10},
+        # }
+        # quality_label = st.selectbox(
+            # "Qualite de rendu PDF",
+            # options=list(detail_levels.keys()),
+            # index=1,
+            # help="Ajuste la finesse du fond de carte: DPI et niveau de zoom."
+        # )
+        # detail_params = detail_levels[quality_label]
 
-#         c1, c2 = st.columns(2)
-#         with c1:
-#             st.download_button("Telecharger le detail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
-#         with c2:
-#             try:
-#                 if st.button("Réinitialiser le PDF", type="secondary", help="Force une nouvelle génération"):
-#                     st.cache_data.clear()
-#                     st.session_state.pop("pdf_bytes", None)
-#                     st.success("Cache PDF réinitialisé.")
-#                 if "pdf_bytes" not in st.session_state:
-#                     with st.spinner("Génération du PDF..."):
-#                         pdf_buffer = generate_pdf_report(
-#                             df=df,
-#                             dossier_val=dossier_val,
-#                             total_distance=total_distance,
-#                             total_emissions=total_emissions,
-#                             unit=unit,
-#                             rows=rows,
-#                             pdf_basemap_choice_label=pdf_base_choice,
-#                             ne_scale=NE_SCALE_DEFAULT,
-#                             pdf_theme=PDF_THEME_DEFAULT,
-#                             pdf_icon_size_px=24,
-#                             web_map_style_label=map_style_label,
-#                             detail_params=detail_params
-#                         )
-#                     st.session_state["pdf_bytes"] = pdf_buffer.getvalue()
-#                 st.download_button("Télécharger le rapport PDF", data=st.session_state["pdf_bytes"], file_name=filename_pdf, mime="application/pdf")
-#             except Exception as e:
-#                 st.error(f"Erreur lors de la generation du PDF : {e}")
-#                 import traceback; st.code(traceback.format_exc())
-#     # Bouton pour réinitialiser le cache PDF
-#     if st.button("Réinitialiser le PDF", type="secondary", help="Force une nouvelle génération"):
-#         st.cache_data.clear()
-#         st.session_state.pop("pdf_bytes", None)
-#         st.success("Cache PDF réinitialisé.")
+        # c1, c2 = st.columns(2)
+        # with c1:
+            # st.download_button("Telecharger le detail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
+        # with c2:
+            # try:
+                # if st.button("Réinitialiser le PDF", type="secondary", help="Force une nouvelle génération"):
+                    # st.cache_data.clear()
+                    # st.session_state.pop("pdf_bytes", None)
+                    # st.success("Cache PDF réinitialisé.")
+                # if "pdf_bytes" not in st.session_state:
+                    # with st.spinner("Génération du PDF..."):
+                        # pdf_buffer = generate_pdf_report(
+                            # df=df,
+                            # dossier_val=dossier_val,
+                            # total_distance=total_distance,
+                            # total_emissions=total_emissions,
+                            # unit=unit,
+                            # rows=rows,
+                            # pdf_basemap_choice_label=pdf_base_choice,
+                            # ne_scale=NE_SCALE_DEFAULT,
+                            # pdf_theme=PDF_THEME_DEFAULT,
+                            # pdf_icon_size_px=24,
+                            # web_map_style_label=map_style_label,
+                            # detail_params=detail_params
+                        # )
+                    # st.session_state["pdf_bytes"] = pdf_buffer.getvalue()
+                # st.download_button("Télécharger le rapport PDF", data=st.session_state["pdf_bytes"], file_name=filename_pdf, mime="application/pdf")
+            # except Exception as e:
+                # st.error(f"Erreur lors de la generation du PDF : {e}")
+                # import traceback; st.code(traceback.format_exc())
+    # Bouton pour réinitialiser le cache PDF
+    # if st.button("Réinitialiser le PDF", type="secondary", help="Force une nouvelle génération"):
+        # st.cache_data.clear()
+        # st.session_state.pop("pdf_bytes", None)
+        # st.success("Cache PDF réinitialisé.")
 
-#     # Génération PDF avec cache intelligent
-#     if "pdf_bytes" not in st.session_state:
-#         with st.spinner("Génération du PDF..."):
-#             pdf_buffer = generate_pdf_report(
-#                 df=df,
-#                 dossier_val=dossier_val,
-#                 total_distance=total_distance,
-#                 total_emissions=total_emissions,
-#                 unit=unit,
-#                 rows=rows,
-#                 pdf_basemap_choice_label=pdf_base_choice,
-#                 ne_scale=NE_SCALE_DEFAULT,
-#                 pdf_theme=PDF_THEME_DEFAULT,
-#                 pdf_icon_size_px=24,
-#                 web_map_style_label=map_style_label,
-#                 detail_params=detail_params
-#             )
-#             st.session_state["pdf_bytes"] = pdf_buffer.getvalue()
+    # Génération PDF avec cache intelligent
+    # if "pdf_bytes" not in st.session_state:
+        # with st.spinner("Génération du PDF..."):
+            # pdf_buffer = generate_pdf_report(
+                # df=df,
+                # dossier_val=dossier_val,
+                # total_distance=total_distance,
+                # total_emissions=total_emissions,
+                # unit=unit,
+                # rows=rows,
+                # pdf_basemap_choice_label=pdf_base_choice,
+                # ne_scale=NE_SCALE_DEFAULT,
+                # pdf_theme=PDF_THEME_DEFAULT,
+                # pdf_icon_size_px=24,
+                # web_map_style_label=map_style_label,
+                # detail_params=detail_params
+            # )
+            # st.session_state["pdf_bytes"] = pdf_buffer.getvalue()
 
-#     st.download_button("Télécharger le rapport PDF", data=st.session_state["pdf_bytes"], file_name=filename_pdf, mime="application/pdf")
-# (supprimé) except Exception as e:
-#                 st.error(f"Erreur lors de la generation du PDF : {e}")
-#                 import traceback; st.code(traceback.format_exc())
-#     else:
-#         st.info("Aucun segment valide n'a ete calcule. Verifiez les entrees.")
+    # st.download_button("Télécharger le rapport PDF", data=st.session_state["pdf_bytes"], file_name=filename_pdf, mime="application/pdf")
+# except Exception as e:
+                # st.error(f"Erreur lors de la generation du PDF : {e}")
+                # import traceback; st.code(traceback.format_exc())
+    # else:
+        # st.info("Aucun segment valide n'a ete calcule. Verifiez les entrees.")
