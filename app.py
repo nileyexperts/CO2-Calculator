@@ -1003,6 +1003,8 @@ for i in range(len(st.session_state.segments)):
             o = unified_location_input("origin", i, "Origine",
                                        show_airports=("aerien" in _normalize_no_diacritics(mode)))
 with c2:
+    st.markdown("**Destination**")
+    d = unified_location_input("dest", i, "Destination", show_airports=False)
 
         # Si l'utilisateur modifie l'origine par rapport a la source de chainage, enlever le badge et verrouiller
         if st.session_state.get(f"origin_autofill_{i}", False) and i > 0:
@@ -1318,6 +1320,38 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         detail_params = detail_levels[quality_label]
 
         c1, c2 = st.columns(2)
+        with c1:
+df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
+dossier_val = st.session_state.get("dossier_transport","")
+df_export.insert(0, "N° dossier Transport", dossier_val)
+
+csv = df_export.to_csv(index=False).encode("utf-8")
+safe_suffix = "".join(c if (c.isalnum() or c in "-_") else "_" for c in dossier_val.strip())
+safe_suffix = f"_{safe_suffix}" if safe_suffix else ""
+filename_csv = f"resultats_co2_multimodal{safe_suffix}.csv"
+filename_pdf = f"rapport_co2_multimodal{safe_suffix}.pdf"
+
+st.subheader("Exporter")
+pdf_base_choice = st.selectbox(
+    "Fond de carte du PDF",
+    options=PDF_BASEMAP_LABELS,
+    index=0,
+    help="Identique à la carte Web utilise le style Carto (Voyager/Positron/Dark Matter)."
+)
+detail_levels = {
+    "Standard (léger, rapide)": {"dpi": 180, "max_zoom": 7},
+    "Détaillé (équilibre)": {"dpi": 220, "max_zoom": 9},
+    "Ultra (fin mais plus lent)": {"dpi": 280, "max_zoom": 10},
+}
+quality_label = st.selectbox(
+    "Qualité de rendu PDF",
+    options=list(detail_levels.keys()),
+    index=1,
+    help="Ajuste la finesse du fond de carte: DPI et niveau de zoom."
+)
+detail_params = detail_levels[quality_label]
+
+c1, c2 = st.columns(2)
 with c1:
     st.download_button("Télécharger le détail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
 
