@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 # Calculateur CO2 multimodal - NILEY EXPERTS
 # Application Streamlit avec export PDF mono-page.
@@ -48,14 +49,14 @@ os.environ.setdefault("CARTOPY_CACHE_DIR", os.path.join(tempfile.gettempdir(), "
 st.set_page_config(page_title="Calculateur CO2 multimodal - NILEY EXPERTS", page_icon="🌍", layout="centered")
 
 # --------------------------
-# Style global : fond + conteneurs arrondis
+# Style global : fond + conteneurs arrondis + saisies mises en évidence
 # --------------------------
 st.markdown(
     """
     <style>
     /* ---------- Fond de l'app ---------- */
     [data-testid="stAppViewContainer"] {
-        background: #DFEDF5 !important;
+        background-color: #DFEDF5 !important;
     }
     [data-testid="stHeader"] {
         background: rgba(0,0,0,0) !important;
@@ -68,18 +69,14 @@ st.markdown(
     }
 
     /* ---------- Cartes/sections : bordures arrondies ---------- */
-    /* Cible la majorité des conteneurs streamlit (colonnes, containers, forms, etc.) */
-    /* On évite d'appliquer le style au container racine (.block-container) */
     [data-testid="stAppViewContainer"] .block-container > div {
         border-radius: 12px;
-        background: #FFFFFF;               /* carte blanche lisible sur #DFEDF5 */
-        border: 1px solid #CFD8E3;         /* gris bleuté discret */
+        background: #FFFFFF;
+        border: 1px solid #CFD8E3;
         box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
         padding: 0.75rem 1rem;
-        margin-bottom: 0.75rem;            /* respiration entre cartes */
+        margin-bottom: 0.75rem;
     }
-
-    /* Conteneurs créés via st.container(border=True) : harmonise le rendu */
     [data-testid="stVerticalBlock"] > div[style*="border"] {
         border-radius: 12px !important;
         border: 1px solid #CFD8E3 !important;
@@ -91,7 +88,7 @@ st.markdown(
     /* Tableaux, onglets, et composants courants */
     [data-testid="stDataFrame"] {
         border-radius: 12px;
-        overflow: hidden; /* arrondis effectifs sur l'intérieur du tableau */
+        overflow: hidden;
         border: 1px solid #CFD8E3;
         box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
         background: #FFFFFF;
@@ -105,7 +102,7 @@ st.markdown(
     }
 
     /* Pydeck et Matplotlib : cadre doux autour des canvases */
-    .stDeckGlJson { /* pydeck chart wrapper */
+    .stDeckGlJson {
         border-radius: 12px;
         border: 1px solid #CFD8E3;
         box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
@@ -117,11 +114,62 @@ st.markdown(
         border-radius: 12px;
     }
 
-    /* Boutons plus cohérents avec les cartes */
+    /* Boutons : cohérence visuelle */
     .stButton > button {
         border-radius: 10px !important;
         border: 1px solid #CFD8E3 !important;
         box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06) !important;
+    }
+
+    /* ==============================
+       Champs de saisie Origine/Destination
+       ============================== */
+    /* Le label texte au-dessus du champ */
+    label:has(+ div [data-testid="stTextInput"] input[aria-label*="Origine — Adresse"]),
+    label:has(+ div [data-testid="stTextInput"] input[aria-label*="Destination — Adresse"]) {
+        color: #0F2A3A;
+        font-weight: 600;
+    }
+
+    /* Boîte wrapper des champs Origine */
+    [data-testid="stTextInput"]:has(input[aria-label*="Origine — Adresse"]) {
+        border: 1px solid #8CB3CC;
+        border-radius: 10px;
+        background: #CFE3EE;  /* plus foncé que #DFEDF5 */
+        padding: 0.5rem 0.65rem;
+        box-shadow: 0 1px 4px rgba(16,24,40,0.06);
+    }
+
+    /* Boîte wrapper des champs Destination */
+    [data-testid="stTextInput"]:has(input[aria-label*="Destination — Adresse"]) {
+        border: 1px solid #8CB3CC;
+        border-radius: 10px;
+        background: #CFE3EE;
+        padding: 0.5rem 0.65rem;
+        box-shadow: 0 1px 4px rgba(16,24,40,0.06);
+    }
+
+    /* L'INPUT interne : transparent pour laisser voir le fond du wrapper */
+    [data-testid="stTextInput"] input[aria-label*="Origine — Adresse"],
+    [data-testid="stTextInput"] input[aria-label*="Destination — Adresse"] {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        color: #0F2A3A;
+    }
+
+    /* Placeholder lisible */
+    [data-testid="stTextInput"] input[aria-label*="Origine — Adresse"]::placeholder,
+    [data-testid="stTextInput"] input[aria-label*="Destination — Adresse"]::placeholder {
+        color: #3E6074;
+        opacity: 0.9;
+    }
+
+    /* Focus (clavier/souris) : cadre + halo d’accessibilité */
+    [data-testid="stTextInput"]:has(input[aria-label*="Origine — Adresse"]:focus-within),
+    [data-testid="stTextInput"]:has(input[aria-label*="Destination — Adresse"]:focus-within) {
+        border-color: #3B82B3 !important;
+        box-shadow: 0 0 0 3px rgba(59,130,179,0.25);
     }
     </style>
     """,
