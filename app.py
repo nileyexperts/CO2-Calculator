@@ -374,14 +374,10 @@ def _normalize_no_diacritics(s: str) -> str:
 
 def mode_to_category(mode_str: str) -> str:
     s = _normalize_no_diacritics(mode_str)
-    if "routier" in s or "road" in s or "truck" in s:
-        return "routier"
-    if "aerien" in s or "air" in s or "plane" in s:
-        return "aerien"
-    if any(k in s for k in ["maritime","mer","bateau","sea","ship"]):
-        return "maritime"
-    if "ferroviaire" in s or "rail" in s or "train" in s:
-        return "ferroviaire"
+    if "routier" in s or "road" in s or "truck" in s: return "routier"
+    if "aerien" in s or "air" in s or "plane" in s:   return "aerien"
+    if any(k in s for k in ["maritime","mer","bateau","sea","ship"]): return "maritime"
+    if "ferroviaire" in s or "rail" in s or "train" in s: return "ferroviaire"
     return "routier"
 
 # --------------------------
@@ -420,11 +416,9 @@ def _fit_extent_to_aspect(min_lon, max_lon, min_lat, max_lat, target_aspect_w_ov
 def _pdf_add_mode_icon(ax, lon, lat, cat_key, size_px, transform=None):
     try:
         url = ICON_URLS.get(cat_key)
-        if not url:
-            return
+        if not url: return
         resp = requests.get(url, timeout=6)
-        if resp.status_code != 200:
-            return
+        if resp.status_code != 200: return
         pil = PILImage.open(io.BytesIO(resp.content)).convert('RGBA')
         w = max(1, pil.width)
         zoom = max(0.1, float(size_px) / float(w))
@@ -453,9 +447,7 @@ def _carto_tiler_from_web_style(web_style_label: str):
     }
     subdomains = ["a", "b", "c", "d"]
 
-    template = url_by_label.get(web_style_label)
-    if not template:
-        template = url_by_label["Carto Positron (clair)"]
+    template = url_by_label.get(web_style_label) or url_by_label["Carto Positron (clair)"]
 
     class CartoTiles(cimgt.GoogleTiles):
         def _image_url(self, tile):
@@ -1194,10 +1186,8 @@ for i in range(len(st.session_state.segments)):
 
             should_chain = False
             if dest_valid and not next_user_locked:
-                if next_empty:
-                    should_chain = True
-                elif next_autofill and new_sig != next_prev_sig:
-                    should_chain = True
+                if next_empty: should_chain = True
+                elif next_autofill and new_sig != next_prev_sig: should_chain = True
 
             if should_chain:
                 next_seg["origin"]["display"] = dest_disp
@@ -1483,6 +1473,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             st.download_button("Telecharger le detail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
         with c2:
             try:
+                # Génération du PDF
                 with st.spinner("Generation du PDF..."):
                     pdf_buffer = generate_pdf_report(
                         df=df,
@@ -1498,9 +1489,29 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                         web_map_style_label=map_style_label,
                         detail_params=detail_params
                     )
-                st.download_button("Telecharger le rapport PDF", data=pdf_buffer, file_name=filename_pdf, mime="application/pdf")
-            except Exception as e:
-                st.error(f"Erreur lors de la generation du PDF : {e}")
-                import traceback; st.code(traceback.format_exc())
+
+                # 1) Téléchargement standard
+                st.download_button(
+                    "Telecharger le rapport PDF",
+                    data=pdf_buffer,
+                    file_name=filename_pdf,
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+
+                # 2) Ouvrir dans un NOUVEL onglet (sans rerun, état conservé)
+                import base64
+                pdf_bytes = pdf_buffer.getvalue()
+                b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+                open_link_html = f"""
+                    <a href="data:application/pdf;base64,{b64}" target="_blank" rel="noopener"
+                       download="{filename_pdf}"
+                       style="
+                           display:inline-block;
+                           margin-top:0.5rem;
+                           padding:0.55rem 0.8rem;
+                           background:#1f4788; color:white; text-decoration:none;
+                           border-radius:8px; border:1px solid #1b3d73;
+                           font-weight:600; font-size:0.95rem;
+                      eback.format_exc())
     else:
-        st.info("Aucun segment valide n'a ete calcule. Verifiez les entrees.")
