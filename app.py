@@ -1002,9 +1002,11 @@ for i in range(len(st.session_state.segments)):
                 st.markdown("**Origine**")
             o = unified_location_input("origin", i, "Origine",
                                        show_airports=("aerien" in _normalize_no_diacritics(mode)))
-        with c2:
+with c2:
     st.markdown("**Destination**")
     d = unified_location_input("dest", i, "Destination", show_airports=False)
+            st.markdown("**Destination**")
+            d = unified_location_input("dest", i, "Destination", show_airports=False)
 
         # Si l'utilisateur modifie l'origine par rapport a la source de chainage, enlever le badge et verrouiller
         if st.session_state.get(f"origin_autofill_{i}", False) and i > 0:
@@ -1321,7 +1323,6 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
 
         c1, c2 = st.columns(2)
         with c1:
-            # Exports
 df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
 dossier_val = st.session_state.get("dossier_transport","")
 df_export.insert(0, "N° dossier Transport", dossier_val)
@@ -1357,6 +1358,8 @@ with c1:
     st.download_button("Télécharger le détail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
 
 with c2:
+    st.markdown("**Destination**")
+    d = unified_location_input("dest", i, "Destination", show_airports=False)
     try:
         with st.spinner("Génération du PDF..."):
             pdf_buffer = generate_pdf_report(
