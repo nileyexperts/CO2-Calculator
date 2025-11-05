@@ -22,7 +22,6 @@ import pydeck as pdk
 from geopy.distance import great_circle
 from opencage.geocoder import OpenCageGeocode
 
-# PDF
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -30,21 +29,15 @@ from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, Table, TableStyle
 from reportlab.lib.utils import ImageReader
 
-# Matplotlib pour le rendu de la carte du PDF
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
-# Cache Cartopy
 os.environ.setdefault("CARTOPY_CACHE_DIR", os.path.join(tempfile.gettempdir(), "cartopy_cache"))
 
-# --------------------------
-# Configuration page
-# --------------------------
 st.set_page_config(page_title="Calculateur CO2 multimodal - NILEY EXPERTS", page_icon="🌍", layout="centered")
 
-# Style global + style badge
 st.markdown(
     """
     <style>
@@ -68,9 +61,6 @@ st.markdown(
 
 LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png"
 
-# --------------------------
-# Constantes
-# --------------------------
 PDF_THEME_DEFAULT = "terrain"
 NE_SCALE_DEFAULT = "50m"
 
@@ -104,9 +94,6 @@ ICON_URLS = {
     "ferroviaire": "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/icons/train.png",
 }
 
-# --------------------------
-# Helpers segments
-# --------------------------
 def _default_segment(mode=None, weight=1000.0):
     if mode is None:
         mode = list(DEFAULT_EMISSION_FACTORS.keys())[0]
@@ -190,9 +177,6 @@ def reset_segments():
         st.rerun()
 
 
-# --------------------------
-# Utilitaires & APIs
-# --------------------------
 def read_secret(key: str, default: str = "") -> str:
     if "secrets" in dir(st) and key in st.secrets:
         return st.secrets[key]
@@ -259,9 +243,6 @@ def mode_to_category(mode_str: str) -> str:
         return "ferroviaire"
     return "routier"
 
-# --------------------------
-# PDF helpers
-# --------------------------
 def _compute_extent_from_coords(all_lats, all_lons, margin_ratio=0.12, min_span_deg=1e-3):
     if not all_lats or not all_lons:
         return (-10, 30, 30, 60)
@@ -312,9 +293,6 @@ def _pdf_add_mode_icon(ax, lon, lat, cat_key, size_px, transform=None):
     except Exception:
         pass
 
-# --------------------------
-# Tuiles Carto XYZ (meme style que la carte web)
-# --------------------------
 def _carto_tiler_from_web_style(web_style_label: str):
     try:
         import cartopy.io.img_tiles as cimgt
@@ -326,10 +304,8 @@ def _carto_tiler_from_web_style(web_style_label: str):
         "Carto Voyager": "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
     }
     subdomains = ["a", "b", "c", "d"]
-    # Mapper le label pydeck vers l'URL
     template = url_by_label.get(web_style_label)
     if not template:
-        # fallback
         template = url_by_label["Carto Positron (clair)"]
 
     class CartoTiles(cimgt.GoogleTiles):
@@ -340,9 +316,6 @@ def _carto_tiler_from_web_style(web_style_label: str):
 
     return CartoTiles()
 
-# --------------------------
-# Chaînage robuste: helpers
-# --------------------------
 def _normalize_signature(display: str, coord: tuple | None) -> tuple:
     d = (display or "").strip()
     if coord and isinstance(coord, (list, tuple)) and len(coord) == 2:
@@ -356,9 +329,6 @@ def _is_location_empty(loc: dict) -> bool:
     coord = loc.get("coord")
     return (not disp) or (not coord)
 
-# --------------------------
-# Rapport PDF mono-page
-# --------------------------
 def generate_pdf_report(
     df, dossier_val, total_distance, total_emissions, unit, rows,
     pdf_basemap_choice_label, ne_scale='50m', pdf_theme='terrain', pdf_icon_size_px=24,
@@ -387,7 +357,6 @@ def generate_pdf_report(
 
     y = PAGE_H - M
 
-    # Logo + titre (anti-chevauchement)
     logo_h = 1.5 * cm
     logo_w = 3.0 * cm
     logo_drawn = False
@@ -415,7 +384,6 @@ def generate_pdf_report(
     header_block_h = max(logo_h if logo_drawn else 0, title_h)
     y = y - header_block_h - 0.35*cm
 
-    # Resume
     info_summary_data = [
         ["N° dossier Transport:", dossier_val, "Distance totale:", f"{total_distance:.1f} km"],
         ["Date du rapport:", datetime.now().strftime("%d/%m/%Y %H:%M"), "Emissions totales:", f"{total_emissions:.2f} kg CO2e"],
@@ -435,7 +403,6 @@ def generate_pdf_report(
     info_tbl.drawOn(c, M, y - ih)
     y = y - ih - 0.25*cm
 
-    # Carte (mono-page)
     footer_h = 0.6*cm
     min_table_h = 5.5*cm
     max_map_h = 7.5*cm
@@ -693,9 +660,6 @@ def generate_pdf_report(
     buffer.seek(0)
     return buffer
 
-# --------------------------
-# Auth
-# --------------------------
 PASSWORD_KEY = "APP_PASSWORD"
 if PASSWORD_KEY not in st.secrets:
     st.error("Mot de passe non configure. Ajoutez APP_PASSWORD dans .streamlit/secrets.toml.")
@@ -724,18 +688,12 @@ if not st.session_state.auth_ok:
 else:
     st.success("Acces autorise.")
 
-# --------------------------
-# API OpenCage
-# --------------------------
 API_KEY = read_secret("OPENCAGE_KEY")
 if not API_KEY:
     st.error("Clee API OpenCage absente. Ajoutez OPENCAGE_KEY.")
     st.stop()
 geocoder = OpenCageGeocode(API_KEY)
 
-# --------------------------
-# Donnees Aeroports / IATA
-# --------------------------
 @st.cache_data(show_spinner=False, ttl=7*24*60*60)
 def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
     try:
@@ -793,9 +751,6 @@ def search_airports(query: str, limit: int = 20) -> pd.DataFrame:
         ]
     return res.head(limit)
 
-# --------------------------
-# Ports
-# --------------------------
 @st.cache_data(show_spinner=False, ttl=7*24*60*60)
 def load_ports_csv(path: str = "ports.csv") -> pd.DataFrame:
     try:
@@ -852,9 +807,6 @@ def search_ports(query: str, limit: int = 12) -> pd.DataFrame:
     ]
     return res.head(limit)
 
-# --------------------------
-# Champ unifie Adresse/Ville/Pays ou IATA
-# --------------------------
 def unified_location_input(side_key: str, seg_index: int, label_prefix: str,
                            show_airports: bool = True, show_ports: bool = False):
     """
@@ -949,16 +901,12 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str,
     return {"coord": coord, "display": display, "iata": sel_iata, "unlocode": sel_unlo,
             "query": query_val, "choice": sel}
 
-# --------------------------
-# UI
-# --------------------------
 st.image(LOGO_URL, width=620)
 st.markdown("### Calculateur d'empreinte CO2 multimodal")
 
 if "segments" not in st.session_state or not st.session_state.segments:
     st.session_state.segments = [_default_segment()]
 
-# Auto-chainage au chargement si origine vide
 for i in range(1, len(st.session_state.segments)):
     prev, cur = st.session_state.segments[i-1], st.session_state.segments[i]
     if prev.get("dest",{}).get("display") and _is_location_empty(cur.get("origin", {})):
@@ -1006,8 +954,8 @@ with c2:
     st.markdown("**Destination**")
     d = unified_location_input("dest", i, "Destination", show_airports=False)
             st.markdown("**Destination**")
+            d = unified_location_input("dest", i, "Destination", show_airports=False)
 
-        # Si l'utilisateur modifie l'origine par rapport a la source de chainage, enlever le badge et verrouiller
         if st.session_state.get(f"origin_autofill_{i}", False) and i > 0:
             prev_sig = st.session_state.get(f"chain_src_signature_{i}")
             cur_sig  = _normalize_signature(o["display"], o["coord"])
@@ -1028,7 +976,6 @@ with c2:
         st.session_state.segments[i]["origin"] = {"query": o["query"], "display": o["display"], "iata": o["iata"], "coord": o["coord"]}
         st.session_state.segments[i]["dest"]   = {"query": d["query"], "display": d["display"], "iata": d["iata"], "coord": d["coord"]}
 
-        # Chaine live D(i) -> O(i+1) robuste
         if i + 1 < len(st.session_state.segments):
             next_seg = st.session_state.segments[i + 1]
             dest_disp = d["display"]; dest_coord = d["coord"]; dest_iata = d["iata"] or ""
@@ -1089,7 +1036,6 @@ with st.container():
             remove_last_segment()
             st.rerun()
 
-# Carte interactive
 st.subheader("Carte interactive")
 col_map1, col_map2, col_map3 = st.columns([3, 2, 3])
 with col_map1:
@@ -1109,7 +1055,6 @@ with col_map2:
 with col_map3:
     show_icons = st.checkbox("Afficher les icones mode", value=True)
 
-# Calcul
 st.subheader("Calcul")
 dossier_transport = st.text_input("N° dossier Transport (obligatoire) *",
                                   value=st.session_state.get("dossier_transport",""),
@@ -1245,7 +1190,6 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                     get_size=28, size_units="pixels", pickable=True
                 ))
 
-        # Vue
         def compute_view_for_segment(r):
             mid_lat = (r["lat_o"] + r["lat_d"]) / 2.0
             mid_lon = (r["lon_o"] + r["lon_d"]) / 2.0
@@ -1290,7 +1234,6 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             tooltip={"text": "{name}"}
         ))
 
-        # Exports
         df_export = df.drop(columns=["lat_o","lon_o","lat_d","lon_d","route_coords"]).copy()
         dossier_val = st.session_state.get("dossier_transport","")
         df_export.insert(0, "N° dossier Transport", dossier_val)
@@ -1357,6 +1300,8 @@ with c1:
     st.download_button("Télécharger le détail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
 
 with c2:
+    st.markdown("**Destination**")
+    d = unified_location_input("dest", i, "Destination", show_airports=False)
     try:
         with st.spinner("Génération du PDF..."):
             pdf_buffer = generate_pdf_report(
@@ -1374,14 +1319,12 @@ with c2:
                 detail_params=detail_params
             )
 
-            # ✅ Sauvegarde dans un dossier persistant
             output_dir = "media"
             os.makedirs(output_dir, exist_ok=True)
             file_path = os.path.join(output_dir, filename_pdf)
             with open(file_path, "wb") as f_out:
                 f_out.write(pdf_buffer.getbuffer())
 
-            # ✅ Bouton basé sur le fichier sauvegardé
             with open(file_path, "rb") as f_in:
                 st.download_button(
                     label="Télécharger le rapport PDF",
