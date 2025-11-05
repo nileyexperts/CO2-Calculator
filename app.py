@@ -1349,10 +1349,15 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                         web_map_style_label=map_style_label,
                         detail_params=detail_params
                     )
-                if pdf_buffer and pdf_buffer.getbuffer().nbytes > 0:
-    st.download_button("Telecharger le rapport PDF", data=pdf_buffer.getvalue(), file_name=filename_pdf, mime="application/pdf")
-else:
-    st.error("Le PDF n'a pas pu être généré.")
+        if pdf_buffer and pdf_buffer.getbuffer().nbytes > 0:
+            st.download_button(
+                "Telecharger le rapport PDF",
+                data=pdf_buffer.getvalue(),  # Correction
+                file_name=filename_pdf,
+                mime="application/pdf"
+            )
+        else:
+            st.error("Le PDF n'a pas pu être généré.")
             except Exception as e:
                 st.error(f"Erreur lors de la generation du PDF : {e}")
                 import traceback; st.code(traceback.format_exc())
