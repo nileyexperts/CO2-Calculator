@@ -1023,7 +1023,7 @@ with c2:
         st.session_state.segments[i]["weight"] = weight_val
 
         st.session_state.segments[i]["origin"] = {"query": o["query"], "display": o["display"], "iata": o["iata"], "coord": o["coord"]}
-        d = unified_location_input("dest", i, "Destination", show_airports=("aerien" in _normalize_no_diacritics(mode)))
+    d = unified_location_input("dest", i, "Destination", show_airports=("aerien" in _normalize_no_diacritics(mode)))
         st.session_state.segments[i]["dest"]   = {"query": d["query"], "display": d["display"], "iata": d["iata"], "coord": d["coord"]}
 
         # Chaine live D(i) -> O(i+1) robuste
