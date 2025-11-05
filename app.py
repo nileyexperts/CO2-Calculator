@@ -1363,14 +1363,3 @@ with c2:
     except Exception as e:
         st.error(f"Erreur lors de la génération du PDF : {e}")
         import traceback; st.code(traceback.format_exc())
-
-
-# === DEBUG MIN BUILD (embedded) ===
-try:
-    import os, sys
-    import streamlit as st
-    st.sidebar.header('Debug Runtime Info')
-    st.sidebar.write({'__file__': __file__, 'cwd': os.getcwd(), 'python': sys.version.split()[0]})
-except Exception:
-    pass
-# === END DEBUG MIN BUILD ===
