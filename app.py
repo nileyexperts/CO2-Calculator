@@ -1338,7 +1338,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         with c1:
             st.download_button("Telecharger le detail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
         with c2:
-            try:
+with c2:
     try:
         with st.spinner("Generation du PDF..."):
             pdf_buffer = generate_pdf_report(
@@ -1359,7 +1359,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             )
         else:
             st.error("Le PDF n'a pas pu être généré.")
-                st.error(f"Erreur lors de la generation du PDF : {e}")
-                import traceback; st.code(traceback.format_exc())
-    else:
-        st.info("Aucun segment valide n'a ete calcule. Verifiez les entrees.")
+    except Exception as e:
+        st.error(f"Erreur lors de la generation du PDF : {e}")
+        import traceback
+        st.code(traceback.format_exc())
