@@ -1006,6 +1006,7 @@ with c2:
     st.markdown("**Destination**")
     d = unified_location_input("dest", i, "Destination", show_airports=False)
             st.markdown("**Destination**")
+
         # Si l'utilisateur modifie l'origine par rapport a la source de chainage, enlever le badge et verrouiller
         if st.session_state.get(f"origin_autofill_{i}", False) and i > 0:
             prev_sig = st.session_state.get(f"chain_src_signature_{i}")
@@ -1356,8 +1357,6 @@ with c1:
     st.download_button("Télécharger le détail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
 
 with c2:
-    st.markdown("**Destination**")
-    d = unified_location_input("dest", i, "Destination", show_airports=False)
     try:
         with st.spinner("Génération du PDF..."):
             pdf_buffer = generate_pdf_report(
