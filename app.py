@@ -779,7 +779,7 @@ def generate_pdf_report(
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('FONTSIZE', (0, 0), (-1, -1), font_size),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('BACKGROUND', (0, -1 - total_row_offset), (-1, -1 - total_row_offset), colors.HexColor('#fff4e6')),
+            ('BACKGROUND', (0, -1 - 0), (-1, -1 - 0), colors.HexColor('#fff4e6')),
         ]
         if show_notice and hidden_count>0:
             style.append(('SPAN', (0, -1), (-1, -1)))
@@ -862,6 +862,11 @@ else:
 # --------------------------
 # API OpenCage
 # --------------------------
+def read_secret(key: str, default: str = "") -> str:
+    if "secrets" in dir(st) and key in st.secrets:
+        return st.secrets[key]
+    return os.getenv(key, default)
+
 API_KEY = read_secret("OPENCAGE_KEY")
 if not API_KEY:
     st.error("Clee API OpenCage absente. Ajoutez OPENCAGE_KEY.")
@@ -892,9 +897,10 @@ def load_airports_iata(path: str = "airport-codes.csv") -> pd.DataFrame:
         df = df[df["type"].isin(["large_airport","medium_airport"])].copy()
 
     coord_series = df["coordinates"].astype(str).str.replace('"','').str.strip()
-    parts = coord_series.str.split(",", n=1, expand=True)
+    parts = coord_series.split(",", n=1) if hasattr(coord_series, "split") else None
+    parts = df["coordinates"].astype(str).str.replace('"','').str.strip().str.split(",", n=1, expand=True)
     if parts.shape[1] < 2:
-        parts = pd.DataFrame({0:coord_series, 1:None})
+        parts = pd.DataFrame({0:df["coordinates"], 1:None})
     df["lat"] = pd.to_numeric(parts[0].astype(str).str.strip(), errors="coerce")
     df["lon"] = pd.to_numeric(parts[1].astype(str).str.strip(), errors="coerce")
     df = df.dropna(subset=["lat","lon"]).copy()
@@ -1483,6 +1489,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             st.download_button("Telecharger le detail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
         with c2:
             try:
+                # Génération du PDF
                 with st.spinner("Generation du PDF..."):
                     pdf_buffer = generate_pdf_report(
                         df=df,
@@ -1498,7 +1505,32 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                         web_map_style_label=map_style_label,
                         detail_params=detail_params
                     )
-                st.download_button("Telecharger le rapport PDF", data=pdf_buffer, file_name=filename_pdf, mime="application/pdf")
+
+                # On récupère les bytes une seule fois
+                pdf_bytes = pdf_buffer.getvalue()
+
+                # 1) Téléchargement standard
+                st.download_button(
+                    "Telecharger le rapport PDF",
+                    data=pdf_bytes,
+                    file_name=filename_pdf,
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+
+                # 2) Ouvrir dans un NOUVEL onglet (sans rerun) via data URL + base64 (sans f-string multilignes)
+                import base64
+                b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+                open_link_html = (
+                    'data:application/pdf;base64,{b64}'
+                    'Ouvrir le PDF dans un nouvel onglet</a>'
+                ).format(b64=b64, fname=filename_pdf)
+                st.markdown(open_link_html, unsafe_allow_html=True)
+
+                # Optionnel : conserver en session
+                st.session_state["last_pdf_bytes"] = pdf_bytes
+                st.session_state["last_pdf_name"]  = filename_pdf
+
             except Exception as e:
                 st.error(f"Erreur lors de la generation du PDF : {e}")
                 import traceback; st.code(traceback.format_exc())
