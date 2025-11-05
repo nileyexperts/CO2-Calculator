@@ -484,8 +484,8 @@ def _is_location_empty(loc: dict) -> bool:
 # --------------------------
 # Rapport PDF mono-page
 # --------------------------
-@st.cache_data(show_spinner=True, ttl=24*60*60)
-\1
+@st.cache_data(show_spinner=False, ttl=24*60*60)
+def generate_pdf_report(
     df, dossier_val, total_distance, total_emissions, unit, rows,
     pdf_basemap_choice_label, ne_scale='50m', pdf_theme='terrain',
     pdf_icon_size_px=24, web_map_style_label=None, detail_params=None
@@ -1157,16 +1157,18 @@ for i in range(len(st.session_state.segments)):
             else:
                 st.markdown("**Origine**")
             o = unified_location_input("origin", i, "Origine", show_airports=("aerien" in _normalize_no_diacritics(mode)))
-        with c2:
-    # Ajout du cache intelligent et bouton reset
-    if st.button("Réinitialiser le PDF", type="secondary", help="Force la régénération du PDF"):
+        
+with c2:
+    # Bouton pour réinitialiser le cache PDF
+    if st.button("Réinitialiser le PDF", type="secondary", help="Force une nouvelle génération du PDF"):
+        if "pdf_bytes" in st.session_state:
+            del st.session_state["pdf_bytes"]
         st.cache_data.clear()
-        st.session_state.pop("pdf_bytes", None)
-        st.success("Cache PDF réinitialisé. Cliquez à nouveau pour générer.")
+        st.success("Cache PDF réinitialisé.")
 
-    # Génération avec cache
-    try:
-        with st.spinner("Préparation du PDF..."):
+    # Génération PDF avec cache intelligent
+    if "pdf_bytes" not in st.session_state:
+        with st.spinner("Génération du PDF..."):
             pdf_buffer = generate_pdf_report(
                 df=df,
                 dossier_val=dossier_val,
@@ -1181,10 +1183,10 @@ for i in range(len(st.session_state.segments)):
                 web_map_style_label=map_style_label,
                 detail_params=detail_params
             )
-            st.download_button("Télécharger le rapport PDF", data=pdf_buffer.getvalue(), file_name=filename_pdf, mime="application/pdf")
-    except Exception as e:
-        st.error(f"Erreur lors de la génération du PDF : {e}")
-        import traceback; st.code(traceback.format_exc())
+            st.session_state["pdf_bytes"] = pdf_buffer.getvalue()
+
+    st.download_button("Télécharger le rapport PDF", data=st.session_state["pdf_bytes"], file_name=filename_pdf, mime="application/pdf")
+
             except Exception as e:
                 st.error(f"Erreur lors de la generation du PDF : {e}")
                 import traceback; st.code(traceback.format_exc())
