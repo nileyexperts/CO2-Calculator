@@ -176,6 +176,24 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+
+# --------------------------
+# Détection du navigateur (User-Agent)
+# --------------------------
+user_agent = st.experimental_get_query_params().get("ua", [""])[0]
+if not user_agent:
+    st.markdown("""
+    <script>
+    const ua = navigator.userAgent;
+    const url = new URL(window.location.href);
+    url.searchParams.set('ua', ua);
+    window.location.href = url.toString();
+    </script>
+    """, unsafe_allow_html=True)
+    st.stop()
+
+is_safari = "Safari" in user_agent and "Chrome" not in user_agent
+
 LOGO_URL = "https://raw.githubusercontent.com/nileyexperts/CO2-Calculator/main/NILEY-EXPERTS-logo-removebg-preview.png"
 
 # --------------------------
@@ -1440,7 +1458,49 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 zoom = max(1.0, min(15.0, min(zoom_x, zoom_y)))
                 view = pdk.ViewState(latitude=mid_lat, longitude=mid_lon, zoom=float(zoom))
 
-        st.pydeck_chart(pdk.Deck(
+        # Fallback logic injected
+
+# --------------------------
+# Carte interactive ou fallback statique
+# --------------------------
+st.subheader("Carte")
+if is_safari:
+    st.warning("⚠️ Vous utilisez Safari : la carte interactive est remplacée par une carte statique.")
+    try:
+        all_lats = [r["lat_o"] for r in rows] + [r["lat_d"] for r in rows]
+        all_lons = [r["lon_o"] for r in rows] + [r["lon_d"] for r in rows]
+        min_lon, max_lon, min_lat, max_lat = _compute_extent_from_coords(all_lats, all_lons)
+
+        fig, ax = plt.subplots(figsize=(8, 5), dpi=150)
+        ax.set_facecolor('#F7F8FA')
+        ax.set_xlim(min_lon, max_lon)
+        ax.set_ylim(min_lat, max_lat)
+
+        mode_colors = {"routier": "#0066CC", "aerien": "#CC0000", "maritime": "#009900", "ferroviaire": "#9900CC"}
+        for r in rows:
+            cat = mode_to_category(r["Mode"])
+            color = mode_colors.get(cat, "#666666")
+            ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]], color=color, lw=2.0)
+            ax.scatter([r["lon_o"]], [r["lat_o"]], s=22, c="#0A84FF", edgecolor='white', lw=0.8)
+            ax.scatter([r["lon_d"]], [r["lat_d"]], s=22, c="#FF3B30", edgecolor='white', lw=0.8)
+
+        buf = io.BytesIO()
+        plt.tight_layout()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        st.image(buf, caption="Carte statique (Safari)")
+    except Exception as e:
+        st.error(f"Erreur lors du rendu statique : {e}")
+else:
+    st.pydeck_chart(pdk.Deck(
+        map_style=MAP_STYLES[map_style_label],
+        initial_view_state=view,
+        layers=layers,
+        tooltip={"text": "{name}"}
+    ))
+
+# Original PyDeck removed
+# st.pydeck_chart(pdk.Deck(
             map_style=MAP_STYLES[map_style_label],
             initial_view_state=view,
             layers=layers,
