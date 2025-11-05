@@ -981,52 +981,31 @@ with col_reset:
 
 segments_out = []
 for i in range(len(st.session_state.segments)):
+for i in range(len(st.session_state.segments)):
     with st.container(border=True):
         hl, hr = st.columns([6, 4])
         with hl:
-            st.markdown(f"##### Segment {i+1}")
+            st.markdown(f'##### Segment {i+1}')
         with hr:
-            mode_options = ["Routier", "Maritime", "Ferroviaire", "Aerien"]
-            current_mode = st.session_state.segments[i].get("mode", mode_options[0])
+            mode_options = ['Routier', 'Maritime', 'Ferroviaire', 'Aerien']
+            current_mode = st.session_state.segments[i].get('mode', mode_options[0])
             if current_mode not in mode_options:
                 current_mode = mode_options[0]
-            mode = st.selectbox("Mode de transport", options=mode_options,
-                                index=mode_options.index(current_mode), key=f"mode_select_{i}")
-            st.session_state.segments[i]["mode"] = mode
+            mode = st.selectbox('Mode de transport', options=mode_options,
+                                index=mode_options.index(current_mode), key=f'mode_select_{i}')
+            st.session_state.segments[i]['mode'] = mode
 
         c1, c2 = st.columns(2)
         with c1:
-            if st.session_state.get(f"origin_autofill_{i}", False):
-                st.markdown("**Origine** <span class='badge-autofill'>(repris du segment precedent)</span>", unsafe_allow_html=True)
+            if st.session_state.get(f'origin_autofill_{i}', False):
+                st.markdown('**Origine** <span class='badge-autofill'>(repris du segment precedent)</span>', unsafe_allow_html=True)
             else:
-                st.markdown("**Origine**")
-            o = unified_location_input("origin", i, "Origine",
-                                       show_airports=("aerien" in _normalize_no_diacritics(mode)))
-with c2:
-    st.markdown("**Destination**")
-    d = unified_location_input("dest", i, "Destination", show_airports=("aerien" in _normalize_no_diacritics(mode)))
+                st.markdown('**Origine**')
+            o = unified_location_input('origin', i, 'Origine', show_airports=('aerien' in _normalize_no_diacritics(mode)))
 
-        # Si l'utilisateur modifie l'origine par rapport a la source de chainage, enlever le badge et verrouiller
-        if st.session_state.get(f"origin_autofill_{i}", False) and i > 0:
-            prev_sig = st.session_state.get(f"chain_src_signature_{i}")
-            cur_sig  = _normalize_signature(o["display"], o["coord"])
-            if prev_sig and cur_sig != prev_sig:
-                st.session_state[f"origin_autofill_{i}"] = False
-                st.session_state[f"origin_user_edited_{i}"] = (not _is_location_empty({"display": o["display"], "coord": o["coord"]}))
-
-        if "weight_0" not in st.session_state:
-            st.session_state["weight_0"] = st.session_state.segments[0]["weight"]
-        if i == 0:
-            weight_val = st.number_input("Poids transporte (applique a tous les segments)",
-                                         min_value=0.001, value=float(st.session_state["weight_0"]),
-                                         step=100.0, key="weight_0")
-        else:
-            weight_val = st.session_state["weight_0"]
-        st.session_state.segments[i]["weight"] = weight_val
-
-        st.session_state.segments[i]["origin"] = {"query": o["query"], "display": o["display"], "iata": o["iata"], "coord": o["coord"]}
-        st.session_state.segments[i]["dest"]   = {"query": d["query"], "display": d["display"], "iata": d["iata"], "coord": d["coord"]}
-
+        with c2:
+            st.markdown('**Destination**')
+            d = unified_location_input('dest', i, 'Destination', show_airports=('aerien' in _normalize_no_diacritics(mode)))
         # Chaine live D(i) -> O(i+1) robuste
         if i + 1 < len(st.session_state.segments):
             next_seg = st.session_state.segments[i + 1]
@@ -1324,8 +1303,6 @@ with c1:
     st.download_button("Télécharger le détail (CSV)", data=csv, file_name=filename_csv, mime="text/csv")
 
 with c2:
-    st.markdown("**Destination**")
-    d = unified_location_input("dest", i, "Destination", show_airports=("aerien" in _normalize_no_diacritics(mode)))
     try:
         with st.spinner("Génération du PDF..."):
             pdf_buffer = generate_pdf_report(
