@@ -1349,7 +1349,6 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                         web_map_style_label=map_style_label,
                         detail_params=detail_params
                     )
-        # Vérification après génération
         if pdf_buffer and pdf_buffer.getbuffer().nbytes > 0:
             st.download_button(
                 "Telecharger le rapport PDF",
