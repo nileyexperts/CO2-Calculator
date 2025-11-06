@@ -683,24 +683,24 @@ def generate_pdf_report(
 
             mode_colors = {"routier":"#0066CC","aerien":"#CC0000","maritime":"#009900","ferroviaire":"#9900CC"}
             for r in rows:
-    cat = mode_to_category(r["Mode"])
-    color = mode_colors.get(cat, "#666666")
+            cat = mode_to_category(r["Mode"])
+            color = mode_colors.get(cat, "#666666")
 
-    # Tracer la ligne du trajet
-    ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]],
+            # Tracer la ligne du trajet
+            ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]],
             color=color, linewidth=2.0, alpha=0.9,
             transform=ccrs.PlateCarree(), zorder=3)
 
-    # Ajouter des cercles colorés (grands) pour origine et destination
-    ax.scatter([r["lon_o"]], [r["lat_o"]], s=1500, c="#0A84FF", alpha=0.6,
+            # Ajouter des cercles colorés (grands) pour origine et destination
+            ax.scatter([r["lon_o"]], [r["lat_o"]], s=1500, c="#0A84FF", alpha=0.6,
                transform=ccrs.PlateCarree(), zorder=4)
-    ax.scatter([r["lon_d"]], [r["lat_d"]], s=1500, c="#FF3B30", alpha=0.6,
+            ax.scatter([r["lon_d"]], [r["lat_d"]], s=1500, c="#FF3B30", alpha=0.6,
                transform=ccrs.PlateCarree(), zorder=4)
 
-    # Ajouter l'icône du mode au milieu
-    mid_lon = (r["lon_o"] + r["lon_d"]) / 2.0
-    mid_lat = (r["lat_o"] + r["lat_d"]) / 2.0
-    _pdf_add_mode_icon(ax, mid_lon, mid_lat, cat, pdf_icon_size_px, transform=ccrs.PlateCarree())
+            # Ajouter l'icône du mode au milieu
+            mid_lon = (r["lon_o"] + r["lon_d"]) / 2.0
+            mid_lat = (r["lat_o"] + r["lat_d"]) / 2.0
+            _pdf_add_mode_icon(ax, mid_lon, mid_lat, cat, pdf_icon_size_px, transform=ccrs.PlateCarree())
 
         else:
             # Fallback sans cartopy
