@@ -1465,4 +1465,3 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             except Exception as e:
                 st.error(f"Erreur lors de la generation du PDF : {e}")
                 import traceback; st.code(traceback.format_exc())
-    else:
