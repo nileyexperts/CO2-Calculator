@@ -683,16 +683,15 @@ def generate_pdf_report(
 
             mode_colors = {"routier":"#0066CC","aerien":"#CC0000","maritime":"#009900","ferroviaire":"#9900CC"}
             for r in rows:
-                cat = mode_to_category(r["Mode"]); color = mode_colors.get(cat, "#666666")
-                ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]],
-                        color=color, linewidth=2.0, alpha=0.9, transform=ccrs.PlateCarree(), zorder=3)
-                ax.scatter([r["lon_o"]], [r["lat_o"]], s=22, c="#0A84FF", edgecolors='white', linewidths=0.8,
-                           transform=ccrs.PlateCarree(), zorder=4)
-                ax.scatter([r["lon_d"]], [r["lat_d"]], s=22, c="#FF3B30", edgecolors='white', linewidths=0.8,
-                           transform=ccrs.PlateCarree(), zorder=4)
-                mid_lon = (r["lon_o"] + r["lon_d"]) / 2.0
-                mid_lat = (r["lat_o"] + r["lat_d"]) / 2.0
-                _pdf_add_mode_icon(ax, mid_lon, mid_lat, cat, pdf_icon_size_px, transform=ccrs.PlateCarree())
+    cat = mode_to_category(r["Mode"]); color = mode_colors.get(cat, "#666666")
+    # Ligne de trajet
+    ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]],
+            color=color, linewidth=2.0, alpha=0.9, transform=ccrs.PlateCarree(), zorder=3)
+    # Cercles colorés (grands)
+    ax.scatter([r["lon_o"]], [r["lat_o"]], s=1500, c="#0A84FF", alpha=0.6,
+               transform=ccrs.PlateCarree(), zorder=4)
+    ax.scatter([r["lon_d"]], [r["lat_d"]], s=1500, c="#FF3B30", alpha=0.6,
+               transform=ccrs.PlateCarree(), zorder=4)
 
             map_buffer = io.BytesIO()
             plt.tight_layout()
