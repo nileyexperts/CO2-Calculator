@@ -326,6 +326,37 @@ def _pdf_add_mode_icon(ax, lon, lat, cat_key, size_px, transform=None):
         pass
 
 # --------------------------
+# Helpers raster : probe tuiles XYZ avant d'activer un fond internet
+# --------------------------
+def _lonlat_to_xyz(lon, lat, z):
+    """lon/lat -> indices de tuile XYZ (WebMercator)."""
+    lat = max(min(lat, 85.05112878), -85.05112878)
+    n = 2.0 ** z
+    xtile = int((lon + 180.0) / 360.0 * n)
+    lat_rad = math.radians(lat)
+    ytile = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
+    return xtile, ytile
+
+def _probe_tile_url(url, timeout=4.0):
+    """True si l’URL répond 2xx rapidement (GET simple)."""
+    try:
+        r = requests.get(url, timeout=timeout, stream=True)
+        ok = (200 <= r.status_code < 300)
+        try:
+            r.close()
+        except Exception:
+            pass
+        return ok
+    except Exception:
+        return False
+
+def _probe_carto_template(template, lon, lat, z, subdomains=("a","b","c","d")):
+    x, y = _lonlat_to_xyz(lon, lat, z)
+    s = subdomains[(x + y) % len(subdomains)]
+    url = template.format(s=s, z=z, x=x, y=y)
+    return _probe_tile_url(url)
+
+# --------------------------
 # Tuiles Carto XYZ (même style que la carte web)
 # --------------------------
 def _carto_tiler_from_web_style(web_style_label: str):
@@ -504,33 +535,61 @@ def generate_pdf_report(
             fig = plt.figure(figsize=(fig_w_in, fig_h_in), dpi=dpi)
             ax = None
             raster_ok = False
-            try:
-                if mode == "carto_web" and web_map_style_label:
-                    tiler = _carto_tiler_from_web_style(web_map_style_label)
-                    if tiler is not None:
-                        ax = plt.axes(projection=tiler.crs)
-                        ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
-                        zoom = _choose_zoom(min_lon, max_lon, min_lat, max_lat)
-                        ax.add_image(tiler, zoom)
-                        raster_ok = True
 
-                if not raster_ok and mode in ("auto","stamen"):
-                    tiler = Stamen('terrain-background')
-                    ax = plt.axes(projection=tiler.crs)
-                    ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
-                    zoom = _choose_zoom(min_lon, max_lon, min_lat, max_lat)
-                    ax.add_image(tiler, zoom)
-                    raster_ok = True
-
-                if not raster_ok and mode in ("auto","osm"):
-                    tiler = OSM()
-                    ax = plt.axes(projection=tiler.crs)
-                    ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
-                    zoom = _choose_zoom(min_lon, max_lon, min_lat, max_lat)
-                    ax.add_image(tiler, zoom)
-                    raster_ok = True
-            except Exception:
+            # Permettre un forçage offline depuis l'UI
+            if detail_params.get("force_offline"):
                 raster_ok = False
+            else:
+                try:
+                    # -------- 1) Carto : identique au style Web
+                    if mode == "carto_web" and web_map_style_label:
+                        tiler = _carto_tiler_from_web_style(web_map_style_label)
+                        if tiler is not None:
+                            zoom = _choose_zoom(min_lon, max_lon, min_lat, max_lat)
+                            mid_lon = (min_lon + max_lon) / 2.0
+                            mid_lat = (min_lat + max_lat) / 2.0
+                            carto_templates = {
+                                "Carto Positron (clair)": "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+                                "Carto Dark Matter (sombre)": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+                                "Carto Voyager": "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+                            }
+                            template = carto_templates.get(web_map_style_label) or carto_templates["Carto Positron (clair)"]
+                            if _probe_carto_template(template, mid_lon, mid_lat, zoom):
+                                ax = plt.axes(projection=tiler.crs)
+                                ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
+                                ax.add_image(tiler, zoom)
+                                raster_ok = True
+
+                    # -------- 2) Stamen (auto ou explicite)
+                    if not raster_ok and mode in ("auto", "stamen"):
+                        mid_lon = (min_lon + max_lon) / 2.0
+                        mid_lat = (min_lat + max_lat) / 2.0
+                        zoom = _choose_zoom(min_lon, max_lon, min_lat, max_lat)
+                        stamen_tpl = "https://stamen-tiles.a.ssl.fastly.net/terrain-background/{z}/{x}/{y}.png"
+                        x, y = _lonlat_to_xyz(mid_lon, mid_lat, zoom)
+                        if _probe_tile_url(stamen_tpl.format(z=zoom, x=x, y=y)):
+                            tiler = Stamen('terrain-background')
+                            ax = plt.axes(projection=tiler.crs)
+                            ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
+                            ax.add_image(tiler, zoom)
+                            raster_ok = True
+
+                    # -------- 3) OSM (auto ou explicite)
+                    if not raster_ok and mode in ("auto", "osm"):
+                        mid_lon = (min_lon + max_lon) / 2.0
+                        mid_lat = (min_lat + max_lat) / 2.0
+                        zoom = _choose_zoom(min_lon, max_lon, min_lat, max_lat)
+                        osm_tpl = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        x, y = _lonlat_to_xyz(mid_lon, mid_lat, zoom)
+                        if _probe_tile_url(osm_tpl.format(z=zoom, x=x, y=y)):
+                            tiler = OSM()
+                            ax = plt.axes(projection=tiler.crs)
+                            ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
+                            ax.add_image(tiler, zoom)
+                            raster_ok = True
+
+                except Exception:
+                    raster_ok = False
 
             # ✅ Natural Earth uniquement si AUCUN raster n'a été posé
             if not raster_ok:
@@ -568,7 +627,7 @@ def generate_pdf_report(
 
                 ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
 
-            # ❌ Ne PAS ajouter de COASTLINE/BORDERS/LAKES/RIVERS quand raster_ok == True
+            # ❌ Ne PAS ajouter de couches Natural Earth quand raster_ok == True
 
             # Tracés des segments / points / icônes
             mode_colors = {"routier":"#0066CC","aerien":"#CC0000","maritime":"#009900","ferroviaire":"#9900CC"}
@@ -853,8 +912,8 @@ def load_ports_csv(path: str = "ports.csv") -> pd.DataFrame:
     col_unlo = pick("unlocode", "locode", "unlocode ")
     col_name = pick("name", "port_name")
     col_ctry = pick("country", "iso_country", "country_code")
-    col_lat = pick("lat", "latitude")
-    col_lon = pick("lon", "lng", "long", "longitude")
+    col_lat  = pick("lat", "latitude")
+    col_lon  = pick("lon", "lng", "long", "longitude")
 
     if col_lat is None or col_lon is None:
         st.error("Colonnes lat/lon manquantes dans ports.csv")
@@ -1372,7 +1431,13 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
             "Qualite de rendu PDF", options=list(detail_levels.keys()), index=1,
             help="Ajuste la finesse du fond de carte: DPI et niveau de zoom."
         )
-        detail_params = detail_levels[quality_label]
+        # 🔁 Optionnel : forcer le mode offline si besoin
+        force_offline = st.checkbox(
+            "Forcer le mode offline (Natural Earth)",
+            value=False,
+            help="Ignore Carto/Stamen/OSM et utilise toujours Natural Earth si coché."
+        )
+        detail_params = {**detail_levels[quality_label], "force_offline": force_offline}
 
         c1, c2 = st.columns(2)
         with c1:
@@ -1380,7 +1445,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         with c2:
             try:
                 with st.spinner("Generation du PDF..."):
-                    # ✅ Utiliser le style mémorisé au moment du calcul (sinon retomber sur le style courant)
+                    # ✅ Utiliser le style mémorisé au moment du calcul (sinon retomber sur le style Web courant)
                     style_for_pdf = st.session_state.get("map_style_at_calculate", map_style_label)
                     pdf_buffer = generate_pdf_report(
                         df=df,
@@ -1401,4 +1466,3 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
                 st.error(f"Erreur lors de la generation du PDF : {e}")
                 import traceback; st.code(traceback.format_exc())
     else:
-        st.info("Aucun segment valide n'a ete calcule. Verifiez les entrees.")
