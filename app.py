@@ -758,14 +758,16 @@ def generate_pdf_report(
     except Exception:
         map_buffer = None
 
-    if map_buffer:
+    # --- Insertion de la carte ---
+if map_buffer:
     img = ImageReader(map_buffer)
 
-    # Protection contre débordement
+    # Vérifie si la carte dépasse la page
     if y - map_h < M:
         c.showPage()
         y = PAGE_H - M
 
+    # Dessin de la carte (taille forcée)
     c.drawImage(
         img,
         M,
@@ -774,7 +776,9 @@ def generate_pdf_report(
         height=map_h,
         preserveAspectRatio=False,
         mask="auto"
+    )
 
+    # Mise à jour Y
     y = y - map_h - 0.25 * cm
     
     def _p_cell_dyn(s, fs):
