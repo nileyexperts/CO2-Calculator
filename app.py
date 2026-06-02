@@ -502,9 +502,6 @@ def generate_pdf_report(
 
     y = PAGE_H - M
 
-    # --------------------------
-    # HEADER
-    # --------------------------
     styles = getSampleStyleSheet()
     title = Paragraph(
         f"<b>RAPPORT CO2 — {xml_escape(dossier_val)}</b>",
@@ -514,28 +511,30 @@ def generate_pdf_report(
     title.drawOn(c, M, y - th)
     y -= th + 10
 
-    # --------------------------
-    # CARTE GARANTIE (100% offline)
-    # --------------------------
     try:
         img = Image.new("RGB", (AVAIL_W, map_h), "#EAF2F8")
         draw = ImageDraw.Draw(img)
 
-        # ✅ continents simplifiés (Europe / Afrique / Amériques)
-        continents = [
-            [(0.1,0.2),(0.3,0.2),(0.35,0.5),(0.2,0.7)],   # Europe/Afrique
-            [(0.45,0.2),(0.7,0.2),(0.7,0.8),(0.45,0.8)],  # Asie
-            [(0.75,0.3),(0.95,0.3),(0.9,0.7),(0.75,0.6)], # Amériques
-        ]
+        # ✅ récupération coords
+        lats = [r['lat_o'] for r in rows] + [r['lat_d'] for r in rows]
+        lons = [r['lon_o'] for r in rows] + [r['lon_d'] for r in rows]
 
-        for poly in continents:
-            pts = [(int(x*AVAIL_W), int(y*map_h)) for x,y in poly]
-            draw.polygon(pts, fill="#D6EAF8")
+        min_lat, max_lat = min(lats), max(lats)
+        min_lon, max_lon = min(lons), max(lons)
 
-        # projection simple
+        # ✅ AJOUT MARGE (clé)
+        margin_lat = max(0.5, (max_lat - min_lat) * 0.2)
+        margin_lon = max(0.5, (max_lon - min_lon) * 0.2)
+
+        min_lat -= margin_lat
+        max_lat += margin_lat
+        min_lon -= margin_lon
+        max_lon += margin_lon
+
+        # ✅ projection robuste
         def proj(lat, lon):
-            x = int((lon + 180) / 360 * AVAIL_W)
-            y = int((90 - lat) / 180 * map_h)
+            x = int((lon - min_lon) / (max_lon - min_lon + 1e-9) * AVAIL_W)
+            y = int(map_h - (lat - min_lat) / (max_lat - min_lat + 1e-9) * map_h)
             return x, y
 
         colors_map = {
@@ -552,9 +551,14 @@ def generate_pdf_report(
             x1, y1 = proj(r["lat_o"], r["lon_o"])
             x2, y2 = proj(r["lat_d"], r["lon_d"])
 
-            draw.line((x1, y1, x2, y2), fill=color, width=3)
-            draw.ellipse((x1-4, y1-4, x1+4, y1+4), fill="#007BFF")
-            draw.ellipse((x2-4, y2-4, x2+4, y2+4), fill="#FF3B30")
+            # ✅ ligne visible même si proche
+            draw.line((x1, y1, x2, y2), fill=color, width=4)
+
+            draw.ellipse((x1-5, y1-5, x1+5, y1+5), fill="#007BFF")
+            draw.ellipse((x2-5, y2-5, x2+5, y2+5), fill="#FF3B30")
+
+        # ✅ DEBUG VISUEL (à garder → utile)
+        draw.rectangle((5,5,AVAIL_W-5,map_h-5), outline="black", width=2)
 
         buf = BytesIO()
         img.save(buf, format="PNG")
@@ -566,11 +570,8 @@ def generate_pdf_report(
     except Exception as e:
         print("Erreur carte :", e)
 
-    # --------------------------
-    # TABLEAU
-    # --------------------------
+    # TABLE
     table_data = [["Seg", "Origine", "Destination", "Mode", "Km", "CO2"]]
-
     for _, row in df.iterrows():
         table_data.append([
             str(row["Segment"]),
@@ -583,10 +584,7 @@ def generate_pdf_report(
 
     table = Table(table_data)
     table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0),(-1,0), colors.HexColor("#1f4788")),
-        ('TEXTCOLOR',(0,0),(-1,0), colors.white),
-        ('GRID',(0,0),(-1,-1),0.3, colors.grey),
-        ('FONTSIZE',(0,0),(-1,-1),8)
+        ('GRID',(0,0),(-1,-1),0.3,"grey")
     ]))
 
     tw, th = table.wrap(AVAIL_W, PAGE_H)
