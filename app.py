@@ -491,7 +491,6 @@ def generate_pdf_report(
 ):
     from reportlab.pdfgen import canvas as pdfcanvas
     from PIL import Image, ImageDraw
-    import requests
 
     buffer = BytesIO()
     c = pdfcanvas.Canvas(buffer, pagesize=landscape(A4))
@@ -516,26 +515,29 @@ def generate_pdf_report(
     y -= th + 10
 
     # --------------------------
-    # CARTE PRO AVEC CONTINENTS (FAST)
+    # CARTE GARANTIE (100% offline)
     # --------------------------
     try:
-        # ✅ Image fond monde (Natural Earth raster)
-        world_url = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/packages/Natural_Earth_quick_start/NE1_50M_SR_W.tif"
-
-        resp = requests.get(world_url, timeout=5)
-        img = Image.open(BytesIO(resp.content)).convert("RGB")
-
-        # resize direct au format PDF
-        img = img.resize((AVAIL_W, map_h))
+        img = Image.new("RGB", (AVAIL_W, map_h), "#EAF2F8")
         draw = ImageDraw.Draw(img)
 
-        # -------- PROJECTION SIMPLE --------
+        # ✅ continents simplifiés (Europe / Afrique / Amériques)
+        continents = [
+            [(0.1,0.2),(0.3,0.2),(0.35,0.5),(0.2,0.7)],   # Europe/Afrique
+            [(0.45,0.2),(0.7,0.2),(0.7,0.8),(0.45,0.8)],  # Asie
+            [(0.75,0.3),(0.95,0.3),(0.9,0.7),(0.75,0.6)], # Amériques
+        ]
+
+        for poly in continents:
+            pts = [(int(x*AVAIL_W), int(y*map_h)) for x,y in poly]
+            draw.polygon(pts, fill="#D6EAF8")
+
+        # projection simple
         def proj(lat, lon):
             x = int((lon + 180) / 360 * AVAIL_W)
             y = int((90 - lat) / 180 * map_h)
             return x, y
 
-        # -------- TRACES --------
         colors_map = {
             "routier": "#1f77b4",
             "aerien": "#d62728",
@@ -550,10 +552,7 @@ def generate_pdf_report(
             x1, y1 = proj(r["lat_o"], r["lon_o"])
             x2, y2 = proj(r["lat_d"], r["lon_d"])
 
-            # ligne
             draw.line((x1, y1, x2, y2), fill=color, width=3)
-
-            # points
             draw.ellipse((x1-4, y1-4, x1+4, y1+4), fill="#007BFF")
             draw.ellipse((x2-4, y2-4, x2+4, y2+4), fill="#FF3B30")
 
@@ -565,10 +564,10 @@ def generate_pdf_report(
         y -= map_h + 10
 
     except Exception as e:
-        print("Erreur carte:", e)
+        print("Erreur carte :", e)
 
     # --------------------------
-    # TABLEAU PRO
+    # TABLEAU
     # --------------------------
     table_data = [["Seg", "Origine", "Destination", "Mode", "Km", "CO2"]]
 
@@ -593,11 +592,9 @@ def generate_pdf_report(
     tw, th = table.wrap(AVAIL_W, PAGE_H)
     table.drawOn(c, M, y - th)
 
-    # --------------------------
     c.save()
     buffer.seek(0)
     return buffer
-
 
 # --------------------------
 # Auth
