@@ -761,7 +761,7 @@ def generate_pdf_report(
     if map_buffer:
     img = ImageReader(map_buffer)
 
-    # Protection page
+    # Protection contre débordement
     if y - map_h < M:
         c.showPage()
         y = PAGE_H - M
@@ -772,12 +772,11 @@ def generate_pdf_report(
         y - map_h,
         width=AVAIL_W,
         height=map_h,
-        preserveAspectRatio=False,  # ✅ FIX
+        preserveAspectRatio=False,
         mask="auto"
-    )
 
     y = y - map_h - 0.25 * cm
-
+    
     def _p_cell_dyn(s, fs):
         stl = ParagraphStyle("CellWrapDyn", parent=styles["Normal"], fontSize=fs, leading=max(8, fs + 2), alignment=0)
         txt = "" if s is None else str(s)
