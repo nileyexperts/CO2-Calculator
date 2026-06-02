@@ -497,179 +497,91 @@ def generate_pdf_report(
     PAGE_W, PAGE_H = landscape(A4)
     M = 1.0 * cm
     AVAIL_W = PAGE_W - 2*M
-    AVAIL_H = PAGE_H - 2*M
 
     buffer = BytesIO()
     c = pdfcanvas.Canvas(buffer, pagesize=landscape(A4))
 
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=14,
-                                 textColor=colors.HexColor('#1f4788'), alignment=1)
-    heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'], fontSize=10.5,
-                                   textColor=colors.HexColor('#2c5aa0'))
-
     y = PAGE_H - M
 
-    # --------------------------
-    # HEADER
-    # --------------------------
-    title_para = Paragraph("RAPPORT D'EMPREINTE CO2 TRANSPORT", title_style)
-    tw, th = title_para.wrap(AVAIL_W, AVAIL_H)
-    title_para.drawOn(c, M, y - th)
+    styles = getSampleStyleSheet()
+    title = Paragraph(f"<b>RAPPORT CO2 - {xml_escape(dossier_val)}</b>", styles['Heading2'])
+    tw, th = title.wrap(AVAIL_W, PAGE_H)
+    title.drawOn(c, M, y - th)
     y -= th + 0.4*cm
 
-    # --------------------------
-    # MAP
-    # --------------------------
     map_h = 8 * cm
     dpi = int(detail_params.get("dpi", 220))
 
-    map_buffer = None
-
     try:
         import cartopy.crs as ccrs
-        import cartopy.feature as cfeature
         from cartopy.io.img_tiles import Stamen, OSM
 
         all_lats = [r["lat_o"] for r in rows] + [r["lat_d"] for r in rows]
         all_lons = [r["lon_o"] for r in rows] + [r["lon_d"] for r in rows]
 
         min_lon, max_lon, min_lat, max_lat = _compute_extent_from_coords(all_lats, all_lons)
+        min_lon, max_lon, min_lat, max_lat = _fit_extent_to_aspect(min_lon, max_lon, min_lat, max_lat, AVAIL_W/map_h)
 
-        fig_w_in = AVAIL_W / 72.0
-        fig_h_in = map_h / 72.0
-
-        fig = plt.figure(figsize=(fig_w_in, fig_h_in), dpi=dpi)
-
-        mode = PDF_BASEMAP_MODES.get(pdf_basemap_choice_label, "auto")
+        fig = plt.figure(figsize=(AVAIL_W/72, map_h/72), dpi=dpi)
         ax = None
+
         raster_ok = False
-
-        def choose_zoom():
-            span = max(max_lon - min_lon, max_lat - min_lat)
-            if span < 0.5: return 9
-            if span < 2: return 7
-            if span < 5: return 6
-            if span < 12: return 5
-            return 4
-
-        zoom = choose_zoom()
-
-        # ✅ UNE SEULE CREATION D’AXE
         try:
-            if mode == "carto_web" and web_map_style_label:
+            if pdf_basemap_choice_label.startswith("Identique"):
                 tiler = _carto_tiler_from_web_style(web_map_style_label)
                 if tiler:
                     ax = fig.add_subplot(1,1,1, projection=tiler.crs)
                     ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
-                    ax.add_image(tiler, zoom)
+                    ax.add_image(tiler, 6)
                     raster_ok = True
-
-            elif mode in ("auto","stamen"):
+            elif "Stamen" in pdf_basemap_choice_label:
                 tiler = Stamen('terrain-background')
                 ax = fig.add_subplot(1,1,1, projection=tiler.crs)
                 ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
-                ax.add_image(tiler, zoom)
+                ax.add_image(tiler, 6)
                 raster_ok = True
-
-            elif mode in ("auto","osm"):
+            elif "OSM" in pdf_basemap_choice_label:
                 tiler = OSM()
                 ax = fig.add_subplot(1,1,1, projection=tiler.crs)
                 ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
-                ax.add_image(tiler, zoom)
+                ax.add_image(tiler, 6)
                 raster_ok = True
-
-        except Exception:
+        except:
             raster_ok = False
 
-        # ✅ FALLBACK PROPRE
         if not raster_ok:
             ax = fig.add_subplot(1,1,1, projection=ccrs.PlateCarree())
             ax.set_extent((min_lon, max_lon, min_lat, max_lat))
 
-            ax.add_feature(cfeature.LAND.with_scale(ne_scale), facecolor='#F5F5F5')
-            ax.add_feature(cfeature.OCEAN.with_scale(ne_scale), facecolor='#E6F2FF')
-            ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), linewidth=0.5)
-            ax.add_feature(cfeature.BORDERS.with_scale(ne_scale), linewidth=0.4)
-
-        # --------------------------
-        # TRACES
-        # --------------------------
-        colors_map = {
-            "routier": "#0072B2",
-            "aerien": "#D55E00",
-            "maritime": "#009E73",
-            "ferroviaire": "#CC79A7"
-        }
-
         for r in rows:
             cat = mode_to_category(r["Mode"])
-            color = colors_map.get(cat, "#333")
+            ax.plot([r["lon_o"], r["lon_d"]],[r["lat_o"], r["lat_d"]], transform=ccrs.PlateCarree(), linewidth=2.5)
 
-            ax.plot(
-                [r["lon_o"], r["lon_d"]],
-                [r["lat_o"], r["lat_d"]],
-                color=color,
-                linewidth=2.2,
-                transform=ccrs.PlateCarree(),
-                zorder=3
-            )
+        ax.set_axis_off()
 
-            ax.scatter(r["lon_o"], r["lat_o"], color="#007BFF", s=25,
-                       transform=ccrs.PlateCarree(), zorder=4)
+        buf = BytesIO()
+        plt.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', pad_inches=0.02)
+        plt.close(fig)
+        buf.seek(0)
 
-            ax.scatter(r["lon_d"], r["lat_d"], color="#FF3B30", s=25,
-                       transform=ccrs.PlateCarree(), zorder=4)
-
-            # icône au milieu
-            mid_lon = (r["lon_o"] + r["lon_d"]) / 2
-            mid_lat = (r["lat_o"] + r["lat_d"]) / 2
-            _pdf_add_mode_icon(ax, mid_lon, mid_lat, cat, pdf_icon_size_px, transform=ccrs.PlateCarree())
-
-        # ✅ NETTOYAGE (important)
-        plt.tight_layout()
-        map_buffer = BytesIO()
-        plt.savefig(map_buffer, format='png', dpi=dpi, bbox_inches='tight')
-        plt.close(fig)  # ✅ essentiel : évite superposition
-        map_buffer.seek(0)
-
-    except Exception as e:
-        print("Erreur carte :", e)
-
-    if map_buffer:
-        img = ImageReader(map_buffer)
-        c.drawImage(img, M, y - map_h, width=AVAIL_W, height=map_h)
+        c.drawImage(ImageReader(buf), M, y - map_h, width=AVAIL_W, height=map_h)
         y -= map_h + 0.4*cm
+    except Exception as e:
+        print(e)
 
-    # --------------------------
-    # TABLEAU
-    # --------------------------
-    table_data = [["Segment","Origine","Destination","Mode","Distance","Emissions"]]
-
-    for _, row in df.iterrows():
-        table_data.append([
-            str(row["Segment"]),
-            row["Origine"],
-            row["Destination"],
-            row["Mode"],
-            f"{row['Distance (km)']:.1f}",
-            f"{row['Emissions (kg CO2e)']:.2f}"
-        ])
+    table_data = [["Seg","Origine","Destination","Mode","Km","CO2"]]
+    for _,row in df.iterrows():
+        table_data.append([row["Segment"],row["Origine"][:30],row["Destination"][:30],row["Mode"],f"{row['Distance (km)']:.0f}",f"{row['Emissions (kg CO2e)']:.1f}"])
 
     table = Table(table_data)
-    table.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,0),colors.grey),
-        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
-        ('GRID',(0,0),(-1,-1),0.5,colors.black)
-    ]))
-
-    tw, th = table.wrap(AVAIL_W, AVAIL_H)
+    table.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.3,colors.grey)]))
+    tw, th = table.wrap(AVAIL_W, PAGE_H)
     table.drawOn(c, M, y - th)
 
-    # --------------------------
     c.save()
     buffer.seek(0)
     return buffer
+
 
 # --------------------------
 # Auth
