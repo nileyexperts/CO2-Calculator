@@ -759,25 +759,24 @@ def generate_pdf_report(
         map_buffer = None
 
     if map_buffer:
-        img = ImageReader(map_buffer)
-        c.drawImage(
-            img, M, y - map_h,
-            width=AVAIL_W, height=map_h,
-            preserveAspectRatio=True, mask="auto"
-        )
+    img = ImageReader(map_buffer)
+
+    # Protection page
+    if y - map_h < M:
+        c.showPage()
+        y = PAGE_H - M
+
+    c.drawImage(
+        img,
+        M,
+        y - map_h,
+        width=AVAIL_W,
+        height=map_h,
+        preserveAspectRatio=False,  # ✅ FIX
+        mask="auto"
+    )
+
     y = y - map_h - 0.25 * cm
-
-    heading_para = Paragraph("Detail des segments", heading_style)
-    hw, hh = heading_para.wrap(AVAIL_W, AVAIL_H)
-    heading_para.drawOn(c, M, y - hh)
-    y = y - hh - 0.10 * cm
-
-    headers = [
-        "Seg.", "Origine", "Destination", "Mode",
-        "Dist.\n(km)", f"Poids\n({unit})",
-        "Facteur\n(kg CO2e/t.km)", "Emissions\n(kg CO2e)"
-    ]
-    col_widths = [1.2 * cm, 4.8 * cm, 4.8 * cm, 3.0 * cm, 1.8 * cm, 1.8 * cm, 2.2 * cm, 2.2 * cm]
 
     def _p_cell_dyn(s, fs):
         stl = ParagraphStyle("CellWrapDyn", parent=styles["Normal"], fontSize=fs, leading=max(8, fs + 2), alignment=0)
