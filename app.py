@@ -490,94 +490,110 @@ def generate_pdf_report(
     pdf_icon_size_px=24, web_map_style_label=None, detail_params=None
 ):
     from reportlab.pdfgen import canvas as pdfcanvas
-
-    if detail_params is None:
-        detail_params = {"dpi": 220, "max_zoom": 9}
-
-    PAGE_W, PAGE_H = landscape(A4)
-    M = 1.0 * cm
-    AVAIL_W = PAGE_W - 2*M
+    from PIL import Image, ImageDraw
+    import requests
 
     buffer = BytesIO()
     c = pdfcanvas.Canvas(buffer, pagesize=landscape(A4))
 
+    PAGE_W, PAGE_H = landscape(A4)
+    M = 1 * cm
+    AVAIL_W = int(PAGE_W - 2 * M)
+    map_h = int(8 * cm)
+
     y = PAGE_H - M
 
+    # --------------------------
+    # HEADER
+    # --------------------------
     styles = getSampleStyleSheet()
-    title = Paragraph(f"<b>RAPPORT CO2 - {xml_escape(dossier_val)}</b>", styles['Heading2'])
+    title = Paragraph(
+        f"<b>RAPPORT CO2 — {xml_escape(dossier_val)}</b>",
+        styles['Heading2']
+    )
     tw, th = title.wrap(AVAIL_W, PAGE_H)
     title.drawOn(c, M, y - th)
-    y -= th + 0.4*cm
+    y -= th + 10
 
-    map_h = 8 * cm
-    dpi = int(detail_params.get("dpi", 220))
-
+    # --------------------------
+    # CARTE PRO AVEC CONTINENTS (FAST)
+    # --------------------------
     try:
-        import cartopy.crs as ccrs
-        from cartopy.io.img_tiles import Stamen, OSM
+        # ✅ Image fond monde (Natural Earth raster)
+        world_url = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/packages/Natural_Earth_quick_start/NE1_50M_SR_W.tif"
 
-        all_lats = [r["lat_o"] for r in rows] + [r["lat_d"] for r in rows]
-        all_lons = [r["lon_o"] for r in rows] + [r["lon_d"] for r in rows]
+        resp = requests.get(world_url, timeout=5)
+        img = Image.open(BytesIO(resp.content)).convert("RGB")
 
-        min_lon, max_lon, min_lat, max_lat = _compute_extent_from_coords(all_lats, all_lons)
-        min_lon, max_lon, min_lat, max_lat = _fit_extent_to_aspect(min_lon, max_lon, min_lat, max_lat, AVAIL_W/map_h)
+        # resize direct au format PDF
+        img = img.resize((AVAIL_W, map_h))
+        draw = ImageDraw.Draw(img)
 
-        fig = plt.figure(figsize=(AVAIL_W/72, map_h/72), dpi=dpi)
-        ax = None
+        # -------- PROJECTION SIMPLE --------
+        def proj(lat, lon):
+            x = int((lon + 180) / 360 * AVAIL_W)
+            y = int((90 - lat) / 180 * map_h)
+            return x, y
 
-        raster_ok = False
-        try:
-            if pdf_basemap_choice_label.startswith("Identique"):
-                tiler = _carto_tiler_from_web_style(web_map_style_label)
-                if tiler:
-                    ax = fig.add_subplot(1,1,1, projection=tiler.crs)
-                    ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
-                    ax.add_image(tiler, 6)
-                    raster_ok = True
-            elif "Stamen" in pdf_basemap_choice_label:
-                tiler = Stamen('terrain-background')
-                ax = fig.add_subplot(1,1,1, projection=tiler.crs)
-                ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
-                ax.add_image(tiler, 6)
-                raster_ok = True
-            elif "OSM" in pdf_basemap_choice_label:
-                tiler = OSM()
-                ax = fig.add_subplot(1,1,1, projection=tiler.crs)
-                ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
-                ax.add_image(tiler, 6)
-                raster_ok = True
-        except:
-            raster_ok = False
-
-        if not raster_ok:
-            ax = fig.add_subplot(1,1,1, projection=ccrs.PlateCarree())
-            ax.set_extent((min_lon, max_lon, min_lat, max_lat))
+        # -------- TRACES --------
+        colors_map = {
+            "routier": "#1f77b4",
+            "aerien": "#d62728",
+            "maritime": "#2ca02c",
+            "ferroviaire": "#9467bd"
+        }
 
         for r in rows:
             cat = mode_to_category(r["Mode"])
-            ax.plot([r["lon_o"], r["lon_d"]],[r["lat_o"], r["lat_d"]], transform=ccrs.PlateCarree(), linewidth=2.5)
+            color = colors_map.get(cat, "#333")
 
-        ax.set_axis_off()
+            x1, y1 = proj(r["lat_o"], r["lon_o"])
+            x2, y2 = proj(r["lat_d"], r["lon_d"])
+
+            # ligne
+            draw.line((x1, y1, x2, y2), fill=color, width=3)
+
+            # points
+            draw.ellipse((x1-4, y1-4, x1+4, y1+4), fill="#007BFF")
+            draw.ellipse((x2-4, y2-4, x2+4, y2+4), fill="#FF3B30")
 
         buf = BytesIO()
-        plt.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', pad_inches=0.02)
-        plt.close(fig)
+        img.save(buf, format="PNG")
         buf.seek(0)
 
         c.drawImage(ImageReader(buf), M, y - map_h, width=AVAIL_W, height=map_h)
-        y -= map_h + 0.4*cm
-    except Exception as e:
-        print(e)
+        y -= map_h + 10
 
-    table_data = [["Seg","Origine","Destination","Mode","Km","CO2"]]
-    for _,row in df.iterrows():
-        table_data.append([row["Segment"],row["Origine"][:30],row["Destination"][:30],row["Mode"],f"{row['Distance (km)']:.0f}",f"{row['Emissions (kg CO2e)']:.1f}"])
+    except Exception as e:
+        print("Erreur carte:", e)
+
+    # --------------------------
+    # TABLEAU PRO
+    # --------------------------
+    table_data = [["Seg", "Origine", "Destination", "Mode", "Km", "CO2"]]
+
+    for _, row in df.iterrows():
+        table_data.append([
+            str(row["Segment"]),
+            row["Origine"][:30],
+            row["Destination"][:30],
+            row["Mode"],
+            f"{row['Distance (km)']:.0f}",
+            f"{row['Emissions (kg CO2e)']:.1f}"
+        ])
 
     table = Table(table_data)
-    table.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.3,colors.grey)]))
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0),(-1,0), colors.HexColor("#1f4788")),
+        ('TEXTCOLOR',(0,0),(-1,0), colors.white),
+        ('GRID',(0,0),(-1,-1),0.3, colors.grey),
+        ('FONTSIZE',(0,0),(-1,-1),8)
+    ]))
+
     tw, th = table.wrap(AVAIL_W, PAGE_H)
     table.drawOn(c, M, y - th)
 
+    # --------------------------
     c.save()
     buffer.seek(0)
     return buffer
