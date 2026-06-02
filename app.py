@@ -496,20 +496,33 @@ def generate_pdf_report(
 
     PAGE_W, PAGE_H = landscape(A4)
     M = 1.0 * cm
-    AVAIL_W = PAGE_W - 2*M
-    AVAIL_H = PAGE_H - 2*M
+    AVAIL_W = PAGE_W - 2 * M
+    AVAIL_H = PAGE_H - 2 * M
 
     buffer = BytesIO()
     c = pdfcanvas.Canvas(buffer, pagesize=landscape(A4))
 
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=14, textColor=colors.HexColor('#1f4788'), spaceAfter=0, alignment=1)
-    heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'], fontSize=10.5, textColor=colors.HexColor('#2c5aa0'), spaceAfter=0, spaceBefore=0, alignment=0)
-    normal_style = styles['Normal']; normal_style.fontSize = 8
+    title_style = ParagraphStyle(
+        "CustomTitle",
+        parent=styles["Heading1"],
+        fontSize=14,
+        textColor=colors.HexColor("#1f4788"),
+        spaceAfter=0,
+        alignment=1,
+    )
+    heading_style = ParagraphStyle(
+        "CustomHeading",
+        parent=styles["Heading2"],
+        fontSize=10.5,
+        textColor=colors.HexColor("#2c5aa0"),
+        spaceAfter=0,
+        spaceBefore=0,
+        alignment=0,
+    )
 
     y = PAGE_H - M
 
-    # Logo + titre (anti-chevauchement)
     logo_h = 1.5 * cm
     logo_w = 3.0 * cm
     logo_drawn = False
@@ -517,57 +530,60 @@ def generate_pdf_report(
         resp = requests.get(LOGO_URL, timeout=10)
         if resp.ok:
             img = ImageReader(io.BytesIO(resp.content))
-            c.drawImage(img, M, y - logo_h, width=logo_w, height=logo_h, preserveAspectRatio=True, mask='auto')
+            c.drawImage(
+                img, M, y - logo_h,
+                width=logo_w, height=logo_h,
+                preserveAspectRatio=True, mask="auto"
+            )
             logo_drawn = True
     except Exception:
         pass
 
     title_para = Paragraph("RAPPORT D'EMPREINTE Co2 TRANSPORT", title_style)
-    title_box_w = AVAIL_W - (logo_w + 0.5*cm if logo_drawn else 0)
+    title_box_w = AVAIL_W - (logo_w + 0.5 * cm if logo_drawn else 0)
     title_w, title_h = title_para.wrap(title_box_w, AVAIL_H)
     if logo_drawn:
-        title_x = M + logo_w + 0.5*cm
-        title_y = y - (logo_h/2.0) - (title_h/2.0)
+        title_x = M + logo_w + 0.5 * cm
+        title_y = y - (logo_h / 2.0) - (title_h / 2.0)
     else:
         title_x = M
         title_y = y - title_h
     title_para.drawOn(c, title_x, title_y)
 
     header_block_h = max(logo_h if logo_drawn else 0, title_h)
-    y = y - header_block_h - 0.35*cm
+    y = y - header_block_h - 0.35 * cm
 
-    # Résumé
     info_summary_data = [
         ["N° dossier Transport:", dossier_val, "Distance totale:", f"{total_distance:.1f} km"],
         ["Date du rapport:", datetime.now().strftime("%d/%m/%Y %H:%M"), "Emissions totales:", f"{total_emissions:.2f} kg CO2e"],
-        ["Nombre de segments:", str(len(rows)), "Emissions moyennes:", f"{(total_emissions/total_distance):.3f} kg CO2e/km" if total_distance>0 else "N/A"],
+        ["Nombre de segments:", str(len(rows)), "Emissions moyennes:", f"{(total_emissions / total_distance):.3f} kg CO2e/km" if total_distance > 0 else "N/A"],
     ]
-    sum_col_w = [4.5*cm, 5.5*cm, 4.5*cm, 5.5*cm]
+
+    sum_col_w = [4.5 * cm, 5.5 * cm, 4.5 * cm, 5.5 * cm]
     info_tbl = Table(info_summary_data, colWidths=sum_col_w)
     info_tbl.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e8f0f7')),
-        ('BACKGROUND', (2, 0), (2, -1), colors.HexColor('#fff4e6')),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('FONTSIZE', (0, 0), (-1, -1), 8),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#e8f0f7")),
+        ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#fff4e6")),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     iw, ih = info_tbl.wrap(AVAIL_W, AVAIL_H)
     info_tbl.drawOn(c, M, y - ih)
-    y = y - ih - 0.25*cm
+    y = y - ih - 0.25 * cm
 
-    # Carte (mono-page)
-    footer_h = 0.6*cm
-    min_table_h = 5.5*cm
-    max_map_h = 7.5*cm
+    footer_h = 0.6 * cm
+    min_table_h = 5.5 * cm
+    max_map_h = 7.5 * cm
     remaining_h = (y - M) - footer_h
 
-    map_h = max(4.0*cm, min(max_map_h, remaining_h * 0.42))
-    table_h_avail = remaining_h - map_h - 0.25*cm
+    map_h = max(4.0 * cm, min(max_map_h, remaining_h * 0.42))
+    table_h_avail = remaining_h - map_h - 0.25 * cm
     if table_h_avail < min_table_h:
-        delta = (min_table_h - table_h_avail)
-        map_h = max(4.0*cm, map_h - delta)
-        table_h_avail = (y - M) - footer_h - map_h - 0.25*cm
+        delta = min_table_h - table_h_avail
+        map_h = max(4.0 * cm, map_h - delta)
+        table_h_avail = (y - M) - footer_h - map_h - 0.25 * cm
 
     dpi = int(detail_params.get("dpi", 220))
 
@@ -575,13 +591,20 @@ def generate_pdf_report(
         span_lon = max_lon - min_lon
         span_lat = max_lat - min_lat
         span = max(span_lon, span_lat)
-        if span <= 0.5:   z = 9
-        elif span <= 1.0: z = 8
-        elif span <= 2.0: z = 7
-        elif span <= 5.0: z = 6
-        elif span <= 12.0:z = 5
-        elif span <= 24.0:z = 4
-        else:             z = 3
+        if span <= 0.5:
+            z = 9
+        elif span <= 1.0:
+            z = 8
+        elif span <= 2.0:
+            z = 7
+        elif span <= 5.0:
+            z = 6
+        elif span <= 12.0:
+            z = 5
+        elif span <= 24.0:
+            z = 4
+        else:
+            z = 3
         return min(z, int(detail_params.get("max_zoom", 9)))
 
     map_buffer = None
@@ -592,7 +615,6 @@ def generate_pdf_report(
 
         fig_w_in = AVAIL_W / 72.0
         fig_h_in = map_h / 72.0
-
         min_lon, max_lon, min_lat, max_lat = _fit_extent_to_aspect(
             min_lon, max_lon, min_lat, max_lat, target_aspect_w_over_h=(AVAIL_W / max(1, map_h))
         )
@@ -622,15 +644,15 @@ def generate_pdf_report(
                         ax.add_image(tiler, zoom)
                         raster_ok = True
 
-                if not raster_ok and mode in ("auto","stamen"):
-                    tiler = Stamen('terrain-background')
+                if not raster_ok and mode in ("auto", "stamen"):
+                    tiler = Stamen("terrain-background")
                     ax = plt.axes(projection=tiler.crs)
                     ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
                     zoom = _choose_zoom(min_lon, max_lon, min_lat, max_lat)
                     ax.add_image(tiler, zoom)
                     raster_ok = True
 
-                if not raster_ok and mode in ("auto","osm"):
+                if not raster_ok and mode in ("auto", "osm"):
                     tiler = OSM()
                     ax = plt.axes(projection=tiler.crs)
                     ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
@@ -642,85 +664,95 @@ def generate_pdf_report(
 
             if not raster_ok:
                 ax = plt.axes(projection=ccrs.PlateCarree())
-                colors_cfg = {'ocean':'#EAF4FF','land':'#F7F5F2','lakes_fc':'#EAF4FF','lakes_ec':'#B3D4F5',
-                              'coast':'#818892','borders0':'#8F98A3'}
-                ax.add_feature(cfeature.OCEAN.with_scale(ne_scale), facecolor=colors_cfg['ocean'], edgecolor='none', zorder=0)
-                ax.add_feature(cfeature.LAND.with_scale(ne_scale),  facecolor=colors_cfg['land'],  edgecolor='none', zorder=0)
-                ax.add_feature(cfeature.LAKES.with_scale(ne_scale), facecolor=colors_cfg['lakes_fc'], edgecolor=colors_cfg['lakes_ec'], linewidth=0.3, zorder=1)
-                ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), edgecolor=colors_cfg['coast'], linewidth=0.4, zorder=2)
-                ax.add_feature(cfeature.BORDERS.with_scale(ne_scale),   edgecolor=colors_cfg['borders0'], linewidth=0.5, zorder=2)
+                colors_cfg = {
+                    "ocean": "#EAF4FF",
+                    "land": "#F7F5F2",
+                    "lakes_fc": "#EAF4FF",
+                    "lakes_ec": "#B3D4F5",
+                    "coast": "#818892",
+                    "borders0": "#8F98A3",
+                }
+                ax.add_feature(cfeature.OCEAN.with_scale(ne_scale), facecolor=colors_cfg["ocean"], edgecolor="none", zorder=0)
+                ax.add_feature(cfeature.LAND.with_scale(ne_scale), facecolor=colors_cfg["land"], edgecolor="none", zorder=0)
+                ax.add_feature(cfeature.LAKES.with_scale(ne_scale), facecolor=colors_cfg["lakes_fc"], edgecolor=colors_cfg["lakes_ec"], linewidth=0.3, zorder=1)
+                ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), edgecolor=colors_cfg["coast"], linewidth=0.4, zorder=2)
+                ax.add_feature(cfeature.BORDERS.with_scale(ne_scale), edgecolor=colors_cfg["borders0"], linewidth=0.5, zorder=2)
                 try:
-                    admin1 = cfeature.NaturalEarthFeature('cultural', 'admin_1_states_provinces_lines', '10m', edgecolor='#777777', facecolor='none')
+                    admin1 = cfeature.NaturalEarthFeature("cultural", "admin_1_states_provinces_lines", "10m", edgecolor="#777777", facecolor="none")
                     ax.add_feature(admin1, linewidth=0.4, zorder=2)
-                    roads = cfeature.NaturalEarthFeature('cultural', 'roads', '10m', edgecolor='#B07020', facecolor='none')
+                    roads = cfeature.NaturalEarthFeature("cultural", "roads", "10m", edgecolor="#B07020", facecolor="none")
                     ax.add_feature(roads, linewidth=0.35, zorder=3)
-                    urban = cfeature.NaturalEarthFeature('cultural', 'urban_areas', '10m', edgecolor='none', facecolor='#E0D5CC')
+                    urban = cfeature.NaturalEarthFeature("cultural", "urban_areas", "10m", edgecolor="none", facecolor="#E0D5CC")
                     ax.add_feature(urban, zorder=1)
                 except Exception:
                     pass
                 try:
-                    ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=False, linewidth=0.25, color='#DADDE2', alpha=0.7, linestyle='--')
+                    ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=False, linewidth=0.25, color="#DADDE2", alpha=0.7, linestyle="--")
                 except Exception:
                     pass
                 ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
             else:
                 try:
-                    ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), edgecolor='#555', linewidth=0.4, zorder=2)
+                    ax.add_feature(cfeature.COASTLINE.with_scale(ne_scale), edgecolor="#555", linewidth=0.4, zorder=2)
                 except Exception:
                     pass
                 try:
-                    ax.add_feature(cfeature.BORDERS.with_scale(ne_scale), edgecolor='#666', linewidth=0.4, zorder=2)
+                    ax.add_feature(cfeature.BORDERS.with_scale(ne_scale), edgecolor="#666", linewidth=0.4, zorder=2)
                 except Exception:
                     pass
                 try:
-                    ax.add_feature(cfeature.LAKES.with_scale(ne_scale), facecolor='#87B9FF', edgecolor='#6FA8FF', linewidth=0.2, zorder=1)
+                    ax.add_feature(cfeature.LAKES.with_scale(ne_scale), facecolor="#87B9FF", edgecolor="#6FA8FF", linewidth=0.2, zorder=1)
                 except Exception:
                     pass
                 try:
-                    ax.add_feature(cfeature.RIVERS.with_scale(ne_scale), edgecolor='#6FA8FF', linewidth=0.25, zorder=1)
+                    ax.add_feature(cfeature.RIVERS.with_scale(ne_scale), edgecolor="#6FA8FF", linewidth=0.25, zorder=1)
                 except Exception:
                     pass
 
-            mode_colors = {"routier":"#0066CC","aerien":"#CC0000","maritime":"#009900","ferroviaire":"#9900CC"}
+            mode_colors = {"routier": "#0066CC", "aerien": "#CC0000", "maritime": "#009900", "ferroviaire": "#9900CC"}
             for r in rows:
-                cat = mode_to_category(r["Mode"]); color = mode_colors.get(cat, "#666666")
+                cat = mode_to_category(r["Mode"])
+                color = mode_colors.get(cat, "#666666")
                 ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]],
                         color=color, linewidth=2.0, alpha=0.9, transform=ccrs.PlateCarree(), zorder=3)
-                ax.scatter([r["lon_o"]], [r["lat_o"]], s=22, c="#0A84FF", edgecolors='white', linewidths=0.8,
+                ax.scatter([r["lon_o"]], [r["lat_o"]], s=22, c="#0A84FF", edgecolors="white", linewidths=0.8,
                            transform=ccrs.PlateCarree(), zorder=4)
-                ax.scatter([r["lon_d"]], [r["lat_d"]], s=22, c="#FF3B30", edgecolors='white', linewidths=0.8,
+                ax.scatter([r["lon_d"]], [r["lat_d"]], s=22, c="#FF3B30", edgecolors="white", linewidths=0.8,
                            transform=ccrs.PlateCarree(), zorder=4)
                 mid_lon = (r["lon_o"] + r["lon_d"]) / 2.0
                 mid_lat = (r["lat_o"] + r["lat_d"]) / 2.0
                 _pdf_add_mode_icon(ax, mid_lon, mid_lat, cat, pdf_icon_size_px, transform=ccrs.PlateCarree())
 
             map_buffer = io.BytesIO()
-            plt.tight_layout()
-            plt.savefig(map_buffer, format='png', dpi=dpi, bbox_inches='tight', facecolor='white', edgecolor='none')
+            fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+            plt.savefig(map_buffer, format="png", dpi=dpi, facecolor="white", edgecolor="none")
             plt.close(fig)
             map_buffer.seek(0)
 
         else:
-            # Fallback sans cartopy
             fig, ax = plt.subplots(figsize=(fig_w_in, fig_h_in), dpi=dpi)
-            ax.set_facecolor('#F7F8FA')
-            ax.set_xlim(min_lon, max_lon); ax.set_ylim(min_lat, max_lat)
-            lat_step = (max_lat-min_lat)/6.0 if (max_lat-min_lat)>0 else 1
-            lon_step = (max_lon-min_lon)/8.0 if (max_lon-min_lon)>0 else 1
-            for yy in np.arange(min_lat, max_lat+1e-9, lat_step):
-                ax.plot([min_lon, max_lon],[yy,yy], color='#E6E9EF', lw=0.6)
-            for xx in np.arange(min_lon, max_lon+1e-9, lon_step):
-                ax.plot([xx,xx],[min_lat,max_lat], color='#E6E9EF', lw=0.6)
-            mode_colors = {"routier":"#0066CC","aerien":"#CC0000","maritime":"#009900","ferroviaire":"#9900CC"}
+            ax.set_facecolor("#F7F8FA")
+            ax.set_xlim(min_lon, max_lon)
+            ax.set_ylim(min_lat, max_lat)
+            lat_step = (max_lat - min_lat) / 6.0 if (max_lat - min_lat) > 0 else 1
+            lon_step = (max_lon - min_lon) / 8.0 if (max_lon - min_lon) > 0 else 1
+            for yy in np.arange(min_lat, max_lat + 1e-9, lat_step):
+                ax.plot([min_lon, max_lon], [yy, yy], color="#E6E9EF", lw=0.6)
+            for xx in np.arange(min_lon, max_lon + 1e-9, lon_step):
+                ax.plot([xx, xx], [min_lat, max_lat], color="#E6E9EF", lw=0.6)
+
+            mode_colors = {"routier": "#0066CC", "aerien": "#CC0000", "maritime": "#009900", "ferroviaire": "#9900CC"}
             for r in rows:
-                cat = mode_to_category(r["Mode"]); color = mode_colors.get(cat, "#666666")
+                cat = mode_to_category(r["Mode"])
+                color = mode_colors.get(cat, "#666666")
                 ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]], color=color, lw=2.0, alpha=0.9)
-                ax.scatter([r["lon_o"]],[r["lat_o"]], s=22, c="#0A84FF", edgecolor='white', lw=0.8)
-                ax.scatter([r["lon_d"]],[r["lat_d"]], s=22, c="#FF3B30", edgecolor='white', lw=0.8)
+                ax.scatter([r["lon_o"]], [r["lat_o"]], s=22, c="#0A84FF", edgecolor="white", lw=0.8)
+                ax.scatter([r["lon_d"]], [r["lat_d"]], s=22, c="#FF3B30", edgecolor="white", lw=0.8)
+
             map_buffer = io.BytesIO()
-            plt.tight_layout()
-            plt.savefig(map_buffer, format='png', dpi=dpi, bbox_inches='tight', facecolor='white', edgecolor='none')
-            plt.close()
+            fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+            plt.savefig(map_buffer, format="png", dpi=dpi, facecolor="white", edgecolor="none")
+            plt.close(fig)
             map_buffer.seek(0)
 
     except Exception:
@@ -728,22 +760,29 @@ def generate_pdf_report(
 
     if map_buffer:
         img = ImageReader(map_buffer)
-        c.drawImage(img, M, y - map_h, width=AVAIL_W, height=map_h, preserveAspectRatio=True, mask='auto')
-        y = y - map_h - 0.25*cm
+        c.drawImage(
+            img, M, y - map_h,
+            width=AVAIL_W, height=map_h,
+            preserveAspectRatio=True, mask="auto"
+        )
+    y = y - map_h - 0.25 * cm
 
     heading_para = Paragraph("Detail des segments", heading_style)
     hw, hh = heading_para.wrap(AVAIL_W, AVAIL_H)
     heading_para.drawOn(c, M, y - hh)
-    y = y - hh - 0.10*cm
+    y = y - hh - 0.10 * cm
 
-    headers = ["Seg.", "Origine", "Destination", "Mode", "Dist.\n(km)", f"Poids\n({unit})", "Facteur\n(kg CO2e/t.km)", "Emissions\n(kg CO2e)"]
-    col_widths = [1.2*cm, 4.8*cm, 4.8*cm, 3.0*cm, 1.8*cm, 1.8*cm, 2.2*cm, 2.2*cm]
+    headers = [
+        "Seg.", "Origine", "Destination", "Mode",
+        "Dist.\n(km)", f"Poids\n({unit})",
+        "Facteur\n(kg CO2e/t.km)", "Emissions\n(kg CO2e)"
+    ]
+    col_widths = [1.2 * cm, 4.8 * cm, 4.8 * cm, 3.0 * cm, 1.8 * cm, 1.8 * cm, 2.2 * cm, 2.2 * cm]
 
-    # Correctif : version sécurisée de la cellule Paragraph
     def _p_cell_dyn(s, fs):
-        stl = ParagraphStyle('CellWrapDyn', parent=styles['Normal'], fontSize=fs, leading=max(8, fs+2), alignment=0)
+        stl = ParagraphStyle("CellWrapDyn", parent=styles["Normal"], fontSize=fs, leading=max(8, fs + 2), alignment=0)
         txt = "" if s is None else str(s)
-        txt = xml_escape(txt, entities={"'": "&apos;", '"': "&quot;"})
+        txt = xml_escape(txt)
         return Paragraph(txt, stl)
 
     data_rows = []
@@ -768,21 +807,21 @@ def generate_pdf_report(
         if show_notice and hidden_count > 0:
             notice = Paragraph(
                 f"... {hidden_count} ligne(s) non affichee(s) pour tenir sur 1 page ...",
-                ParagraphStyle('Notice', parent=styles['Normal'], fontSize=max(7, font_size-1), textColor=colors.grey, alignment=1)
+                ParagraphStyle("Notice", parent=styles["Normal"], fontSize=max(7, font_size - 1), textColor=colors.grey, alignment=1)
             )
-            body.append([notice] + [""]*(len(headers)-1))
+            body.append([notice] + [""] * (len(headers) - 1))
         tbl = Table(body, colWidths=col_widths, repeatRows=1)
-        total_row_offset = 1 if (show_notice and hidden_count>0) else 0
+        total_row_offset = 1 if (show_notice and hidden_count > 0) else 0
         style = [
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4788')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('FONTSIZE', (0, 0), (-1, -1), font_size),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('BACKGROUND', (0, -1 - total_row_offset), (-1, -1 - total_row_offset), colors.HexColor('#fff4e6')),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f4788")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("FONTSIZE", (0, 0), (-1, -1), font_size),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("BACKGROUND", (0, -1 - total_row_offset), (-1, -1 - total_row_offset), colors.HexColor("#fff4e6")),
         ]
-        if show_notice and hidden_count>0:
-            style.append(('SPAN', (0, -1), (-1, -1)))
+        if show_notice and hidden_count > 0:
+            style.append(("SPAN", (0, -1), (-1, -1)))
         tbl.setStyle(TableStyle(style))
         return tbl
 
@@ -799,13 +838,14 @@ def generate_pdf_report(
     if final_tbl is None:
         max_data = len(data_rows)
         low, high = 0, max_data
-        best_tbl = None; best = 0
+        best_tbl = None
         while low <= high:
-            mid = (low + high)//2
+            mid = (low + high) // 2
             test_tbl = build_table(6, rows_limit=mid, show_notice=True, hidden_count=(max_data - mid))
             tw, th = test_tbl.wrap(avail_w, avail_h)
             if th <= avail_h:
-                best = mid; best_tbl = test_tbl; low = mid + 1
+                best_tbl = test_tbl
+                low = mid + 1
             else:
                 high = mid - 1
         final_tbl = best_tbl
@@ -813,14 +853,14 @@ def generate_pdf_report(
     if final_tbl is not None:
         tw, th = final_tbl.wrap(avail_w, avail_h)
         final_tbl.drawOn(c, M, y - th)
-        y = y - th - 0.10*cm
+        y = y - th - 0.10 * cm
 
     footer_para = Paragraph(
         f"Document genere le {datetime.now().strftime('%d/%m/%Y %H:%M')} — Calculateur CO2 multimodal - NILEY EXPERTS",
-        ParagraphStyle('Footer', parent=styles['Normal'], fontSize=7, textColor=colors.grey, alignment=1)
+        ParagraphStyle("Footer", parent=styles["Normal"], fontSize=7, textColor=colors.grey, alignment=1)
     )
-    fw, fh = footer_para.wrap(AVAIL_W, 0.8*cm)
-    footer_para.drawOn(c, M + (AVAIL_W - fw)/2.0, M - 0.2*cm)
+    fw, fh = footer_para.wrap(AVAIL_W, 0.8 * cm)
+    footer_para.drawOn(c, M + (AVAIL_W - fw) / 2.0, M - 0.2 * cm)
 
     c.showPage()
     c.save()
