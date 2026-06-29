@@ -222,8 +222,8 @@ def _default_segment(mode=None, weight=1000.0):
     if mode is None:
         mode = list(DEFAULT_EMISSION_FACTORS.keys())[0]
     return {
-        "origin": {"query":"", "display":"", "iata":"", "coord":None},
-        "dest":   {"query":"", "display":"", "iata":"", "coord":None},
+        "origin": {"query":"", "display":"", "iata":"", "unlocode":"", "coord":None},
+        "dest":   {"query":"", "display":"", "iata":"", "unlocode":"", "coord":None},
         "mode": mode,
         "weight": weight,
     }
@@ -246,6 +246,7 @@ def add_segment_end():
             "display": prev_dest.get("display", ""),
             "coord": prev_dest.get("coord"),
             "iata": prev_dest.get("iata", ""),
+            "unlocode": prev_dest.get("unlocode", ""),
             "query": prev_dest.get("display", "")
         })
         # Mise à jour explicite de l'état de session pour refléter le chaînage
@@ -254,6 +255,7 @@ def add_segment_end():
         st.session_state[f"origin_display_{j}"] = prev_dest.get("display", "")
         st.session_state[f"origin_coord_{j}"] = prev_dest.get("coord")
         st.session_state[f"origin_iata_{j}"] = prev_dest.get("iata", "")
+        st.session_state[f"origin_unlo_{j}"] = prev_dest.get("unlocode", "")
         st.session_state[f"origin_autofill_{j}"] = True
         st.session_state[f"chain_src_signature_{j}"] = _normalize_signature(prev_dest.get("display"), prev_dest.get("coord"))
         st.session_state[f"origin_user_edited_{j}"] = False
@@ -612,11 +614,16 @@ def generate_pdf_report(
             fig = plt.figure(figsize=(fig_w_in, fig_h_in), dpi=dpi)
             ax = None
             raster_ok = False
+
+            def _reset_geo_axes(projection):
+                fig.clear()
+                return fig.add_subplot(1, 1, 1, projection=projection)
+
             try:
                 if mode == "carto_web" and web_map_style_label:
                     tiler = _carto_tiler_from_web_style(web_map_style_label)
                     if tiler is not None:
-                        ax = plt.axes(projection=tiler.crs)
+                        ax = _reset_geo_axes(tiler.crs)
                         ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
                         zoom = _choose_zoom(min_lon, max_lon, min_lat, max_lat)
                         ax.add_image(tiler, zoom)
@@ -624,7 +631,7 @@ def generate_pdf_report(
 
                 if not raster_ok and mode in ("auto","stamen"):
                     tiler = Stamen('terrain-background')
-                    ax = plt.axes(projection=tiler.crs)
+                    ax = _reset_geo_axes(tiler.crs)
                     ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
                     zoom = _choose_zoom(min_lon, max_lon, min_lat, max_lat)
                     ax.add_image(tiler, zoom)
@@ -632,7 +639,7 @@ def generate_pdf_report(
 
                 if not raster_ok and mode in ("auto","osm"):
                     tiler = OSM()
-                    ax = plt.axes(projection=tiler.crs)
+                    ax = _reset_geo_axes(tiler.crs)
                     ax.set_extent((min_lon, max_lon, min_lat, max_lat), crs=ccrs.PlateCarree())
                     zoom = _choose_zoom(min_lon, max_lon, min_lat, max_lat)
                     ax.add_image(tiler, zoom)
@@ -641,7 +648,7 @@ def generate_pdf_report(
                 raster_ok = False
 
             if not raster_ok:
-                ax = plt.axes(projection=ccrs.PlateCarree())
+                ax = _reset_geo_axes(ccrs.PlateCarree())
                 colors_cfg = {'ocean':'#EAF4FF','land':'#F7F5F2','lakes_fc':'#EAF4FF','lakes_ec':'#B3D4F5',
                               'coast':'#818892','borders0':'#8F98A3'}
                 ax.add_feature(cfeature.OCEAN.with_scale(ne_scale), facecolor=colors_cfg['ocean'], edgecolor='none', zorder=0)
@@ -684,8 +691,14 @@ def generate_pdf_report(
             mode_colors = {"routier":"#0066CC","aerien":"#CC0000","maritime":"#009900","ferroviaire":"#9900CC"}
             for r in rows:
                 cat = mode_to_category(r["Mode"]); color = mode_colors.get(cat, "#666666")
-                ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]],
-                        color=color, linewidth=2.0, alpha=0.9, transform=ccrs.PlateCarree(), zorder=3)
+                if r.get("route_coords"):
+                    route_lons = [pt[0] for pt in r["route_coords"]]
+                    route_lats = [pt[1] for pt in r["route_coords"]]
+                    ax.plot(route_lons, route_lats,
+                            color=color, linewidth=2.0, alpha=0.9, transform=ccrs.PlateCarree(), zorder=3)
+                else:
+                    ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]],
+                            color=color, linewidth=2.0, alpha=0.9, transform=ccrs.PlateCarree(), zorder=3)
                 ax.scatter([r["lon_o"]], [r["lat_o"]], s=22, c="#0A84FF", edgecolors='white', linewidths=0.8,
                            transform=ccrs.PlateCarree(), zorder=4)
                 ax.scatter([r["lon_d"]], [r["lat_d"]], s=22, c="#FF3B30", edgecolors='white', linewidths=0.8,
@@ -714,7 +727,10 @@ def generate_pdf_report(
             mode_colors = {"routier":"#0066CC","aerien":"#CC0000","maritime":"#009900","ferroviaire":"#9900CC"}
             for r in rows:
                 cat = mode_to_category(r["Mode"]); color = mode_colors.get(cat, "#666666")
-                ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]], color=color, lw=2.0, alpha=0.9)
+                if r.get("route_coords"):
+                    ax.plot([pt[0] for pt in r["route_coords"]], [pt[1] for pt in r["route_coords"]], color=color, lw=2.0, alpha=0.9)
+                else:
+                    ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]], color=color, lw=2.0, alpha=0.9)
                 ax.scatter([r["lon_o"]],[r["lat_o"]], s=22, c="#0A84FF", edgecolor='white', lw=0.8)
                 ax.scatter([r["lon_d"]],[r["lat_d"]], s=22, c="#FF3B30", edgecolor='white', lw=0.8)
             map_buffer = io.BytesIO()
@@ -1029,6 +1045,27 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str, sho
     label = f"{label_prefix} — Adresse / Ville / Pays"
     query_val = st.text_input(label, value=st.session_state.get(q_key, ""), key=q_key)
     q_raw = (query_val or "").strip()
+
+    stored_display = (st.session_state.get(disp_key, "") or "").strip()
+    stored_coord = st.session_state.get(crd_key)
+    is_unchanged_autofill = (
+        side_key == "origin"
+        and bool(st.session_state.get(f"origin_autofill_{seg_index}", False))
+        and stored_display
+        and stored_coord
+        and q_raw == stored_display
+    )
+    if is_unchanged_autofill:
+        st.caption("Lieu repris exactement depuis la destination du segment precedent.")
+        return {
+            "coord": stored_coord,
+            "display": stored_display,
+            "iata": st.session_state.get(iata_key, ""),
+            "unlocode": st.session_state.get(unlo_key, ""),
+            "query": query_val,
+            "choice": stored_display,
+        }
+
     is_iata_mode = bool(re.fullmatch(r"[A-Za-z]{3}", q_raw))
     q_iata = q_raw.upper() if is_iata_mode else None
 
@@ -1124,7 +1161,13 @@ for i in range(1, len(st.session_state.segments)):
         cur["origin"]["display"] = prev["dest"]["display"]
         cur["origin"]["coord"]   = prev["dest"]["coord"]
         cur["origin"]["iata"]    = prev["dest"]["iata"]
+        cur["origin"]["unlocode"]= prev["dest"].get("unlocode", "")
         cur["origin"]["query"]   = prev["dest"]["display"]
+        st.session_state[f"origin_query_{i}"] = prev["dest"]["display"]
+        st.session_state[f"origin_display_{i}"] = prev["dest"]["display"]
+        st.session_state[f"origin_coord_{i}"] = prev["dest"]["coord"]
+        st.session_state[f"origin_iata_{i}"] = prev["dest"].get("iata", "")
+        st.session_state[f"origin_unlo_{i}"] = prev["dest"].get("unlocode", "")
         st.session_state[f"origin_autofill_{i}"] = True
         st.session_state[f"chain_src_signature_{i}"] = _normalize_signature(prev["dest"].get("display"), prev["dest"].get("coord"))
         st.session_state[f"origin_user_edited_{i}"] = False
@@ -1177,13 +1220,13 @@ for i in range(len(st.session_state.segments)):
             weight_val = st.session_state["weight_0"]
         st.session_state.segments[i]["weight"] = weight_val
 
-        st.session_state.segments[i]["origin"] = {"query": o["query"], "display": o["display"], "iata": o["iata"], "coord": o["coord"]}
-        st.session_state.segments[i]["dest"]   = {"query": d["query"], "display": d["display"], "iata": d["iata"], "coord": d["coord"]}
+        st.session_state.segments[i]["origin"] = {"query": o["query"], "display": o["display"], "iata": o["iata"], "unlocode": o.get("unlocode", ""), "coord": o["coord"]}
+        st.session_state.segments[i]["dest"]   = {"query": d["query"], "display": d["display"], "iata": d["iata"], "unlocode": d.get("unlocode", ""), "coord": d["coord"]}
 
         # Chaine live D(i) -> O(i+1) robuste
         if i + 1 < len(st.session_state.segments):
             next_seg = st.session_state.segments[i + 1]
-            dest_disp  = d["display"]; dest_coord = d["coord"]; dest_iata = d["iata"] or ""
+            dest_disp  = d["display"]; dest_coord = d["coord"]; dest_iata = d["iata"] or ""; dest_unlo = d.get("unlocode", "") or ""
             dest_valid = bool(dest_disp and dest_coord)
             next_origin      = next_seg.get("origin", {})
             next_empty       = _is_location_empty(next_origin)
@@ -1203,6 +1246,7 @@ for i in range(len(st.session_state.segments)):
                 next_seg["origin"]["display"] = dest_disp
                 next_seg["origin"]["coord"]   = dest_coord
                 next_seg["origin"]["iata"]    = dest_iata
+                next_seg["origin"]["unlocode"]= dest_unlo
                 next_seg["origin"]["query"]   = dest_disp
 
                 j = i + 1
@@ -1210,6 +1254,7 @@ for i in range(len(st.session_state.segments)):
                 st.session_state[f"origin_display_{j}"] = dest_disp
                 st.session_state[f"origin_coord_{j}"]   = dest_coord
                 st.session_state[f"origin_iata_{j}"]    = dest_iata
+                st.session_state[f"origin_unlo_{j}"]    = dest_unlo
                 st.session_state[f"origin_autofill_{j}"]= True
                 st.session_state[f"chain_src_signature_{j}"] = new_sig
                 st.session_state[f"origin_user_edited_{j}"]  = False
@@ -1459,12 +1504,7 @@ if st.button("Calculer l'empreinte carbone totale", disabled=not can_calculate):
         filename_pdf = f"rapport_co2_multimodal{safe_suffix}.pdf"
 
         st.subheader("Exporter")
-        pdf_base_choice = st.selectbox(
-            "Fond de carte du PDF",
-            options=PDF_BASEMAP_LABELS,
-            index=0,
-            help="Identique a la carte Web utilise le style Carto (Voyager/Positron/Dark Matter)."
-        )
+        pdf_base_choice = "Identique a la carte Web (Carto)"
         detail_levels = {
             "Standard (leger, rapide)": {"dpi": 180, "max_zoom": 7},
             "Detaille (equilibre)":     {"dpi": 220, "max_zoom": 9},
