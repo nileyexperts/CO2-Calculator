@@ -8,6 +8,8 @@ import io
 import re
 import time
 import math
+import heapq
+from collections import defaultdict
 import unicodedata
 import tempfile
 from io import BytesIO
@@ -22,6 +24,11 @@ import streamlit as st
 import pydeck as pdk
 from geopy.distance import great_circle
 from opencage.geocoder import OpenCageGeocode
+
+try:
+    import searoute
+except ImportError:
+    searoute = None
 
 # PDF
 from reportlab.lib import colors
@@ -234,9 +241,25 @@ ROAD_PROFILES = {
     "Articulé 40 t – porte-conteneur": (0.373, 12.50),
     "Articulé 40 t – messagerie": (0.342, 6.00),
     "Porteur 19 t – messagerie": (0.270, 2.50),
+    "Porteur 12 t – marchandises diverses": (0.240, 1.80),
     "Utilitaire 3,5 t – express colis": (0.160, 0.46),
 }
 ROAD_DIESEL_KG_CO2E_PER_L = 3.16
+# Representative payload thresholds (kg), deliberately rounded for vehicle selection.
+# They select an emissions profile and do not represent a vehicle's certified payload.
+ROAD_BY_PAYLOAD = (
+    (1400, "Utilitaire 3,5 t – express colis"),
+    (4500, "Porteur 12 t – marchandises diverses"),
+    (9500, "Porteur 19 t – messagerie"),
+    (25000, "Articulé 40 t – longue distance"),
+)
+
+
+def automatic_road_profile(weight_kg):
+    return next(
+        (profile for capacity, profile in ROAD_BY_PAYLOAD if weight_kg <= capacity),
+        ROAD_BY_PAYLOAD[-1][1],
+    )
 # Tableau 7 : repères historiques DGAC (2016) pour avions tout-cargo.
 AIR_CARGO_PROFILES = (
     (1000, 1.508, "100–250 t MMD, ≤ 1 000 km"),
@@ -257,7 +280,7 @@ ICON_URLS = {
 # --------------------------
 # Helpers segments
 # --------------------------
-def _default_segment(mode=None, weight=1000.0):
+def _default_segment(mode=None, weight=None):
     if mode is None:
         mode = next(iter(MODE_LABELS))
     return {
@@ -285,6 +308,7 @@ def add_segment_end():
             "display": prev_dest.get("display", ""),
             "coord": prev_dest.get("coord"),
             "iata": prev_dest.get("iata", ""),
+            "country": prev_dest.get("country", ""),
             "query": prev_dest.get("display", "")
         })
         # Mise à jour explicite de l'état de session pour refléter le chaînage
@@ -356,17 +380,6 @@ def geocode_cached(query: str, limit: int = 5):
     except Exception:
         return []
 
-@st.cache_data(show_spinner=False, ttl=24*60*60)
-def coords_from_formatted(formatted: str):
-    try:
-        res = geocoder.geocode(formatted, no_annotations=1, limit=1)
-        if res:
-            g = res[0]["geometry"]
-            return (g["lat"], g["lng"])
-    except Exception:
-        pass
-    return None
-
 def compute_distance_km(coord1, coord2) -> float:
     return great_circle(coord1, coord2).km
 
@@ -374,12 +387,12 @@ def compute_emissions(distance_km: float, weight_tonnes: float, factor_kg_per_tk
     return distance_km * weight_tonnes * factor_kg_per_tkm
 
 @st.cache_data(show_spinner=False, ttl=6*60*60)
-def osrm_route(coord1, coord2, base_url: str = "https://router.project-osrm.org", overview: str = "full"):
+def osrm_route(coord1, coord2, base_url: str = "https://router.project-osrm.org"):
     lon1, lat1 = coord1[1], coord1[0]
     lon2, lat2 = coord2[1], coord2[0]
     url = f"{base_url.rstrip('/')}/route/v1/driving/{lon1},{lat1};{lon2},{lat2}"
     params = {"overview": "full", "alternatives": "false", "annotations": "false", "geometries": "geojson"}
-    r = requests.get(url, params=params, timeout=12)
+    r = requests.get(url, params=params, timeout=(4, 12))
     r.raise_for_status()
     data = r.json()
     routes = data.get("routes", [])
@@ -406,18 +419,352 @@ def mode_to_category(mode_str: str) -> str:
     return "routier"
 
 
-def segment_distance(segment):
+# SNCF Réseau and Trainline datasets are published under the ODbL.
+SNCF_API = "https://ressources.data.sncf.com/api/explore/v2.1/catalog/datasets"
+TRAINLINE_STATIONS_URL = "https://raw.githubusercontent.com/trainline-eu/stations/master/stations.csv"
+EU_RAIL_COUNTRIES = frozenset(
+    "AL AT BA BE BG CH CZ DE DK EE ES FI FR GB GR HR HU IE IT LT LU LV ME MK NL NO PL PT RO RS SE SI SK TR XK".split()
+)
+RAIL_ELECTRIC_FR = "Électrique – France métropolitaine"
+RAIL_ELECTRIC_EU = "Électrique – Europe hors France"
+RAIL_DIESEL = "Diesel – gazole non routier"
+RAIL_MIX_FR = next(iter(RAIL_FACTORS))
+
+
+def sncf_export(dataset, extension, **params):
+    response = requests.get(f"{SNCF_API}/{dataset}/exports/{extension}", params=params, timeout=(4, 20))
+    response.raise_for_status()
+    return response
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_stations():
+    stations = []
+    try:
+        document = sncf_export(
+            "liste-des-gares", "geojson", select="code_uic,libelle,commune,fret,geo_shape",
+        ).json()
+        for feature in document["features"]:
+            fields = feature["properties"]
+            geometry = feature.get("geometry") or {}
+            if geometry.get("type") != "Point" or not fields.get("libelle"):
+                continue
+            lon, lat = geometry["coordinates"][:2]
+            if not (math.isfinite(lat) and math.isfinite(lon)):
+                continue
+            stations.append({
+                "name": fields["libelle"], "city": fields.get("commune") or "",
+                "code": str(fields.get("code_uic") or ""), "country": "FR",
+                "freight": fields.get("fret") == "O", "coord": (lat, lon),
+            })
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        pass
+
+    try:
+        response = requests.get(TRAINLINE_STATIONS_URL, timeout=(4, 12))
+        response.raise_for_status()
+        catalog = pd.read_csv(io.BytesIO(response.content), sep=";", dtype=str).fillna("")
+        catalog = catalog[
+            (catalog["is_city"] != "t") & (catalog["is_airport"] != "t")
+            & (catalog["latitude"] != "") & (catalog["longitude"] != "")
+        ]
+        has_french_catalog = bool(stations)
+        for row in catalog.itertuples(index=False):
+            if has_french_catalog and row.country == "FR":
+                continue
+            stations.append({
+                "name": row.name, "city": "", "code": row.uic8_sncf or row.uic,
+                "country": row.country, "freight": False,
+                "coord": (float(row.latitude), float(row.longitude)),
+            })
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        pass
+
+    unique = {}
+    for station in stations:
+        name = _station_search_text(station["name"])
+        city = _station_search_text(station["city"])
+        key = (station["country"], station["code"] or name, city or tuple(round(v, 2) for v in station["coord"]))
+        if key not in unique or station["freight"]:
+            unique[key] = {**station, "search_name": name, "search_city": city}
+    return list(unique.values())
+
+
+def _station_search_text(value):
+    return " ".join(re.findall(r"\w+", _normalize_no_diacritics(value), re.UNICODE))
+
+
+def search_stations(query, limit=12):
+    name, separator, code = query.partition(" | UIC ")
+    query = _station_search_text(code if separator and code.isdigit() else name.split(" · ", 1)[0])
+    if len(query) < 2:
+        return []
+    matches = []
+    for station in load_stations():
+        code, name, city = station["code"], station["search_name"], station["search_city"]
+        if query.isdigit():
+            if not code.startswith(query):
+                continue
+            score = 0 if code == query or (len(code) == 8 and code[:-1] == query) else 1
+        elif query == name:
+            score = 0
+        elif query == city or name.startswith(query):
+            score = 1
+        elif all(part in f"{name} {city} {station['country'].lower()}" for part in query.split()):
+            score = 2
+        else:
+            continue
+        matches.append((score, not station["freight"], name, len(matches), station))
+    return [match[-1] for match in sorted(matches)[:limit]]
+
+
+def railway_km(point_a, point_b):
+    """Short-arc distance between two nearby WGS84 vertices (lon, lat)."""
+    lon_a, lat_a = point_a
+    lon_b, lat_b = point_b
+    x = (lon_b - lon_a) * math.cos(math.radians((lat_a + lat_b) / 2))
+    return 111.195 * math.hypot(x, lat_b - lat_a)
+
+
+def kilometre_marker(value):
+    match = re.fullmatch(r"(\d+)([+-])(\d{3})", str(value).strip())
+    if match is None:
+        return None
+    km, sign, metres = match.groups()
+    return int(km) + (1 if sign == "+" else -1) * int(metres) / 1000
+
+
+def build_rail_graph(active_features, electrified_features):
+    electrified = defaultdict(list)
+    for feature in electrified_features:
+        props = feature["properties"]
+        start, end = kilometre_marker(props.get("pkd")), kilometre_marker(props.get("pkf"))
+        if start is not None and end is not None and props.get("elect"):
+            key = (str(props.get("code_ligne")), str(props.get("rg_troncon")))
+            electrified[key].append((min(start, end), max(start, end)))
+
+    graph = defaultdict(list)
+    endpoints = set()
+    vertex_lines = defaultdict(set)
+    for feature in active_features:
+        props = feature["properties"]
+        label = _normalize_no_diacritics(str(props.get("lib_ligne") or ""))
+        if re.search(r"\blgv\b|ligne a grande vitesse", label):
+            continue
+        shape = feature.get("geometry") or {}
+        kind = shape.get("type")
+        geometry = shape.get("coordinates", [])
+        lines = [geometry] if kind == "LineString" else geometry if kind == "MultiLineString" else []
+        pk_start, pk_end = kilometre_marker(props.get("pkd")), kilometre_marker(props.get("pkf"))
+        line_key = (str(props.get("code_ligne")), str(props.get("rg_troncon")))
+        spans = electrified[line_key]
+        polylines = [
+            [tuple(round(x, 5) for x in point[:2]) for point in line]
+            for line in lines if len(line) > 1
+        ]
+        begin = props.get("x_d_wgs84"), props.get("y_d_wgs84")
+        if polylines and all(isinstance(value, (int, float)) for value in begin):
+            if railway_km(begin, polylines[0][0]) > railway_km(begin, polylines[-1][-1]):
+                polylines = [list(reversed(line)) for line in reversed(polylines)]
+        lengths = [[railway_km(a, b) for a, b in zip(line, line[1:])] for line in polylines]
+        total = sum(map(sum, lengths))
+        if not total:
+            continue
+        accumulated = 0.0
+        for line, distances in zip(polylines, lengths):
+            endpoints.update((line[0], line[-1]))
+            for a, b, km in zip(line, line[1:], distances):
+                if not km:
+                    continue
+                electric_share = None
+                if pk_start is not None and pk_end is not None:
+                    start = pk_start + (pk_end - pk_start) * accumulated / total
+                    end = pk_start + (pk_end - pk_start) * (accumulated + km) / total
+                    lo, hi = sorted((start, end))
+                    # Merge clipped ranges to avoid counting multiple voltage listings twice.
+                    covered = 0.0
+                    cursor = lo
+                    for left, right in sorted(spans):
+                        first, last = max(lo, left, cursor), min(hi, right)
+                        if last > first:
+                            covered += last - first
+                            cursor = last
+                    electric_share = covered / (hi - lo) if hi > lo else None
+                accumulated += km
+                graph[a].append((b, km, electric_share))
+                graph[b].append((a, km, electric_share))
+                vertex_lines[a].add(line_key)
+                vertex_lines[b].add(line_key)
+
+    # Some geometries stop a few metres apart at a connection.
+    cell = 0.001
+    grid = defaultdict(list)
+    for point in graph:
+        x, y = (math.floor(value / cell) for value in point)
+        grid[x, y].append(point)
+    for point in sorted(endpoints & graph.keys()):
+        x, y = (math.floor(value / cell) for value in point)
+        nearby = (
+            other for i in range(x - 1, x + 2) for j in range(y - 1, y + 2)
+            for other in grid[i, j] if vertex_lines[point].isdisjoint(vertex_lines[other])
+        )
+        km, closest = min(((railway_km(point, other), other) for other in nearby), default=(math.inf, None))
+        if km <= 0.035:
+            graph[point].append((closest, km, None))
+            graph[closest].append((point, km, None))
+    return graph
+
+
+@st.cache_resource(show_spinner=False, ttl=24 * 3600)
+def load_french_rail_graph():
+    active = sncf_export("lignes-par-statut", "geojson", where="statut = 'Exploitée'").json()["features"]
+    electric = sncf_export("liste-des-lignes-electrifiees", "geojson").json()["features"]
+    if not active or not electric:
+        raise ValueError("Données ferroviaires SNCF incomplètes.")
+    graph = build_rail_graph(active, electric)
+    nodes = list(graph)
+    return graph, nodes, np.asarray(nodes)
+
+
+def shortest_rail_path(graph, origin, destination):
+    queue = [(0.0, origin)]
+    distances = {origin: 0.0}
+    previous = {}
+    while queue:
+        cost, node = heapq.heappop(queue)
+        if cost != distances[node]:
+            continue
+        if node == destination:
+            path, electric, unknown = [destination], 0.0, 0.0
+            while node != origin:
+                node, km, share = previous[node]
+                path.append(node)
+                if share is None:
+                    unknown += km
+                else:
+                    electric += km * share
+            return cost, electric, unknown, list(reversed(path))
+        for next_node, km, share in graph[node]:
+            new_cost = cost + km
+            if new_cost < distances.get(next_node, math.inf):
+                distances[next_node] = new_cost
+                previous[next_node] = node, km, share
+                heapq.heappush(queue, (new_cost, next_node))
+    return None
+
+
+@st.cache_data(show_spinner=False, ttl=24 * 3600, max_entries=300)
+def french_rail_estimate(coord_o, coord_d):
+    try:
+        graph, nodes, coordinates = load_french_rail_graph()
+        if not nodes:
+            return None
+        snapped = []
+        for lat, lon in (coord_o, coord_d):
+            delta = coordinates - (lon, lat)
+            delta[:, 0] *= math.cos(math.radians(lat))
+            index = int(np.argmin(np.sum(delta ** 2, axis=1)))
+            node = nodes[index]
+            if railway_km((lon, lat), node) > 8:
+                return None
+            snapped.append(node)
+        result = shortest_rail_path(graph, *snapped)
+        if not result:
+            return None
+        km, electric, unknown, path = result
+        direct = compute_distance_km(coord_o, coord_d)
+        if km <= 0 or km < direct * 0.8 or km > max(20.0, direct * 3):
+            return None
+        return {
+            "km": km, "geometry": path,
+            "known_share": max(0.0, 1 - unknown / km),
+            "electric_share": electric / (km - unknown) if km > unknown else 0.0,
+            "source": "SNCF Réseau",
+        }
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        return None
+
+
+@st.cache_data(show_spinner=False, ttl=24 * 3600, max_entries=300)
+def open_rail_estimate(coord_o, coord_d):
+    endpoint = os.getenv("NILEY_RAIL_ROUTING_URL", "https://routing.openrailrouting.org/route")
+    params = [
+        ("profile", "non_tgv"), ("points_encoded", "false"), ("details", "electrified"),
+        ("point", f"{coord_o[0]},{coord_o[1]}"), ("point", f"{coord_d[0]},{coord_d[1]}"),
+    ]
+    try:
+        response = requests.get(endpoint, params=params, timeout=(4, 15))
+        response.raise_for_status()
+        path = response.json()["paths"][0]
+        km = float(path["distance"]) / 1000
+        points = [point[:2] for point in path["points"]["coordinates"]]
+        if not math.isfinite(km) or km <= 0 or len(points) < 2:
+            return None
+        if railway_km(coord_o[::-1], points[0][:2]) > 8 or railway_km(coord_d[::-1], points[-1][:2]) > 8:
+            return None
+        electrical_km = diesel_km = 0.0
+        for start, end, value in path.get("details", {}).get("electrified", []):
+            part = math.fsum(railway_km(a[:2], b[:2]) for a, b in zip(points[start:end], points[start + 1:end + 1]))
+            tag = str(value).lower()
+            if tag in ("contact_line", "rail", "yes"):
+                electrical_km += part
+            elif tag == "no":
+                diesel_km += part
+        known_km = electrical_km + diesel_km
+        return {
+            "km": km, "geometry": points, "known_share": min(1.0, known_km / km),
+            "electric_share": electrical_km / known_km if known_km else 0.0,
+            "source": "OpenRailRouting / OpenStreetMap",
+        }
+    except (requests.RequestException, ValueError, KeyError, TypeError, IndexError):
+        return None
+
+
+def rail_profile_estimate(segment):
+    countries = segment.get("country_o"), segment.get("country_d")
+    french = countries == ("FR", "FR")
+    european = all(country in EU_RAIL_COUNTRIES for country in countries)
+    if french:
+        default_share = 0.9
+        default_label = "mix fret France (90 % électrique)"
+    elif european:
+        default_share = 0.8
+        default_label = "mix fret européen IRG-Rail 2024 (80 % électrique)"
+    else:
+        default_share = 0.0
+        default_label = "facteur diesel de repli"
+    electric_profile = RAIL_ELECTRIC_FR if french else RAIL_ELECTRIC_EU
+    coord_o, coord_d = segment["coord_o"], segment["coord_d"]
+
+    route = None
+    if coord_o and coord_d:
+        if french:
+            route = french_rail_estimate(coord_o, coord_d)
+        if not route and segment["distance_km"] is None:
+            route = open_rail_estimate(coord_o, coord_d)
+
+    if not route or route["known_share"] == 0:
+        return route, default_share, electric_profile, f"{default_label}, traction du trajet inconnue"
+    known_share = route["known_share"]
+    share = route["electric_share"] * known_share + default_share * (1 - known_share)
+    traction = "électrique" if share >= 0.999 else "diesel" if share <= 0.001 else "mixte"
+    label = f"traction {traction} estimée ({share:.0%} électrique, {route['source']})"
+    if known_share < 0.99:
+        label += f", {default_label} sur la part non qualifiée"
+    if share > 0 and not european:
+        label += ", facteur électrique européen utilisé comme approximation"
+    return route, share, electric_profile, label
+
+
+def segment_distance(segment, rail_estimate=None):
     coord_o, coord_d = segment["coord_o"], segment["coord_d"]
     if segment["distance_km"] is not None:
         return segment["distance_km"], "Distance renseignée", None
     if segment["carrier_total"] is not None:
         return None, "Distance non renseignée", None
-    mode = segment["mode"]
-    if mode in ("Ferroviaire", "Maritime"):
-        network = "ferroviaire" if mode == "Ferroviaire" else "maritime"
-        raise ValueError(f"renseignez le kilométrage de l’itinéraire {network}.")
     if not coord_o or not coord_d:
-        raise ValueError("sélectionnez les deux lieux ou renseignez la distance.")
+        raise ValueError("choisissez deux lieux dans les résultats ou renseignez la distance dans Données du transporteur.")
+    mode = segment["mode"]
     if mode == "Routier":
         try:
             route = osrm_route(coord_o, coord_d)
@@ -425,31 +772,67 @@ def segment_distance(segment):
                 return route["distance_km"], "Distance routière estimée (OSRM)", route["coords"]
         except (requests.RequestException, ValueError, TypeError, KeyError):
             pass
-        return compute_distance_km(coord_o, coord_d), "Vol d’oiseau (itinéraire routier indisponible)", None
-    return compute_distance_km(coord_o, coord_d), "Distance orthodromique", None
+        raise ValueError("itinéraire routier indisponible. Vérifiez les lieux ou renseignez la distance du transporteur.")
+    if mode == "Ferroviaire":
+        if rail_estimate:
+            return rail_estimate["km"], f"Itinéraire ferré calculé ({rail_estimate['source']})", rail_estimate["geometry"]
+        raise ValueError("itinéraire ferré indisponible. Choisissez des gares raccordées ou renseignez la distance du transporteur.")
+    if mode == "Maritime":
+        if searoute is not None:
+            try:
+                route = searoute.searoute(coord_o[::-1], coord_d[::-1], units="km")
+                distance = route["properties"]["length"]
+                if distance > 0:
+                    return distance, "Route maritime estimée (Searoute)", [point[:2] for point in route["geometry"]["coordinates"]]
+            except (ValueError, KeyError, TypeError, RuntimeError):
+                pass
+        raise ValueError("route maritime indisponible. Indiquez la distance port à port fournie par le transporteur.")
+    return compute_distance_km(coord_o, coord_d), "Distance orthodromique (great circle)", None
 
 
-def emission_factor(segment, distance_km):
+def emission_factor(segment, distance_km, rail_profile=None):
     mode = segment["mode"]
     if segment["method"] == "Facteur spécifique":
         if segment["specific_factor"] is None:
             raise ValueError("renseignez le facteur d’émission spécifique.")
         return segment["specific_factor"], "Méthode spécifique", segment["source"]
     if mode == "Ferroviaire":
-        if segment["profile"] is None or segment["volume"] is None:
-            raise ValueError("sélectionnez la traction et renseignez le volume du fret en m³.")
-        density = segment["weight"] / segment["volume"]
-        density_index = 0 if density < 250 else 1 if density < 400 else 2
-        factor = RAIL_FACTORS[segment["profile"]][density_index] / 1000
-        profile = f"{segment['profile']}, {RAIL_DENSITY_LABELS[density_index]} kg/m³"
-        return factor, "Niveau 1", f"Guide GES, tab. 10 – {profile}"
+        volume = segment["volume"]
+        density = segment["weight"] / volume if volume else None
+        density_index = 1
+        if density is not None:
+            density_index = 0 if density < 250 else 1 if density < 400 else 2
+        density_label = f"{RAIL_DENSITY_LABELS[density_index]} kg/m³"
+        if density is None:
+            density_label += " (classe supposée)"
+        if segment["profile"]:
+            factor = RAIL_FACTORS[segment["profile"]][density_index]
+            traction = segment["profile"]
+        else:
+            route, electric_share, electric_profile, traction = rail_profile
+            if route is None and electric_share == 0.9 and electric_profile == RAIL_ELECTRIC_FR:
+                factor = RAIL_FACTORS[RAIL_MIX_FR][density_index]
+            else:
+                electric = RAIL_FACTORS[electric_profile][density_index]
+                diesel = RAIL_FACTORS[RAIL_DIESEL][density_index]
+                factor = electric_share * electric + (1 - electric_share) * diesel
+        source = f"Train de fret de référence (1 000 t) · {traction} · {density_label} · Guide GES, tab. 10"
+        return factor / 1000, "Estimation ferroviaire", source
     if mode == "Routier":
         consumption, average_load = ROAD_PROFILES[segment["profile"]]
         factor = consumption * ROAD_DIESEL_KG_CO2E_PER_L / average_load
-        return factor, "Niveau 1", f"Guide GES, tab. 17–18 – {segment['profile']}"
+        profile = segment["profile"]
+        if segment["weight"] > ROAD_BY_PAYLOAD[-1][0] and profile == ROAD_BY_PAYLOAD[-1][1]:
+            profile += " (estimation pour charge répartissable, au-delà de 25 t)"
+        return factor, "Niveau 1", f"Guide GES, tab. 17–18 – {profile}"
     if mode == "Maritime":
         factor = SEA_FACTORS[segment["profile"]] / 1000
         return factor, "Niveau 1", f"Guide GES, tab. 16 – {segment['profile']}"
+    # The small-aircraft reference represents a narrow-body cargo up to ~24 t
+    # of structural payload. Beyond these bands use the applicable DGAC reference.
+    if segment["weight"] <= 24000 and distance_km <= 3704:
+        factor = 1.914 if distance_km <= 1000 else 2.609
+        return factor, "Estimation tout-cargo", "Guide GES, tab. 7 (DGAC 2016) – < 100 t MMD, cargo court/moyen-courrier"
     for maximum_km, factor, profile in AIR_CARGO_PROFILES:
         if distance_km <= maximum_km:
             return factor, "Estimation tout-cargo", f"Guide GES, tab. 7 (DGAC 2016) – {profile}"
@@ -458,12 +841,22 @@ def emission_factor(segment, distance_km):
 def calculate_segment(segment, index):
     if not segment["origin_display"] or not segment["destination_display"]:
         raise ValueError("renseignez l’origine et la destination.")
+    if segment["weight"] is None or segment["weight"] <= 0:
+        raise ValueError("renseignez la masse brute de l’envoi.")
     if segment["method"] != "Estimation par profil" and not segment["source"]:
         raise ValueError("renseignez la source ou la référence du document.")
     if segment["method"] == "Total du transporteur" and segment["carrier_total"] is None:
         raise ValueError("renseignez le total en kg CO₂e du transporteur.")
 
-    distance, distance_source, route_coords = segment_distance(segment)
+    rail_profile = None
+    if segment["mode"] == "Ferroviaire" and segment["carrier_total"] is None:
+        if segment["distance_km"] is None or (
+            segment["method"] == "Estimation par profil" and segment["profile"] is None
+        ):
+            rail_profile = rail_profile_estimate(segment)
+    distance, distance_source, route_coords = segment_distance(
+        segment, rail_profile[0] if rail_profile else None,
+    )
     tonnes_km = (segment["weight"] / 1000) * distance if distance is not None else None
     factor = None
     if segment["carrier_total"] is not None:
@@ -471,9 +864,9 @@ def calculate_segment(segment, index):
         method, source = "Total du transporteur", segment["source"]
         additional = 0.0
     else:
-        if distance <= 0:
+        if not math.isfinite(distance) or distance <= 0:
             raise ValueError("renseignez une distance supérieure à zéro.")
-        factor, method, source = emission_factor(segment, distance)
+        factor, method, source = emission_factor(segment, distance, rail_profile)
         additional = segment["additional_emissions"]
         emissions = compute_emissions(distance, segment["weight"] / 1000, factor) + additional
 
@@ -719,6 +1112,10 @@ def generate_pdf_report(
     try:
         all_lats = [r["lat_o"] for r in mapped_rows] + [r["lat_d"] for r in mapped_rows]
         all_lons = [r["lon_o"] for r in mapped_rows] + [r["lon_d"] for r in mapped_rows]
+        for row in mapped_rows:
+            for lon, lat in row.get("route_coords") or []:
+                all_lons.append(lon)
+                all_lats.append(lat)
         min_lon, max_lon, min_lat, max_lat = _compute_extent_from_coords(all_lats, all_lons)
 
         fig_w_in = AVAIL_W / 72.0
@@ -815,7 +1212,9 @@ def generate_pdf_report(
             mode_colors = {"routier":"#0066CC","aerien":"#CC0000","maritime":"#009900","ferroviaire":"#9900CC"}
             for r in mapped_rows:
                 cat = mode_to_category(r["Mode"]); color = mode_colors.get(cat, "#666666")
-                ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]],
+                path = r.get("route_coords") or [(r["lon_o"], r["lat_o"]), (r["lon_d"], r["lat_d"])]
+                lons, lats = zip(*path)
+                ax.plot(lons, lats,
                         color=color, linewidth=2.0, alpha=0.9, transform=ccrs.PlateCarree(), zorder=3)
                 ax.scatter([r["lon_o"]], [r["lat_o"]], s=22, c="#0A84FF", edgecolors='white', linewidths=0.8,
                            transform=ccrs.PlateCarree(), zorder=4)
@@ -845,7 +1244,9 @@ def generate_pdf_report(
             mode_colors = {"routier":"#0066CC","aerien":"#CC0000","maritime":"#009900","ferroviaire":"#9900CC"}
             for r in mapped_rows:
                 cat = mode_to_category(r["Mode"]); color = mode_colors.get(cat, "#666666")
-                ax.plot([r["lon_o"], r["lon_d"]], [r["lat_o"], r["lat_d"]], color=color, lw=2.0, alpha=0.9)
+                path = r.get("route_coords") or [(r["lon_o"], r["lat_o"]), (r["lon_d"], r["lat_d"])]
+                lons, lats = zip(*path)
+                ax.plot(lons, lats, color=color, lw=2.0, alpha=0.9)
                 ax.scatter([r["lon_o"]],[r["lat_o"]], s=22, c="#0A84FF", edgecolor='white', lw=0.8)
                 ax.scatter([r["lon_d"]],[r["lat_d"]], s=22, c="#FF3B30", edgecolor='white', lw=0.8)
             map_buffer = io.BytesIO()
@@ -1156,7 +1557,10 @@ def search_ports(query: str, limit: int = 12) -> pd.DataFrame:
 # --------------------------
 # Champ unifié Adresse/Ville/Pays ou IATA
 # --------------------------
-def unified_location_input(side_key: str, seg_index: int, label_prefix: str, show_airports: bool = True, show_ports: bool = False):
+def unified_location_input(
+    side_key: str, seg_index: int, label_prefix: str,
+    show_airports: bool = True, show_ports: bool = False, show_stations: bool = False,
+):
     """
     Saisie unifiée. Mode IATA prioritaire: si la saisie est exactement 3 lettres, on force la recherche aéroports.
     Retourne dict: coord, display, iata, unlocode, query, choice
@@ -1168,7 +1572,8 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str, sho
     iata_key= f"{side_key}_iata_{seg_index}"
     unlo_key= f"{side_key}_unlo_{seg_index}"
 
-    label = f"{label_prefix} — Adresse / Ville / Pays"
+    location_types = "Gare / Ville / Code UIC" if show_stations else "Adresse / Ville / Pays"
+    label = f"{label_prefix} — {location_types}"
     query_val = st.text_input(label, value=st.session_state.get(q_key, ""), key=q_key)
     q_raw = (query_val or "").strip()
     is_iata_mode = show_airports and bool(re.fullmatch(r"[A-Za-z]{3}", q_raw))
@@ -1176,7 +1581,9 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str, sho
 
     airports = pd.DataFrame()
     ports = pd.DataFrame()
-    oc_opts = []
+    stations = search_stations(q_raw) if show_stations and q_raw else []
+    station_options = {}
+    oc_opts = {}
 
     if q_raw:
         if show_airports or is_iata_mode:
@@ -1189,9 +1596,9 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str, sho
         if show_ports and not is_iata_mode:
             ports = search_ports(q_raw, limit=12)
 
-        if not is_iata_mode:
+        if not is_iata_mode and not stations:
             oc = geocode_cached(q_raw, limit=5)
-            oc_opts = [r['formatted'] for r in oc] if oc else []
+            oc_opts = {r["formatted"]: r for r in oc if r.get("formatted")}
 
     options = []
     airport_rows = []
@@ -1208,26 +1615,43 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str, sho
             label_opt = f"⚓ {r['label']}{suffix}"
             options.append(label_opt); port_rows.append(r)
 
-    if not is_iata_mode and oc_opts:
-        options += [f"📍 {o}" for o in oc_opts]
+    for station in stations:
+        place = station["city"] or station["country"]
+        freight = " · Fret" if station["freight"] else ""
+        code = f" | UIC {station['code']}" if station["code"] else ""
+        display = f"{station['name']} · {place}{freight}{code}"
+        station_options[f"🚉 {display}"] = station
+    options.extend(station_options)
+
+    if oc_opts:
+        options.extend(f"📍 {label}" for label in oc_opts)
 
     if not options:
-        options = ["— Aucun resultat —"]
+        options = ["— Aucun résultat —"]
+        known = st.session_state.segments[seg_index].get(side_key, {})
+        if q_raw and q_raw != known.get("display"):
+            st.caption("Aucun lieu trouvé. Précisez le nom ou le code, ou indiquez la distance du transporteur.")
 
-    default_index = 0
-    if is_iata_mode and airport_rows:
-        default_index = 0
+    # An exact code or a single match needs no extra click.
+    sel = options[0]
+    if len(options) > 1:
+        sel = st.selectbox("Résultats", options, key=c_key)
+    elif q_raw and sel != "— Aucun résultat —":
+        st.caption(sel)
 
-    sel = st.selectbox("Resultats", options, index=default_index, key=c_key)
-
-    coord = None; display = ""; sel_iata = ""; sel_unlo = ""
-    if sel != "— Aucun resultat —":
-        if sel.startswith("✈️"):
+    coord = None; display = ""; sel_iata = ""; sel_unlo = ""; country = ""
+    if sel != "— Aucun résultat —":
+        if sel in station_options:
+            station = station_options[sel]
+            coord, country = station["coord"], station["country"]
+            display = sel.removeprefix("🚉 ")
+        elif sel.startswith("✈️"):
             idx_in_all = options.index(sel)
             r = airport_rows[idx_in_all] if 0 <= idx_in_all < len(airport_rows) else airports.iloc[0]
             coord = (float(r["lat"]), float(r["lon"]))
             display = r["label"]
             sel_iata = r["iata_code"]
+            country = str(r.get("iso_country") or "")
             sel_unlo = ""
         elif sel.startswith("⚓"):
             idx_global = options.index(sel)
@@ -1236,19 +1660,31 @@ def unified_location_input(side_key: str, seg_index: int, label_prefix: str, sho
             coord = (float(r["lat"]), float(r["lon"]))
             display = r["label"]
             sel_unlo = str(r.get("unlocode") or "")
+            country = sel_unlo[:2]
             sel_iata = ""
         else:
             formatted = sel[2:].strip() if sel.startswith("📍") else sel
-            coord = coords_from_formatted(formatted)
+            record = oc_opts[formatted]
+            geometry = record.get("geometry") or {}
+            if "lat" in geometry and "lng" in geometry:
+                coord = (float(geometry["lat"]), float(geometry["lng"]))
+            country = str((record.get("components") or {}).get("country_code") or "").upper()
             display = formatted
             sel_iata = ""; sel_unlo = ""
 
+    known = st.session_state.segments[seg_index].get(side_key, {})
+    if coord is None and q_raw and q_raw == known.get("display"):
+        coord = known.get("coord")
+        country = known.get("country", "")
     st.session_state[crd_key]  = coord
     st.session_state[disp_key] = display
     st.session_state[iata_key] = sel_iata
     st.session_state[unlo_key] = sel_unlo
 
-    return {"coord": coord, "display": display or q_raw, "iata": sel_iata, "unlocode": sel_unlo, "query": query_val, "choice": sel}
+    return {
+        "coord": coord, "display": display or q_raw, "iata": sel_iata,
+        "unlocode": sel_unlo, "country": country, "query": query_val, "choice": sel,
+    }
 
 # --------------------------
 # UI
@@ -1265,7 +1701,8 @@ for i in range(1, len(st.session_state.segments)):
     if prev.get("dest",{}).get("display") and _is_location_empty(cur.get("origin", {})):
         cur["origin"]["display"] = prev["dest"]["display"]
         cur["origin"]["coord"]   = prev["dest"]["coord"]
-        cur["origin"]["iata"]    = prev["dest"]["iata"]
+        cur["origin"]["iata"]    = prev["dest"].get("iata", "")
+        cur["origin"]["country"] = prev["dest"].get("country", "")
         cur["origin"]["query"]   = prev["dest"]["display"]
         st.session_state[f"origin_autofill_{i}"] = True
         st.session_state[f"chain_src_signature_{i}"] = _normalize_signature(prev["dest"].get("display"), prev["dest"].get("coord"))
@@ -1277,6 +1714,10 @@ with col_title:
 with col_reset:
     st.button("Reinitialiser", type="secondary", use_container_width=True, help="Effacer tous les segments", key="btn_reset_segments", on_click=reset_segments)
 
+weight_val = st.number_input(
+    "Masse brute totale (kg)", min_value=0.001, value=None, step=100.0,
+    format="%.3f", key="weight_0", help="Masse de la marchandise avec ses emballages.",
+)
 segments_out = []
 for i in range(len(st.session_state.segments)):
     with st.container(border=True):
@@ -1297,10 +1738,10 @@ for i in range(len(st.session_state.segments)):
                 st.markdown("**Origine** (repris du segment precedent)", unsafe_allow_html=True)
             else:
                 st.markdown("**Origine**")
-            o = unified_location_input("origin", i, "Origine", show_airports=(mode == "Aerien"), show_ports=(mode == "Maritime"))
+            o = unified_location_input("origin", i, "Origine", show_airports=(mode == "Aerien"), show_ports=(mode == "Maritime"), show_stations=(mode == "Ferroviaire"))
         with c2:
             st.markdown("**Destination**")
-            d = unified_location_input("dest", i, "Destination", show_airports=(mode == "Aerien"), show_ports=(mode == "Maritime"))
+            d = unified_location_input("dest", i, "Destination", show_airports=(mode == "Aerien"), show_ports=(mode == "Maritime"), show_stations=(mode == "Ferroviaire"))
 
         # Si l'utilisateur modifie l'origine par rapport à la source de chainage, enlever le badge et verrouiller
         if st.session_state.get(f"origin_autofill_{i}", False) and i > 0:
@@ -1310,17 +1751,10 @@ for i in range(len(st.session_state.segments)):
                 st.session_state[f"origin_autofill_{i}"] = False
                 st.session_state[f"origin_user_edited_{i}"] = (not _is_location_empty({"display": o["display"], "coord": o["coord"]}))
 
-        if "weight_0" not in st.session_state:
-            st.session_state["weight_0"] = st.session_state.segments[0]["weight"]
-
-        if i == 0:
-            weight_val = st.number_input("Masse brute de l’envoi (kg, emballages compris, pour tous les segments)", min_value=0.001, step=100.0, format="%.3f", key="weight_0")
-        else:
-            weight_val = st.session_state["weight_0"]
         st.session_state.segments[i]["weight"] = weight_val
 
-        st.session_state.segments[i]["origin"] = {"query": o["query"], "display": o["display"], "iata": o["iata"], "coord": o["coord"]}
-        st.session_state.segments[i]["dest"]   = {"query": d["query"], "display": d["display"], "iata": d["iata"], "coord": d["coord"]}
+        st.session_state.segments[i]["origin"] = o
+        st.session_state.segments[i]["dest"] = d
 
         # Chaine live D(i) -> O(i+1) robuste
         if i + 1 < len(st.session_state.segments):
@@ -1345,6 +1779,7 @@ for i in range(len(st.session_state.segments)):
                 next_seg["origin"]["display"] = dest_disp
                 next_seg["origin"]["coord"]   = dest_coord
                 next_seg["origin"]["iata"]    = dest_iata
+                next_seg["origin"]["country"] = d["country"]
                 next_seg["origin"]["query"]   = dest_disp
 
                 j = i + 1
@@ -1360,64 +1795,61 @@ for i in range(len(st.session_state.segments)):
         if _is_location_empty(st.session_state.segments[i]["origin"]):
             st.session_state[f"origin_user_edited_{i}"] = False
 
-        distance_help = {
-            "Ferroviaire": "Kilométrage sur le réseau ferré, fourni par l’opérateur ou un distancier ferroviaire.",
-            "Maritime": "Kilométrage de la route maritime port à port. Convertissez les milles nautiques en km (× 1,852).",
-            "Routier": "Laissez vide pour une estimation OSRM.",
-            "Aerien": "Laissez vide pour calculer la distance orthodromique entre les aéroports.",
-        }
-        distance_km = st.number_input(
-            "Distance du segment (km)", min_value=0.001, value=None, format="%.3f",
-            key=f"distance_km_{i}", help=distance_help[mode],
-        )
-        method = st.selectbox(
-            "Donnée d’émissions",
-            ("Estimation par profil", "Total du transporteur", "Facteur spécifique"),
-            key=f"emission_method_{i}",
-        )
+        # The main form needs only mass, mode and locations. Overrides remain available per segment.
+        profile = None
         source = ""
-        carrier_total = specific_factor = profile = volume = None
+        carrier_total = specific_factor = volume = None
         additional_emissions = 0.0
-        if method == "Total du transporteur":
-            carrier_total = st.number_input(
-                "Total du transporteur (kg CO₂e pour cet envoi et ce segment)",
-                min_value=0.0, value=None, format="%.6f", key=f"carrier_total_{i}",
-                help="Reprenez le montant couvrant les phases amont et de fonctionnement.",
+        with st.expander("Données du transporteur (facultatif)"):
+            distance_km = st.number_input(
+                "Distance réelle (km)", min_value=0.001, value=None, format="%.3f",
+                key=f"distance_km_{i}",
+                help="Laissez vide pour calculer automatiquement la distance à partir des lieux sélectionnés.",
             )
-        elif method == "Facteur spécifique":
-            specific_factor = st.number_input(
-                "Facteur (kg CO₂e/t.km)", min_value=0.0, value=None,
-                format="%.8f", key=f"specific_factor_{i}",
-                help="Facteur représentatif du segment couvrant l’amont et le fonctionnement.",
+            method = st.selectbox(
+                "Donnée d’émissions",
+                ("Estimation par profil", "Total du transporteur", "Facteur spécifique"),
+                format_func=lambda value: "Estimation automatique" if value == "Estimation par profil" else value,
+                key=f"emission_method_{i}",
             )
-        elif mode == "Ferroviaire":
-            c_traction, c_volume = st.columns(2)
-            with c_traction:
-                profile = st.selectbox(
-                    "Traction ferroviaire", list(RAIL_FACTORS), index=None,
-                    key=f"rail_traction_{i}",
-                    help="Pour un trajet en France métropolitaine de traction inconnue, choisissez le profil mixte France.",
+            if method == "Total du transporteur":
+                carrier_total = st.number_input(
+                    "Total du transporteur (kg CO₂e pour cet envoi et ce segment)",
+                    min_value=0.0, value=None, format="%.6f", key=f"carrier_total_{i}",
+                    help="Reprenez le montant couvrant les phases amont et de fonctionnement.",
                 )
-            with c_volume:
+            elif method == "Facteur spécifique":
+                specific_factor = st.number_input(
+                    "Facteur (kg CO₂e/t.km)", min_value=0.0, value=None,
+                    format="%.8f", key=f"specific_factor_{i}",
+                    help="Utilisez un facteur représentatif couvrant l’amont et le fonctionnement.",
+                )
+            elif mode == "Ferroviaire":
+                profile = st.selectbox(
+                    "Traction réelle", [None, *RAIL_FACTORS],
+                    format_func=lambda value: value or "Automatique", key=f"rail_traction_{i}",
+                )
                 volume = st.number_input(
-                    "Volume brut du fret (m³)", min_value=0.001, value=None,
+                    "Volume brut (m³)", min_value=0.001, value=None,
                     format="%.3f", key=f"rail_volume_{i}",
                 )
-        elif mode == "Routier":
-            profile = st.selectbox("Profil routier – gazole", list(ROAD_PROFILES), key=f"road_profile_{i}")
-        elif mode == "Maritime":
-            profile = st.selectbox("Profil du navire", list(SEA_FACTORS), key=f"sea_profile_{i}")
-        else:
-            st.caption("Profil indicatif avion tout-cargo selon la distance, d’après les repères DGAC 2016.")
-
-        if method != "Estimation par profil":
-            source = st.text_input("Source / référence du document", key=f"emission_source_{i}").strip()
-        if method != "Total du transporteur":
-            with st.expander("Fret sous température dirigée"):
+            elif mode == "Routier":
+                profile = st.selectbox(
+                    "Véhicule routier", [None, *ROAD_PROFILES],
+                    format_func=lambda value: value or "Automatique (selon le poids)",
+                    key=f"road_profile_{i}",
+                )
+                if profile is None and weight_val is not None:
+                    profile = automatic_road_profile(weight_val)
+            elif mode == "Maritime":
+                profile = st.selectbox("Profil du navire", list(SEA_FACTORS), key=f"sea_profile_{i}")
+            if method != "Estimation par profil":
+                source = st.text_input("Source / référence du document", key=f"emission_source_{i}").strip()
+            if method != "Total du transporteur":
                 additional_emissions = st.number_input(
-                    "Émissions additionnelles de fuites frigorigènes (kg CO₂e)",
+                    "Fuites frigorigènes (kg CO₂e)",
                     min_value=0.0, value=0.0, format="%.3f", key=f"additional_emissions_{i}",
-                    help="Ajoutez les fuites attribuées à l’envoi si elles sont absentes du facteur. Utilisez un total transporteur ou un facteur qui couvre aussi l’énergie du groupe froid.",
+                    help="À saisir si les fuites attribuées à l’envoi sont absentes du facteur.",
                 )
 
         segments_out.append({
@@ -1427,6 +1859,8 @@ for i in range(len(st.session_state.segments)):
             "weight": weight_val,
             "coord_o": o["coord"],
             "coord_d": d["coord"],
+            "country_o": o["country"],
+            "country_d": d["country"],
             "distance_km": distance_km,
             "method": method,
             "source": source,
@@ -1470,7 +1904,8 @@ with col_map3:
 
 # Calcul
 st.subheader("Calcul")
-dossier_transport = st.text_input("N° dossier Transport (obligatoire) *", value=st.session_state.get("dossier_transport",""), placeholder="ex : TR-2025-001")
+with st.expander("Référence du dossier (facultatif)"):
+    dossier_transport = st.text_input("N° dossier transport", value=st.session_state.get("dossier_transport", ""))
 st.session_state["dossier_transport"] = (dossier_transport or "").strip()
 
 unit = "kg"
@@ -1482,11 +1917,7 @@ st.caption(
 )
 dossier = st.session_state["dossier_transport"]
 calculation_inputs = (dossier, segments_out)
-can_calculate = bool(dossier)
-if not can_calculate:
-    st.warning("Veuillez renseigner le N° dossier Transport avant de lancer le calcul.")
-
-if st.button("Calculer les émissions totales", disabled=not can_calculate):
+if st.button("Calculer les émissions totales", type="primary"):
     st.session_state.pop("calculation_result", None)
     rows = []
     with st.spinner("Calcul en cours…"):
@@ -1520,16 +1951,19 @@ if result and result[0] == calculation_inputs:
         )
         mapped_rows = [row for row in rows if row["lat_o"] is not None and row["lat_d"] is not None]
         if mapped_rows:
-            st.caption("Sur la carte, les lignes directes relient les points géocodés à titre indicatif.")
+            st.caption("Carte indicative · itinéraires OpenStreetMap et SNCF Réseau selon le mode.")
         route_paths = [
-            {"path": r["route_coords"], "name": f"Segment {r['Segment']} - {r['Mode']}"}
+            {
+                "path": r["route_coords"], "name": f"Segment {r['Segment']} - {r['Mode']}",
+                "color": [133, 61, 171, 220] if mode_to_category(r["Mode"]) == "ferroviaire" else [187, 147, 87, 220],
+            }
             for r in mapped_rows if r.get("route_coords")
         ]
 
         layers = []
         if route_paths:
             layers.append(pdk.Layer(
-                "PathLayer", data=route_paths, get_path="path", get_color=[187,147,87,220],
+                "PathLayer", data=route_paths, get_path="path", get_color="color",
                 width_scale=1, width_min_pixels=4, pickable=True
             ))
 
